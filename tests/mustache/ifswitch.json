@@ -1,0 +1,60 @@
+{
+  "overview": "If-Switch-Else are section tags extended\n",
+  "speed": 0,
+  "tests": [
+    {
+      "name": "if-else (1)",
+      "desc": "truthy section",
+      "data": {
+        "if": true
+      },
+      "template": "{{#if}}true{{|}}false{{/if}}",
+      "expected": "true"
+    },
+    {
+      "name": "if-else (2)",
+      "desc": "falsy section",
+      "data": {
+        "if": false
+      },
+      "template": "{{#if}}true{{|}}false{{/if}}",
+      "expected": "false"
+    },
+    {
+      "name": "switch",
+      "desc": "switch section rendered",
+      "data": {
+        "if": 1
+      },
+      "template": "{{#if}}x=?{{|1}}x=1{{|}}falsy{{/if}}",
+      "expected": "x=1"
+    },
+    {
+      "name": "switch-not (1)",
+      "desc": "switch section rendered",
+      "data": {
+        "if": 1
+      },
+      "template": "{{^if}}falsy{{|1}}x=1{{|}}x=?{{/if}}",
+      "expected": "x=1"
+    },
+    {
+      "name": "switch-not (2)",
+      "desc": "nothing is rendered (no default section)",
+      "data": {
+        "if": 2
+      },
+      "template": "{{^if}}falsy{{|1}}x=1{{/if}}",
+      "expected": ""
+    },
+    {
+      "name": "if-only (truthy)",
+      "desc": "value is not iterated",
+      "data": {
+        "if": [1,2,3,4,5]
+      },
+      "template": "{{?if}}true{{#if}}{{.}}{{/if}}{{|1}}1{{|}}false{{/if}}",
+      "expected": "true12345"
+    }
+  ]
+}
