@@ -1,48 +1,27 @@
 <?php declare(strict_types=1);
 namespace SM;
-require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
-use # {{{
-  JsonSerializable,ArrayAccess,Iterator,Stringable,
-  SyncEvent,SyncReaderWriter,SyncSharedMemory,
-  Generator,Closure,CURLFile,
-  Throwable,Error,Exception;
+# defs {{{
+use
+  Throwable;
 use function
-  set_time_limit,ini_set,register_shutdown_function,
-  set_error_handler,class_exists,function_exists,
-  method_exists,func_num_args,
-  ### variable handling
-  gettype,intval,strval,is_object,is_array,is_bool,is_null,
-  is_string,is_scalar,
   ### arrays
-  explode,implode,count,reset,next,key,array_keys,
-  array_push,array_pop,array_shift,array_unshift,
-  array_splice,array_slice,in_array,array_search,
-  array_reverse,
+  is_array,explode,implode,count,reset,next,key,array_slice,
   ### strings
-  strpos,strrpos,strlen,trim,rtrim,uniqid,ucfirst,
-  str_repeat,str_replace,strtolower,
-  lcfirst,strncmp,substr_count,preg_match,preg_match_all,
-  hash,http_build_query,
-  json_encode,json_decode,json_last_error,
-  json_last_error_msg,
+  is_string,strval,substr,strpos,strrpos,strlen,rtrim,str_replace,
+  json_encode,json_decode,json_last_error,json_last_error_msg,
+  preg_replace,
   ### filesystem
-  file_put_contents,file_get_contents,clearstatcache,
-  file_exists,unlink,filesize,filemtime,tempnam,
-  sys_get_temp_dir,mkdir,scandir,fwrite,fread,fclose,glob,
-  ### CURL
-  curl_init,curl_setopt_array,curl_exec,
-  curl_errno,curl_error,curl_strerror,curl_close,
-  curl_multi_init,curl_multi_add_handle,curl_multi_exec,
-  curl_multi_select,curl_multi_strerror,
-  curl_multi_info_read,curl_multi_remove_handle,
-  curl_multi_close,
-  ### misc
-  proc_open,is_resource,proc_get_status,proc_terminate,
-  getmypid,ob_start,ob_get_length,ob_flush,ob_end_clean,
-  pack,unpack,time,hrtime,sleep,usleep,
-  min,max,pow;
-# }}}
+  is_file,file_put_contents,file_get_contents,clearstatcache,
+  file_exists,unlink,filectime,filemtime,mkdir,touch,
+  ### other
+  get_parent_class;
+use const
+  JSON_UNESCAPED_UNICODE,JSON_INVALID_UTF8_IGNORE,JSON_ERROR_NONE,
+  PHP_OS_FAMILY,DIRECTORY_SEPARATOR;
 ###
+require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
+# }}}
+# array {{{
 function array_key(array &$a, int $index): int|string|null # {{{
 {
   reset($a);
@@ -102,15 +81,58 @@ function array_import_new(array &$to, array &$from): void # {{{
   }
 }
 # }}}
-function file_persist(string $file): bool # {{{
+# }}}
+# file {{{
+function file_persist(string &$file): bool # {{{
 {
   clearstatcache(true, $file);
   return file_exists($file);
 }
 # }}}
-function file_unlink(string $file): bool # {{{
+function file_unlink(string $file, ?object &$error = null): bool # {{{
 {
-  return (!file_exists($file) || unlink($file));
+  try
+  {
+    if (file_persist($file) && !is_file($file))
+    {
+      return ErrorEx::set($error, ErrorEx::fail(
+        __FUNCTION__, $file, 'not a file'
+      ))->val(false);
+    }
+    if (!unlink($file))
+    {
+      return ErrorEx::set($error, ErrorEx::fail(
+        __FUNCTION__, $file
+      ))->val(false);
+    }
+    return true;
+  }
+  catch (Throwable $e) {
+    return ErrorEx::set($error, $e)->val(false);
+  }
+}
+# }}}
+function file_touch(string $file, ?object &$error = null): bool # {{{
+{
+  try
+  {
+    if (file_persist($file) && !is_file($file))
+    {
+      return ErrorEx::set($error, ErrorEx::fail(
+        __FUNCTION__, $file, 'not a file'
+      ))->val(false);
+    }
+    if (!touch($file))
+    {
+      return ErrorEx::set($error, ErrorEx::fail(
+        __FUNCTION__, $file
+      ))->val(false);
+    }
+    return true;
+  }
+  catch (Throwable $e) {
+    return ErrorEx::set($error, $e)->val(false);
+  }
 }
 # }}}
 function &file_get_array(string $file): ?array # {{{
@@ -174,6 +196,8 @@ function file_time(string $file, bool $creat = false): int # {{{
   return $a;
 }
 # }}}
+# }}}
+# dir {{{
 function dir_check_make(string $dir, int $perms = 0750): bool # {{{
 {
   if (file_exists($dir)) {
@@ -188,6 +212,39 @@ function dir_check_make(string $dir, int $perms = 0750): bool # {{{
   return $res;
 }
 # }}}
+function dir_file_path(string ...$path): string # {{{
+{
+  for ($a='', $i=0, $j=count($path) - 1; $i < $j; ++$i) {
+    $a .= rtrim($path[$i], '/\\').DIRECTORY_SEPARATOR;
+  }
+  return $a.$path[$j];
+}
+# }}}
+function dir_path(string $path, int $level = 1): string # {{{
+{
+  $a = explode(DIRECTORY_SEPARATOR, $path);
+  if ($level >= ($b = count($a))) {
+    return '';
+  }
+  return implode(
+    DIRECTORY_SEPARATOR,
+    array_slice($a, 0, $b - $level)
+  );
+}
+# }}}
+function dir_exists(string $path): bool # {{{
+{
+  if (file_exists($path)) {
+    return true;
+  }
+  if (($dir = dir_path($path)) === '') {
+    return false;
+  }
+  return file_exists($dir);
+}
+# }}}
+# }}}
+# class {{{
 function class_basename(string $name): string # {{{
 {
   return ($i = strrpos($name, '\\'))
@@ -205,12 +262,8 @@ function class_parent_name(object $o): string # {{{
     ? class_basename($name) : '';
 }
 # }}}
-function json_error(): string # {{{
-{
-  return (json_last_error() !== JSON_ERROR_NONE)
-    ? json_last_error_msg() : '';
-}
 # }}}
+# str {{{
 function str_fg_color(# {{{
   string $s, string $color, int $strong = 0
 ):string
@@ -267,8 +320,15 @@ function str_no_color(string $s): string # {{{
   static $z = '[';
   static $e = '/\\[\\d+m/';
   return (strpos($s, $z) !== false)
-    ? preg_replace($e, '', $s);
+    ? preg_replace($e, '', $s)
     : $s;
 }
+# }}}
+function json_error(): string # {{{
+{
+  return (json_last_error() !== JSON_ERROR_NONE)
+    ? json_last_error_msg() : '';
+}
+# }}}
 # }}}
 ###

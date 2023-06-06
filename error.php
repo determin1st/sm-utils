@@ -1,44 +1,7 @@
 <?php declare(strict_types=1);
 namespace SM;
-use # {{{
-  Throwable,Error,Exception;
-use function
-  set_time_limit,ini_set,register_shutdown_function,
-  set_error_handler,class_exists,function_exists,
-  method_exists,func_num_args,
-  ### variable handling
-  gettype,intval,strval,is_object,is_array,is_bool,is_null,
-  is_string,is_scalar,
-  ### arrays
-  explode,implode,count,reset,next,key,array_keys,
-  array_push,array_pop,array_shift,array_unshift,
-  array_splice,array_slice,in_array,array_search,
-  array_reverse,
-  ### strings
-  strpos,strrpos,strlen,trim,rtrim,uniqid,ucfirst,
-  str_repeat,str_replace,strtolower,
-  lcfirst,strncmp,substr_count,preg_match,preg_match_all,
-  hash,http_build_query,
-  json_encode,json_decode,json_last_error,
-  json_last_error_msg,
-  ### filesystem
-  file_put_contents,file_get_contents,clearstatcache,
-  file_exists,unlink,filesize,filemtime,tempnam,
-  sys_get_temp_dir,mkdir,scandir,fwrite,fread,fclose,glob,
-  ### CURL
-  curl_init,curl_setopt_array,curl_exec,
-  curl_errno,curl_error,curl_strerror,curl_close,
-  curl_multi_init,curl_multi_add_handle,curl_multi_exec,
-  curl_multi_select,curl_multi_strerror,
-  curl_multi_info_read,curl_multi_remove_handle,
-  curl_multi_close,
-  ### misc
-  proc_open,is_resource,proc_get_status,proc_terminate,
-  getmypid,ob_start,ob_get_length,ob_flush,ob_end_clean,
-  pack,unpack,time,hrtime,sleep,usleep,
-  min,max,pow;
-###
-# }}}
+use Error,Throwable;
+use function class_alias,is_object,implode,count,array_unshift;
 class ErrorEx extends Error
 {
   const # {{{
@@ -70,6 +33,26 @@ class ErrorEx extends Error
   ###
   # }}}
   # constuctors {{{
+  static function from(?object $e): self {
+    return ($e instanceof self) ? $e : self::value($e);
+  }
+  static function value(object $e): self {
+    return new self((($e instanceof Throwable) ? 3 : 0), [], $e);
+  }
+  static function chain(?object ...$ee): self
+  {
+    for ($e=null, $i=0, $j=count($ee); $i < $j; ++$i) {
+      if ($e = $ee[$i]) {break;}
+    }
+    for ($e=self::from($e), ++$i; $i < $j; ++$i) {
+      $ee[$i] && $e->last(self::from($ee[$i]));
+    }
+    return $e;
+  }
+  static function set(?object &$x, object $e): self {
+    return $x = self::from($e)->last($x);
+  }
+  ###
   static function skip(): self {
     return new self(0);
   }
@@ -98,12 +81,8 @@ class ErrorEx extends Error
       (self::ERROR_NUM[$n] ?? "($n) UNKNOWN"), $msg
     ]);
   }
-  static function from(object $e): self
-  {
-    return ($e instanceof self)
-      ? $e : new self(3, [], $e);
-  }
-  function __construct(
+  # }}}
+  function __construct(# {{{
     public int     $level = 0,
     public array   $msg   = [],
     public mixed   $value = null,
@@ -112,61 +91,59 @@ class ErrorEx extends Error
     parent::__construct('', -1);
   }
   # }}}
-  # util {{{
-  # }}}
   function __debugInfo(): array # {{{
   {
-    return [
-      'level' => self::E_LEVEL[$this->level],
-      'msg'   => implode('·', $this->msg),
-      'next'  => $this->next
+    $a = [
+      self::ERROR_LEVEL[$this->level] =>
+      $this->message()
     ];
-  }
-  # }}}
-  function levelMax(int $limit = 3): int # {{{
-  {
-    $a = $this->level;
-    $b = $this->next;
-    while ($b && $a < $limit)
-    {
-      if ($b->level > $a) {
-        $a = $b->level;
-      }
-      $b = $b->next;
+    if ($this->hasBacktrace()) {
+      $a['trace'] = $this->value->getTrace();
+    }
+    if ($this->next) {
+      $a['next'] = $this->next;
     }
     return $a;
   }
   # }}}
-  function getMsg(string $default = ''): string # {{{
+  function errorlevel(int $max=3): int # {{{
+  {
+    $level = $this->level;
+    $next  = $this->next;
+    while ($next && $level < $max)
+    {
+      if ($next->level > $level) {
+        $level = $next->level;
+      }
+      $next = $next->next;
+    }
+    return $level;
+  }
+  # }}}
+  function message(string $default=''): string # {{{
   {
     return $this->msg
-      ? implode(' ', $this->msg)
-      : $default;
+      ? implode('·', $this->msg)
+      : ($this->hasBacktrace()
+        ? $this->value->getMessage()
+        : $default);
   }
   # }}}
-  # is {{{
-  static function is(mixed $e): bool {
-    return is_object($e) && ($e instanceof self);
-  }
-  function isFatal(): bool {
-    return $this->level > 2;
-  }
-  function isError(): bool {
-    return $this->level > 1;
-  }
-  function isWarning(): bool {
-    return $this->level === 1;
-  }
-  function isInfo(): bool {
-    return $this->level < 1;
-  }
-  # }}}
-  # has {{{
-  function hasError(): bool {
-    return $this->levelMax() > 1;
-  }
-  function hasIssue(): bool {
-    return $this->levelMax() > 0;
+  function last(?self $e): self # {{{
+  {
+    # seek to the last error
+    $last = $this;
+    while ($next = $last->next) {
+      $last = $next;
+    }
+    # complete as setter
+    if ($e)
+    {
+      $last->next = $e;
+      return $this;
+    }
+    # complete as getter
+    return $last;
   }
   # }}}
   function count(): int # {{{
@@ -177,37 +154,43 @@ class ErrorEx extends Error
     return $x;
   }
   # }}}
-  function last(): self # {{{
+  # util {{{
+  static function is(mixed $e): bool {
+    return $e && is_object($e) && ($e instanceof self);
+  }
+  static function get(?object $e): object
   {
-    $a = $this;
-    while ($b = $a->next) {
-      $a = $b;
-    }
-    return $a;
+    if ($e === null)  {throw self::skip();}
+    if (self::is($e)) {throw $e;}
+    return $e;
   }
-  # }}}
-  # ? {{{
-  function lastSet(?self $e = null): self
+  function isInfo(): bool {
+    return $this->level === 0;
+  }
+  function isWarning(): bool {
+    return $this->level === 1;
+  }
+  function isError(): bool {
+    return $this->level >= 2;
+  }
+  function isFatal(): bool {
+    return $this->level >= 3;
+  }
+  function hasError(): bool {
+    return $this->errorlevel(2) > 1;
+  }
+  function hasIssue(): bool {
+    return $this->errorlevel(1) > 0;
+  }
+  function hasBacktrace(): bool
   {
-    $e && ($this->last()->next = $e);
-    return $this;
+    return (
+      ($this->level === 3) &&
+      ($this->value instanceof Throwable)
+    );
   }
-  function nextSet(self $e): self
-  {
-    $this->next = $e->lastSet($this->next);
-    return $this;
-  }
-  function nextFrom(object $e): self {
-    return $this->nextSet(self::from($e));
-  }
-  function firstSet(self $e): self {
-    return $e->lastSet($this);
-  }
-  function firstMsg(string ...$msg): self
-  {
-    $e = new self($this->levelMax(2), $msg);
-    return $this->firstSet($e);
-  }
+  function  val(mixed  $v): mixed {return $v;}
+  function &var(mixed &$v): mixed {return $v;}
   # }}}
 }
-###
+return class_alias('\SM\ErrorEx', '\SM\EE', false);

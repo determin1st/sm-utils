@@ -1,7 +1,7 @@
 <?php declare(strict_types=1);
 namespace SM;
-require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
-use # {{{
+# defs {{{
+use
   JsonSerializable,ArrayAccess,Iterator,Stringable,
   Generator,Closure,CURLFile,
   Throwable,Error,Exception;
@@ -33,6 +33,8 @@ use function
   getmypid,ob_start,ob_get_length,ob_flush,ob_end_clean,
   pack,unpack,time,hrtime,sleep,usleep,
   min,max,pow;
+###
+require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
 # }}}
 class Promise
 {
@@ -347,11 +349,8 @@ class PromiseResultTrack # {{{
   # }}}
   function errorAdd(?object $e): void # {{{
   {
-    if ($e)
-    {
-      $this->error = $this->error
-        ? $e->lastSet($this->error)
-        : $e;
+    if ($e) {
+      $this->error = $e->last($this->error);
     }
   }
   # }}}
@@ -370,7 +369,7 @@ class PromiseResultTrack # {{{
   # }}}
 }
 # }}}
-# runners
+# queue runners
 class PromiseOne # {{{
 {
   public $queue = [];

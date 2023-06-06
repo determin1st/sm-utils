@@ -1,6 +1,6 @@
 <?php declare(strict_types=1);
 namespace SM;
-# globals {{{
+# defs {{{
 use
   Traversable,Closure,SplFixedArray;
 use function
