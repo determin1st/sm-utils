@@ -3,8 +3,8 @@ namespace SM;
 # defs {{{
 use FFI,Throwable;
 use function
-  class_exists,function_exists,class_alias,
-  chr,ord,mb_chr,mb_ord,strlen,strval;
+  class_exists,function_exists,file_exists,
+  class_alias,chr,ord,mb_chr,mb_ord,strlen,strval;
 use const
   PHP_OS_FAMILY,DIRECTORY_SEPARATOR;
 ###

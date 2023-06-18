@@ -2,13 +2,14 @@
 namespace SM;
 # requirements {{{
 use
-  SyncSharedMemory,SyncMutex,SyncEvent,Throwable;
+  SyncSharedMemory,SyncSemaphore,SyncEvent,Throwable;
 use function
-  sys_get_temp_dir,file_exists,touch,
-  strval,strlen,substr,pack,unpack,is_array;
+  sys_get_temp_dir,file_exists,touch,preg_match,intval,
+  getmypid,strval,strlen,substr,pack,unpack,hrtime,
+  array_shift,array_unshift,is_array,is_int,is_string;
 use function SM\{
   class_name,class_basename,dir_exists,dir_file_path,
-  file_persist,file_unlink,file_touch
+  file_persist,file_unlink,file_touch,hrtime_delta_ms
 };
 use const
   DIRECTORY_SEPARATOR;
@@ -18,13 +19,13 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'functions.php';
 # }}}
 class SyncBuffer # {{{
 {
-  static function new(string $id, int $size): object # {{{
+  # constructor {{{
+  static function new(string $id, int $size): object
   {
     try
     {
       # construct
-      $buf = new self(
-        $id, $size,
+      $buf = new self($id, $size,
         new SyncSharedMemory($id, 4 + $size)
       );
       # clear at first encounter
@@ -36,44 +37,19 @@ class SyncBuffer # {{{
     catch (Throwable $e)
     {
       return ErrorEx::set($e, ErrorEx::fail(
-        class_basename(__CLASS__), $id, strval($size)
+        class_basename(static::class), __FUNCTION__,
+        $id, strval($size)
       ));
     }
   }
-  # }}}
-  protected function __construct(# {{{
+  protected function __construct(
     public string $id,
-    public int    $max,
+    public int    $sizeMax,
     public object $mem
   ) {}
   # }}}
-  function &read(?object &$error=null): string # {{{
-  {
-    try
-    {
-      if (($data = &$this->_readData()) !== '') {
-        $this->_writeSize(0);
-      }
-    }
-    catch (Throwable $e)
-    {
-      $data = '';
-      ErrorEx::set($error, $e);
-    }
-    return $data;
-  }
-  # }}}
-  function size(?object &$error=null): int # {{{
-  {
-    try {
-      return ~($i = $this->_readSize()) ? $i : $this->max;
-    }
-    catch (Throwable $e) {
-      return ErrorEx::set($error, $e)->val(-1);
-    }
-  }
-  # }}}
-  function &_readData(): string # {{{
+  # hlp {{{
+  protected function &_readData(): string # {{{
   {
     # read content size
     $data = '';
@@ -81,7 +57,7 @@ class SyncBuffer # {{{
       return $data;
     }
     if ($i === -1) {
-      $i = $this->max;
+      $i = $this->sizeMax;
     }
     # read content
     $data = $this->mem->read(4, $i);
@@ -96,7 +72,7 @@ class SyncBuffer # {{{
     return $data;
   }
   # }}}
-  function _readSize(): int # {{{
+  protected function _readSize(): int # {{{
   {
     # read size bytes
     $s = $this->mem->read(0, 4);
@@ -110,7 +86,8 @@ class SyncBuffer # {{{
     }
     # convert to integer value
     if (!is_array($a = unpack('l', $s)) ||
-        !isset($a[1]) || $i < -1 || $i > $this->max)
+        !isset($a[1]) || ($i = $a[1]) < -1 ||
+        $i > $this->sizeMax)
     {
       throw ErrorEx::fail(
         class_name($this), $this->id,
@@ -120,77 +97,11 @@ class SyncBuffer # {{{
     return $i;
   }
   # }}}
-  function write(string &$data, ?object &$error=null): int # {{{
-  {
-    try {
-      return $this->_write($data);
-    }
-    catch (Throwable $e) {
-      return ErrorEx::set($error, $e)->val(-1);
-    }
-  }
-  # }}}
-  function append(string &$data, ?object &$error=null): int # {{{
-  {
-    try {
-      return $this->_append($data);
-    }
-    catch (Throwable $e) {
-      return ErrorEx::set($error, $e)->val(-1);
-    }
-  }
-  # }}}
-  function clear(?object &$error=null): bool # {{{
-  {
-    try {
-      return $this->_writeSize(0);
-    }
-    catch (Throwable $e) {
-      return ErrorEx::set($error, $e)->val(false);
-    }
-  }
-  # }}}
-  function _write(string &$data): int # {{{
-  {
-    # check empty
-    if ($data === '') {
-      return 0;
-    }
-    # check current size of the buffer
-    if ($this->_readSize())
-    {
-      throw ErrorEx::fail(
-        class_name($this), $this->id,
-        'unable to write, buffer is dirty'
-      );
-    }
-    # complete
-    return $this->_writeData($data, 0);
-  }
-  # }}}
-  function _append(string &$data): int # {{{
-  {
-    # check empty
-    if ($data === '') {
-      return 0;
-    }
-    # check current size of the buffer
-    if ($this->_readSize() === -1)
-    {
-      throw ErrorEx::fail(
-        class_name($this), $this->id,
-        'unable to append, buffer is overflowed'
-      );
-    }
-    # complete
-    return $this->_writeData($data, $j);
-  }
-  # }}}
-  function _writeData(string &$data, int $offs): int # {{{
+  protected function _writeData(string &$data, int $offs): int # {{{
   {
     # prepare
     $i = strlen($data);
-    $j = $this->max - $offs;# free space
+    $j = $this->sizeMax - $offs;# free space
     $k = $offs + 4;# real offset
     # check overflow
     if ($i > $j)
@@ -220,7 +131,7 @@ class SyncBuffer # {{{
     return $n;
   }
   # }}}
-  function _writeSize(int $size): bool # {{{
+  protected function _writeSize(int $size): bool # {{{
   {
     $n = $this->mem->write(pack('l', $size), 0);
     if ($n !== 4)
@@ -234,122 +145,322 @@ class SyncBuffer # {{{
     return true;
   }
   # }}}
-}
-# }}}
-class SyncLock # {{{
-{
-  static function new(string $id, bool $own=false): object # {{{
+  protected function _append(string &$data): int # {{{
   {
-    try
+    # check empty
+    if ($data === '') {
+      return 0;
+    }
+    # check current size of the buffer
+    if (($i = $this->_readSize()) === -1)
     {
-      # create new instance
-      $lock = new self(
-        $id, new SyncMutex($id),
-        new SyncEvent($id.'-1', 1, 0)
+      throw ErrorEx::fail(
+        class_name($this), $this->id,
+        'unable to append, buffer is overflowed'
       );
-      # take ownership over locked state
-      if ($own && $lock->e1->wait(0)) {
-        $lock->state = true;
-      }
-      return $lock;
+    }
+    # complete
+    return $this->_writeData($data, $i);
+  }
+  # }}}
+  # }}}
+  function &read(?object &$error=null): string # {{{
+  {
+    if (($data = &$this->readShared($error)) !== '') {
+      $this->clear($error);
+    }
+    return $data;
+  }
+  # }}}
+  function &readShared(?object &$error=null): string # {{{
+  {
+    try {
+      $data = &$this->_readData();
     }
     catch (Throwable $e)
     {
-      return ErrorEx::set($e, ErrorEx::fail(
-        class_basename(__CLASS__), $id
-      ));
+      $data = '';
+      ErrorEx::set($error, $e);
     }
+    return $data;
   }
   # }}}
-  protected function __construct(# {{{
-    public string $id,
-    public object $mx,
-    public object $e1,
-    public bool   $state = false
-  ) {}
-  # }}}
-  function get(): bool # {{{
+  function size(?object &$error=null): int # {{{
   {
-    return $this->state || $this->e1->wait(0);
-  }
-  # }}}
-  function set(?object &$error=null): bool # {{{
-  {
-    return $this->_state(true, $error);
-  }
-  # }}}
-  function setWait(int $ms, ?object &$error=null): bool # {{{
-  {
-    try {
-      return $this->_set($ms);
+    try
+    {
+      return ~($i = $this->_readSize())
+        ? $i : $this->sizeMax;
     }
     catch (Throwable $e) {
-      return ErrorEx::set($error, $e)->val(false);
+      return ErrorEx::set($error, $e)->val(-1);
+    }
+  }
+  # }}}
+  function write(string &$data, ?object &$error=null): int # {{{
+  {
+    try
+    {
+      return ($data === '')
+        ? 0 : $this->_writeData($data, 0);
+    }
+    catch (Throwable $e)
+    {
+      return ErrorEx
+        ::set($error, $e)
+        ->val(-1);
+    }
+  }
+  # }}}
+  function append(string &$data, ?object &$error=null): int # {{{
+  {
+    try {
+      return $this->_append($data);
+    }
+    catch (Throwable $e) {
+      return ErrorEx::set($error, $e)->val(-1);
     }
   }
   # }}}
   function clear(?object &$error=null): bool # {{{
   {
-    return $this->_state(false, $error);
-  }
-  # }}}
-  function clearForce(?object &$error=null): bool # {{{
-  {
-    try
-    {
-      $this->state = true;# pretend locked
-      return $this->_clear();
+    try {
+      return $this->_writeSize(0);
     }
     catch (Throwable $e) {
       return ErrorEx::set($error, $e)->val(false);
     }
   }
   # }}}
-  function _state(bool $state, ?object &$error): bool # {{{
+}
+# }}}
+# Flag/Lock {{{
+class SyncFlag # {{{
+{
+  # constructor {{{
+  static function new(string $id): object
   {
-    try
+    try {
+      return new static($id, new SyncEvent($id, 1, 0));
+    }
+    catch (Throwable $e)
     {
-      return $state
-        ? $this->_set()
-        : $this->_clear();
+      return ErrorEx::set($e, ErrorEx::fail(
+        class_basename(static::class), $id
+      ));
+    }
+  }
+  protected function __construct(
+    public string $id,
+    public object $event,
+    public bool   $state = false
+  ) {
+    $this->restruct();
+  }
+  protected function restruct(): void
+  {}
+  function __destruct() {
+    $this->clear();
+  }
+  # }}}
+  # api {{{
+  function sync(): bool {
+    return $this->state = $this->event->wait(0);
+  }
+  function get(): bool {
+    return $this->state || $this->event->wait(0);
+  }
+  function wait(int $ms=-1): bool {
+    return $this->state || $this->event->wait($ms);
+  }
+  function set(?object &$error=null): bool {
+    return $this->_trySet($error);
+  }
+  function setShared(?object &$error=null): bool {
+    return $this->_trySet($error, true);
+  }
+  function clear(?object &$error=null): bool {
+    return $this->_tryClear($error);
+  }
+  function clearShared(?object &$error=null): bool {
+    return $this->_tryClear($error, true);
+  }
+  # }}}
+  protected function _trySet(# {{{
+    ?object &$error, bool $shared=false
+  ):bool
+  {
+    try {
+      return $this->_set($shared);
     }
     catch (Throwable $e) {
       return ErrorEx::set($error, $e)->val(false);
     }
   }
   # }}}
-  function _set(int $wait=0): bool # {{{
+  protected function _tryClear(# {{{
+    ?object &$error, bool $shared=false
+  ):bool
   {
-    # check already locked
-    if ($this->state) {
+    try {
+      return $this->_clear($shared);
+    }
+    catch (Throwable $e) {
+      return ErrorEx::set($error, $e)->val(false);
+    }
+  }
+  # }}}
+  protected function _set(bool $shared): bool # {{{
+  {
+    # check already set
+    if ($this->get()) {
       return true;
     }
-    # try to lock
-    if (!$this->mx->lock($wait)) {
-      return false;
-    }
     # set event
-    if (!$this->e1->fire())
+    if (!$this->event->fire())
     {
-      $this->mx->unlock();
       throw ErrorEx::fail(
         class_name($this), $this->id,
         'SyncEvent::fire'
       );
     }
-    # complete
-    $this->state = true;
+    # set exclusive state
+    if (!$shared) {
+      $this->state = true;
+    }
+    # success
     return true;
   }
   # }}}
-  function _clear(): bool # {{{
+  protected function _clear(bool $shared): bool # {{{
+  {
+    # check not set by this instance
+    if (!$this->state)
+    {
+      # check not set
+      if (!$this->event->wait(0)) {
+        return true;# no need to clear
+      }
+      # set by another instance,
+      # deny exclusive access
+      if (!$shared) {
+        return false;
+      }
+    }
+    # clear
+    if (!$this->event->reset())
+    {
+      throw ErrorEx::fail(
+        class_name($this), $this->id,
+        'SyncEvent::reset'
+      );
+    }
+    # complete
+    $this->state = false;
+    return true;
+  }
+  # }}}
+}
+# }}}
+class SyncLock # {{{
+{
+  # constructor {{{
+  static function new(string $id): object
+  {
+    try
+    {
+      return new static($id,
+        new SyncSemaphore($id, 1, 0),
+        new SyncEvent($id.'-1', 1, 0)
+      );
+    }
+    catch (Throwable $e)
+    {
+      return ErrorEx::set($e, ErrorEx::fail(
+        class_basename(static::class), $id
+      ));
+    }
+  }
+  protected function __construct(
+    public string $id,
+    public object $sem,
+    public object $e1,
+    public bool   $state = false
+  ) {
+    $this->restruct();
+  }
+  protected function restruct(): void
+  {}
+  function __destruct() {
+    $this->clear();
+  }
+  # }}}
+  # hlp {{{
+  protected function _trySet(# {{{
+    ?object &$error, bool $shared=false, int $wait=0
+  ):bool
+  {
+    try {
+      return $this->_set($shared, $wait);
+    }
+    catch (Throwable $e) {
+      return ErrorEx::set($error, $e)->val(false);
+    }
+  }
+  # }}}
+  protected function _tryClear(# {{{
+    ?object &$error, bool $shared=false
+  ):bool
+  {
+    try {
+      return $this->_clear($shared);
+    }
+    catch (Throwable $e) {
+      return ErrorEx::set($error, $e)->val(false);
+    }
+  }
+  # }}}
+  protected function _set(bool $shared, int $wait): bool # {{{
+  {
+    # check already locked by this instance
+    if ($this->state) {
+      return true;
+    }
+    # try to lock
+    if (!$this->sem->lock($wait)) {
+      return false;
+    }
+    # set event
+    if (!$this->e1->fire())
+    {
+      $this->sem->unlock();
+      throw ErrorEx::fail(
+        class_name($this), $this->id,
+        'SyncEvent::fire'
+      );
+    }
+    # set state for exclusive (own) lock
+    if (!$shared) {
+      $this->state = true;
+    }
+    # complete
+    return true;
+  }
+  # }}}
+  protected function _clear(bool $shared): bool # {{{
   {
     # check not locked by this instance
     if (!$this->state)
     {
-      return $this->e1->wait(0)
-        ? false # locked by another instance
-        : true; # no need to clear
+      # check not locked
+      if (!$this->e1->wait(0)) {
+        return true;
+      }
+      # locked by another instance,
+      # deny exclusive access
+      if (!$shared) {
+        return false;
+      }
     }
     # clear event
     if (!$this->e1->reset())
@@ -360,11 +471,13 @@ class SyncLock # {{{
       );
     }
     # unlock
-    if (!$this->mx->unlock())
+    $i = -1;
+    if (!$this->sem->unlock($i))
     {
+      $this->e1->fire();
       throw ErrorEx::fail(
         class_name($this), $this->id,
-        'SyncMutex::unlock'
+        'SyncSemaphore::unlock', $i
       );
     }
     # complete
@@ -372,171 +485,961 @@ class SyncLock # {{{
     return true;
   }
   # }}}
+  # }}}
+  # api {{{
+  function sync(): bool {
+    return $this->state = $this->e1->wait(0);
+  }
+  function get(): bool {
+    return $this->state || $this->e1->wait(0);
+  }
+  function set(?object &$error=null): bool {
+    return $this->_trySet($error);
+  }
+  function setWait(int $ms=-1, ?object &$error=null): bool {
+    return $this->_trySet($error, false, $ms);
+  }
+  function setShared(?object &$error=null): bool {
+    return $this->_trySet($error, true);
+  }
+  function setSharedWait(int $ms=-1, ?object &$error=null): bool {
+    return $this->_trySet($error, true, $ms);
+  }
+  function clear(?object &$error=null): bool {
+    return $this->_tryClear($error);
+  }
+  function clearShared(?object &$error=null): bool {
+    return $this->_tryClear($error, true);
+  }
+  # }}}
 }
 # }}}
-class SyncLockFile # {{{
+abstract class SyncBaseFile # {{{
 {
-  static function new(# {{{
-    string $id, string $file, bool $own=false
-  ):object
+  # constructor {{{
+  static function new(string $id, string $dir): object
   {
     try
     {
+      $file = dir_file_path($dir, $id.'.sync');
       if (!dir_exists($file)) {
-        throw ErrorEx::fail('incorrect file path');
+        throw ErrorEx::fail('incorrect path');
       }
-      return new self(
-        ErrorEx::get(SyncLock::new($id, $own)), $file
+      return new static(
+        ErrorEx::peep(static::getBase($id)), $file
       );
     }
     catch (Throwable $e)
     {
       return ErrorEx::set($e, ErrorEx::fail(
-        class_basename(__CLASS__), $id, $file
+        class_basename(static::class), $id, $file
       ));
     }
   }
-  # }}}
-  protected function __construct(# {{{
-    public object $lock,
+  protected function __construct(
+    public object $base,
     public string $file
-  ) {}
+  ) {
+    $this->restruct();
+  }
+  protected function restruct(): void
+  {}
+  function __destruct() {
+    $this->clear();
+  }
   # }}}
-  function persist(): bool # {{{
-  {
+  # api {{{
+  function persist(): bool {
     return file_persist($this->file);
   }
-  # }}}
-  function get(): bool # {{{
-  {
-    return $this->lock->get();
+  function get(): bool {
+    return $this->base->get();
   }
-  # }}}
-  function set(?object &$error=null): bool # {{{
+  function set(?object &$error=null): bool
   {
     return (
-      $this->lock->set($error) &&
+      $this->base->set($error) &&
       file_touch($this->file, $error)
     );
   }
-  # }}}
-  function setWait(int $ms, ?object &$error=null): bool # {{{
+  function setShared(?object &$error=null): bool
   {
     return (
-      $this->lock->setWait($ms, $error) &&
+      $this->base->setShared($error) &&
       file_touch($this->file, $error)
     );
   }
-  # }}}
-  function clear(?object &$error=null): bool # {{{
+  function clear(?object &$error=null): bool
   {
     return (
-      $this->lock->clear($error) &&
+      $this->base->clear($error) &&
+      file_unlink($this->file, $error)
+    );
+  }
+  function clearShared(?object &$error=null): bool
+  {
+    return (
+      $this->base->clearShared($error) &&
       file_unlink($this->file, $error)
     );
   }
   # }}}
-  function clearForce(?object &$error=null): bool # {{{
+  abstract static function getBase(string $id): object;
+}
+# }}}
+class SyncFlagFile extends SyncBaseFile # {{{
+{
+  static function getBase(string $id): object {
+    return SyncFlag::new($id);
+  }
+}
+# }}}
+class SyncLockFile extends SyncBaseFile # {{{
+{
+  static function getBase(string $id): object {
+    return SyncLock::new($id);
+  }
+  function setWait(int $ms=-1, ?object &$error=null): bool
   {
-    $a = $this->lock->clearForce($error);
-    $b = file_unlink($this->file, $error);
-    return $a && $b;
+    return (
+      $this->base->setWait($ms, $error) &&
+      file_touch($this->file, $error)
+    );
+  }
+  function setSharedWait(int $ms=-1, ?object &$error=null): bool
+  {
+    return (
+      $this->base->setSharedWait($ms, $error) &&
+      file_touch($this->file, $error)
+    );
+  }
+}
+# }}}
+trait SyncBaseMaster # {{{
+{
+  protected function restruct(): void
+  {
+    static $ERR='master is already running';
+    if ($this->get()) {
+      throw ErrorEx::fail($ERR);
+    }
+    if (!$this->set($error)) {
+      throw $error;
+    }
+  }
+}
+# }}}
+trait SyncBaseFileMaster # {{{
+{
+  protected function restruct(): void
+  {
+    static $ERR='master is already running';
+    # check
+    if ($this->get())
+    {
+      # master is already set,
+      # abort when file persist or unable to clear
+      $e = null;
+      if ($this->persist() || !$this->clearShared($e)) {
+        throw ErrorEx::set($e, ErrorEx::fail($ERR));
+      }
+    }
+    # set
+    if (!$this->set($error)) {
+      throw $error;
+    }
+  }
+}
+# }}}
+class SyncFlagMaster extends SyncFlag {use SyncBaseMaster;}
+class SyncFlagFileMaster extends SyncFlagFile {use SyncBaseFileMaster;}
+class SyncLockMaster extends SyncLock {use SyncBaseMaster;}
+class SyncLockFileMaster extends SyncLockFile {use SyncBaseFileMaster;}
+# }}}
+# Readers-Writers
+abstract class SyncReaderWriter # {{{
+{
+  const
+    DEF_SIZE = 1000,
+    TIMEOUT  = 3*1000;# N*ms
+  ###
+  public int $time=0;
+  abstract static function new(array $o): object;
+  function __destruct() {
+    $this->close();
+  }
+  static function getId(array &$o): string # {{{
+  {
+    static $EXP_ID='/^[a-z0-9-]{1,64}$/i';
+    if (!($id = $o['id'] ?? '') === '') {
+      throw ErrorEx::fail('<id> is empty');
+    }
+    if (!preg_match($EXP_ID, $id)) {
+      throw ErrorEx::fail('<id> is incorrect', $id);
+    }
+    return $id;
+  }
+  # }}}
+  static function getDir(array &$o): string # {{{
+  {
+    if (!isset($o['dir'])) {
+      return '';
+    }
+    if (!is_string($dir = $o['dir'])) {
+      throw ErrorEx::fail('<dir> is incorrect');
+    }
+    if ($dir === '') {
+      $dir = sys_get_temp_dir();
+    }
+    return $dir;
+  }
+  # }}}
+  static function getSize(array &$o): int # {{{
+  {
+    if (!isset($o['size'])) {
+      return 0;
+    }
+    if (!is_int($i = $o['size']) || $i < 1) {
+      throw ErrorEx::fail('<size> is incorrect');
+    }
+    return $i;
+  }
+  # }}}
+  static function parseInfo(string &$s, ?object &$e): ?array # {{{
+  {
+    static $EXP_INFO = (
+      '/^'.
+      '([0-9]{1})'.         # case
+      ':([a-z0-9-]{1,128})'.# id
+      '(:(.+)){0,1}'.       # info
+      '$/i'
+    );
+    if (!preg_match($EXP_INFO, $s, $a))
+    {
+      ErrorEx::set($e, ErrorEx::fail(
+        'incorrect info ['.$s.']'
+      ));
+      return null;
+    }
+    return [intval($a[1]),$a[2],$a[4]??''];
+  }
+  # }}}
+  static function pid(): string # {{{
+  {
+    if (($i = getmypid()) === false) {
+      throw ErrorEx::fail('getmypid() has failed');
+    }
+    return strval($i);
+  }
+  # }}}
+  protected function timeout(int $ms=0, int $t=0): bool # {{{
+  {
+    $t = hrtime_delta_ms($this->time, $t);
+    return $ms
+      ? ($t > $ms)
+      : ($t > self::TIMEOUT);
+  }
+  # }}}
+  # api {{{
+  function &read(?object &$error=null): string {
+    $x = '';return $x;
+  }
+  function write(string &$data, ?object &$error=null): bool {
+    return true;
+  }
+  function flush(?object &$error=null): bool {
+    return true;
+  }
+  function close(?object &$error=null): bool {
+    return true;
   }
   # }}}
 }
 # }}}
-abstract class SyncInstance # {{{
+class SyncBroadcast extends SyncReaderWriter # {{{
 {
-  static function new(string $id, string $dir=''): object
+  # constructor {{{
+  static function new(array $o): object
   {
     try
     {
-      if ($dir === '') {
-        $dir = sys_get_temp_dir();
-      }
-      $file = dir_file_path($dir, $id);
-      $id0  = $id.'-status';
-      $id1  = $id.'-lock';
-      $inst = new static($id,
-        ErrorEx::get(SyncLockFile::new($id0, $file)),
-        ErrorEx::get(SyncLock::new($id1))
+      # prepare
+      $id  = self::getId($o);
+      $dir = self::getDir($o);
+      $id0 = $id.'-master';
+      $rid = $id.'-'.self::pid();
+      $id1 = $id.'-lock';
+      $id2 = $id.'-info';
+      # create master-writer flag
+      $writer = $dir
+        ? SyncFlagFile::new($id0, $dir)
+        : SyncFlag::new($id0);
+      $reader = $dir
+        ? SyncFlagFileMaster::new($rid, $dir)
+        : SyncFlagMaster::new($rid);
+      # construct
+      return new static(
+        $id, $rid, ErrorEx::peep($writer),
+        ErrorEx::peep($reader),
+        ErrorEx::peep(SyncLock::new($id1)),
+        ErrorEx::peep(SyncFlag::new($id2.'-1')),
+        ErrorEx::peep(SyncBuffer::new($id2, self::DEF_SIZE)),
+        ErrorEx::peep(SyncFlag::new($rid.'-1')),
+        null, $o['callback'] ?? null
       );
-      if (!$inst->init($error)) {
-        throw $error;
-      }
-      return $inst;
     }
     catch (Throwable $e)
     {
       return ErrorEx::set($e, ErrorEx::fail(
-        class_basename(__CLASS__), $id, $dir
+        class_basename(static::class), __FUNCTION__
       ));
     }
   }
   protected function __construct(
     public string  $id,
-    public ?object $status,
-    public ?object $lock
-  ) {}
-  function __destruct() {
-    $this->finit();
+    public string  $rid,
+    public ?object $writer,
+    public object  $reader,
+    public object  $lock,
+    public object  $infoFlag,
+    public object  $infoBuf,
+    public object  $dataFlag,
+    public ?object $dataBuf,
+    public ?object $callback,
+    public array   $queue  = [],
+    public int     $status = 0
+  ) {
+    $dataFlag->clearShared();
   }
-  ###
-  abstract function  init(?object &$error=null): bool;
-  abstract function finit(?object &$error=null): bool;
-}
-# }}}
-class SyncInstanceSlave extends SyncInstance # {{{
-{
-  function init(?object &$error=null): bool {
-    return true;# nothing special here
-  }
-  function finit(?object &$error=null): bool
+  # }}}
+  # hlp {{{
+  protected function isReady(?object &$error): bool # {{{
   {
-    if ($this->status)
-    {
-      # slave is supposed to use a lock,
-      # there is a chance it will forget to unlock
-      $a = $this->lock->clear($error);
-      $this->status = $this->lock = null;
-      return $a;
-    }
-    return true;
-  }
-}
-# }}}
-class SyncInstanceMaster extends SyncInstance # {{{
-{
-  function init(?object &$error=null): bool
-  {
-    # check persistence
-    while (($s = $this->status)->persist())
-    {
-      # when not locked, try to correct
-      if (!$s->get() && $s->clearForce($error)) {
+    $lock = false;
+    switch ($this->status) {
+    case -1:# hold {{{
+      if ($this->timeout()) {
+        $this->statusSet(0, 'retry', $error);
+      }
+      break;
+    # }}}
+    case  0:# registration {{{
+      # check, lock, re-check
+      if (!$this->writer->get()  ||
+          $this->infoFlag->get() ||
+          !($lock = $this->lock->set($error)) ||
+          !$this->writer->get()  ||
+          $this->infoFlag->get())
+      {
         break;
       }
-      return ErrorEx::set($error, ErrorEx::fail(
-        'instance is already running'
-      ))->val(false);
+      # write registration info
+      $a = '1:'.$this->rid;
+      if ($this->infoBuf->write($a, $error) < 0) {
+        break;
+      }
+      # enter next stage
+      $this->statusSet(1, '', $error);
+      break;
+    # }}}
+    case  1:# activation {{{
+      # check writer escaped or info flag cleared
+      if (!$this->writer->get() ||
+          !$this->infoFlag->get())
+      {
+        $this->statusSet(-1, 'escape', $error);
+        break;
+      }
+      # check no info arrived yet
+      if (!$this->dataFlag->get())
+      {
+        # check timed out
+        $this->timeout() &&
+        $this->statusSet(-1, 'timeout', $error);
+        break;
+      }
+      # try to lock
+      if (!($lock = $this->lock->set($error))) {
+        break;
+      }
+      # re-check
+      if (!$this->writer->get()   ||
+          !$this->infoFlag->get() ||
+          !$this->dataFlag->get())
+      {
+        $this->statusSet(-1, 'escape', $error);
+        break;
+      }
+      # ACTIVATE!
+      # read and parse info
+      $a = $this->infoBuf->read($error);
+      if ($a === '' || ($i = intval($a)) < 1)
+      {
+        ErrorEx::set($error, ErrorEx::fail(
+          'incorrect buffer size='.$a
+        ));
+        $this->statusSet(-1, 'fail', $error);
+        break;
+      }
+      # construct data buffer
+      if ($this->dataBuf === null ||
+          $this->dataBuf->sizeMax !== $i)
+      {
+        $o = SyncBuffer::new($this->id, $i);
+        if (ErrorEx::is($o))
+        {
+          ErrorEx::set($error, $o);
+          $this->statusSet(-1, 'fail', $error);
+          break;
+        }
+        $this->dataBuf = $o;
+      }
+      # report successful activation
+      $a = '2:'.$this->rid;
+      if ($this->infoBuf->write($a, $error) < 0)
+      {
+        $this->statusSet(-1, 'fail', $error);
+        break;
+      }
+      # enter next stage
+      $this->statusSet(2, '', $error);
+      break;
+    # }}}
+    case  2:# checking {{{
+      # check master-writer is running
+      if ($this->writer->get()) {
+        return true;
+      }
+      # get back to registration
+      $this->statusSet(-1, 'TEST', $error);
+      #$this->statusSet(0, 'escape', $error);
+      break;
+    # }}}
     }
-    # activate
-    return $s->set($error);
+    $lock && $this->lock->clear($error);
+    return false;
   }
-  function finit(?object &$error=null): bool
+  # }}}
+  protected function statusSet(# {{{
+    int $new, string $info, ?object &$error
+  ):void
   {
-    if ($this->status)
+    # leaving stage..
+    switch ($old = $this->status) {
+    case 1:
+      # should be set by the master
+      $this->dataFlag->clearShared($error);
+      break;
+    }
+    # entering stage..
+    switch ($new) {
+    case 1:
+      # should be cleared by the master
+      $this->infoFlag->setShared($error);
+      break;
+    }
+    $this->time   = hrtime(true);
+    $this->status = $new;
+    if ($f = $this->callback) {
+      $f($old, $info, $new);
+    }
+  }
+  # }}}
+  protected function infoWrite(# {{{
+    string &$data, ?object &$error
+  ):bool
+  {
+    $a = '4:'.$this->rid.':'.$data;
+    return (
+      ~$this->infoBuf->write($a, $error) &&
+      $this->infoFlag->setShared($error)
+    );
+  }
+  # }}}
+  # }}}
+  function write(string &$data, ?object &$error=null): bool # {{{
+  {
+    # check empty or closed
+    if ($data === '' || !$this->writer) {
+      return true;
+    }
+    # check not ready or unable to lock
+    $o = false;
+    if ($this->isReady($error)  &&
+        !$this->infoFlag->get() &&
+        ($o = $this->lock->set($error)) &&
+        $this->isReady($error)  &&
+        !$this->infoFlag->get())
     {
-      # deactivate
-      $a = $this->lock->clear($error);
-      $b = $this->status->clear($error);
-      $this->status = $this->lock = null;
-      return $a && $b;
+      $this->infoWrite($data, $error);
+    }
+    else {
+      $this->queue[] = $data;# postpone
+    }
+    # unlock and complete
+    $o && $this->lock->clear($error);
+    return $error === null;
+  }
+  # }}}
+  function &read(?object &$error=null): string # {{{
+  {
+    # prepare
+    $a = '';
+    $o = false;
+    # check, lock and re-check
+    if ($this->isReady($error) &&
+        $this->dataFlag->get() &&
+        ($o = $this->lock->set($error)) &&
+        $this->isReady($error) &&
+        $this->dataFlag->get())
+    {
+      # read and clear flag
+      $a = $this->dataBuf->readShared($error);
+      $this->dataFlag->clearShared($error);
+    }
+    # unlock and complete
+    $o && $this->lock->clear($error);
+    return $a;
+  }
+  # }}}
+  function flush(?object &$error=null): bool # {{{
+  {
+    if ($this->isReady($error)  &&
+        $this->queue            &&
+        !$this->infoFlag->get() &&
+        ($o = $this->lock->set($error)) &&
+        $this->isReady($error)  &&
+        !$this->infoFlag->get())
+    {
+      $data = array_shift($this->queue);
+      $this->infoWrite($data, $error);
+    }
+    return $error === null;
+  }
+  # }}}
+  function close(?object &$error=null): bool # {{{
+  {
+    # check already closed
+    if (!$this->writer) {
+      return true;
+    }
+    # try to close gracefully
+    if ($this->status === 2 &&
+        $this->lock->setWait(self::TIMEOUT, $error))
+    {
+      $a = '0:'.$this->rid;
+      $b = (
+        $this->writer->get()    &&
+        !$this->infoFlag->get() &&
+        ~$this->infoBuf->write($a, $error) &&
+        $this->infoFlag->setShared($error)
+      );
+      $this->lock->clear($error);
+    }
+    else {
+      $b = false;
+    }
+    # cleanup
+    $this->reader->clearShared($error);
+    $this->statusSet(-2, ($b ? 'graceful' : ''), $error);
+    $this->writer = null;
+    return $error === null;
+  }
+  # }}}
+}
+# }}}
+class SyncBroadcastMaster extends SyncReaderWriter # {{{
+{
+  # constructor {{{
+  static function new(array $o): object
+  {
+    try
+    {
+      # prepare
+      $id   = self::getId($o);
+      $dir  = self::getDir($o);
+      $size = self::getSize($o) ?: self::DEF_SIZE;
+      $id0  = $id.'-master';
+      $id1  = $id.'-lock';
+      $id2  = $id.'-info';
+      # create master-writer flag
+      $writer = $dir
+        ? SyncFlagFileMaster::new($id0, $dir)
+        : SyncFlagMaster::new($id0);
+      # construct
+      return new static(
+        $id, ErrorEx::peep($writer),
+        ErrorEx::peep(SyncLock::new($id1)),
+        ErrorEx::peep(SyncFlag::new($id2.'-1')),
+        ErrorEx::peep(SyncBuffer::new($id2, self::DEF_SIZE)),
+        ErrorEx::peep(SyncBuffer::new($id, $size)),
+        $o['callback'] ?? null
+      );
+    }
+    catch (Throwable $e)
+    {
+      return ErrorEx::set($e, ErrorEx::fail(
+        class_basename(static::class), __FUNCTION__
+      ));
+    }
+  }
+  protected function __construct(
+    public string  $id,
+    public ?object $writer,
+    public object  $lock,
+    public object  $infoFlag,
+    public object  $infoBuf,
+    public object  $dataBuf,
+    public ?object $callback,
+    public array   $queue  = [],
+    public array   $reader = [],
+    public string  $rid    = '',
+    public bool    $ready  = true
+  ) {}
+  # }}}
+  # hlp {{{
+  protected function isReady(?object &$error): bool # {{{
+  {
+    # check shortcut flag
+    if ($this->ready) {
+      return true;# no need to check readers
+    }
+    # check all readers
+    $t = hrtime(true);
+    $f = $this->callback;
+    $x = 0;
+    foreach ($this->reader as $id => &$a)
+    {
+      # check escape (closed without notifying)
+      if (!$a[0]->get())
+      {
+        unset($this->reader[$id]);
+        $f && $f(0, $id, 'escape');
+      }
+      # check not pending
+      if (!$a[1]->get()) {
+        continue;
+      }
+      # check timed out
+      if (hrtime_delta_ms($a[2], $t) > self::TIMEOUT)
+      {
+        $a[0]->clearShared($error);
+        $a[1]->clearShared($error);
+        unset($this->reader[$id]);
+        $f && $f(0, $id, 'timeout');
+      }
+      else {
+        $x++;# count pending
+      }
+    }
+    # check at least one is pending
+    if ($x) {
+      return false;
+    }
+    # invoke user callback
+    if ($f)
+    {
+      # count and reset readers that have read
+      foreach ($this->reader as &$a)
+      {
+        if ($a[2])
+        {
+          $x++;
+          $a[2] = 0;
+        }
+      }
+      $f(3, '*', strval($x));
+    }
+    # set ready and complete
+    return $this->ready = true;
+  }
+  # }}}
+  protected function dataWrite(# {{{
+    string &$data, ?array $ids, ?object &$error
+  ):bool
+  {
+    # check data fits into buffer
+    $i = strlen($data);
+    $j = $this->dataBuf->sizeMax;
+    if ($i > $j)
+    {
+      $e = ErrorEx::warn(
+        'unable to fit the data('.$i.') '.
+        'into the buffer('.$j.')'
+      );
+      return ErrorEx
+        ::set($error, $e)
+        ->val(false);
+    }
+    # write and check failed
+    if ($this->dataBuf->write($data, $error) === -1) {
+      return false;
+    }
+    # enter pending state
+    $this->ready = false;
+    $t = hrtime(true);
+    if ($ids)
+    {
+      # selected
+      foreach ($this->reader as $id => &$a)
+      {
+        if (in_array($id, $ids, true))
+        {
+          $a[1]->setShared($error);
+          $a[2] = $t;
+        }
+      }
+    }
+    else
+    {
+      # all
+      foreach ($this->reader as &$a)
+      {
+        $a[1]->setShared($error);
+        $a[2] = $t;
+      }
     }
     return true;
   }
+  # }}}
+  protected function infoRead(?object &$error): ?array # {{{
+  {
+    # read and parse info
+    if (($a = $this->infoBuf->read($error)) &&
+        ($b = self::parseInfo($a, $error)))
+    {
+      return $b;
+    }
+    return null;
+  }
+  # }}}
+  protected function readerWait(?object &$error): int # {{{
+  {
+    # prepare
+    $id     = $this->rid;
+    $reader = &$this->reader[$id];
+    $fn     = $this->callback;
+    # check aborted
+    if (!$reader[0]->get() ||
+        !$this->infoFlag->get())
+    {
+      $fn && $fn(0, $id, 'escape');
+      return -1;
+    }
+    # check pending
+    if ($reader[1]->get())
+    {
+      # check not timed out
+      if (!$this->timeout()) {
+        return 0;
+      }
+      # cancel
+      $fn && $fn(0, $id, 'timeout');
+      return -1;
+    }
+    # check successful
+    if (!($a = $this->infoRead($error)) ||
+        $a[0] !== 2 || $a[1] !== $id)
+    {
+      $fn && $fn(0, $id, 'fail');
+      return -1;
+    }
+    # complete
+    $fn && $fn(2, $id, '');
+    return 1;
+  }
+  # }}}
+  protected function readerEvent(?object &$error): bool # {{{
+  {
+    # prepare
+    if (!($info = $this->infoRead($error))) {
+      return true;
+    }
+    $case = $info[0];
+    $id   = $info[1];
+    # check reader exists
+    if ($case !== 1 && !isset($this->reader[$id]))
+    {
+      ErrorEx::set($error, ErrorEx::warn(
+        'reader='.$id.' is not registered'
+      ));
+      return true;
+    }
+    # operate
+    switch ($case) {
+    case 0:
+      # reader deactivation,
+      # remove it from the storage
+      unset($this->reader[$id]);
+      break;
+    case 1:
+      # reader registration,
+      # create reader flags [running,pending,ts]
+      $reader = [null,null,0];
+      $reader[0] = $e = SyncFlag::new($id);
+      if (ErrorEx::is($e)) {
+        return ErrorEx::set($error, $e)->val(true);
+      }
+      if (!$e->get())
+      {
+        ErrorEx::set($error, ErrorEx::warn(
+          'reader='.$id.' is not running'
+        ));
+        return true;
+      }
+      $reader[1] = $e = SyncFlag::new($id.'-1');
+      if (ErrorEx::is($e)) {
+        return ErrorEx::set($error, $e)->val(true);
+      }
+      if (!$e->setShared($error)) {
+        return true;
+      }
+      # to complete registration,
+      # reader have to read the size of the buffer,
+      # as it doesnt have the buffer,
+      # the size is placed into the info buffer
+      $a = strval($this->dataBuf->sizeMax);
+      if (!$this->infoBuf->write($a, $error)) {
+        return true;
+      }
+      # initiate the request
+      $this->reader[$id] = $reader;
+      $this->rid  = $id;
+      $this->time = hrtime(true);
+      break;
+    case 4:
+      # custom info
+      break;
+    default:
+      ErrorEx::set($error, ErrorEx::warn(
+        'unknown case='.$case.
+        ' from the reader='.$id
+      ));
+      return true;
+    }
+    # invoke user callback
+    if ($f = $this->callback) {
+      $f($case, $id, $info[2]);
+    }
+    # complete
+    return $case !== 1;
+  }
+  # }}}
+  protected function flushReader(?object &$error): bool # {{{
+  {
+    if ($this->time === 0) {
+      return true;
+    }
+    if ($this->lock->set($error))
+    {
+      switch ($this->readerWait($error)) {
+      case -1:# failed
+        unset($this->reader[$this->rid]);
+      case  1:# succeed
+        $this->time = 0;
+        $this->infoFlag->clearShared($error);
+        break;
+      }
+      $this->lock->clear($error);
+    }
+    return false;
+  }
+  # }}}
+  protected function flushInfo(?object &$error): bool # {{{
+  {
+    if (!$this->infoFlag->get()) {
+      return true;
+    }
+    if ($this->lock->set($error))
+    {
+      $this->infoFlag->get()     &&
+      $this->readerEvent($error) &&
+      $this->infoFlag->clearShared($error);
+      $this->lock->clear($error);
+    }
+    return false;
+  }
+  # }}}
+  protected function flushQueue(?object &$error): bool # {{{
+  {
+    # check ready and drain queue
+    if ($this->isReady($error) && $this->queue)
+    {
+      $a = array_shift($this->queue);
+      $this->dataWrite($a[0], $a[1], $error);
+    }
+    return true;
+  }
+  # }}}
+  # }}}
+  function write(string &$data, ?object &$error=null): bool # {{{
+  {
+    # check empty or closed
+    if ($data === '' || !$this->writer) {
+      return true;
+    }
+    # check not ready or unable to lock
+    if ($this->time ||
+        !$this->isReady($error) ||
+        !$this->lock->set($error))
+    {
+      $this->queue[] = [$data,null];# postpone
+      return $error === null;
+    }
+    # write, unlock and complete
+    $this->dataWrite($data, null, $error);
+    $this->lock->clear($error);
+    return $error === null;
+  }
+  # }}}
+  function flush(?object &$error=null): bool # {{{
+  {
+    # check closed
+    if (!$this->writer) {
+      return true;
+    }
+    # operate
+    $this->flushReader($error) &&
+    $this->flushInfo($error)   &&
+    $this->flushQueue($error);
+    # complete
+    return $error === null;
+  }
+  # }}}
+  function close(?object &$error=null): bool # {{{
+  {
+    # check already closed
+    if (!$this->writer) {
+      return true;
+    }
+    # lock insistently
+    while (!$this->lock->setWait(self::TIMEOUT, $error)) {
+      $this->lock->clearShared($error);
+    }
+    # reset all readers
+    if (!$this->ready)
+    {
+      foreach ($this->reader as &$a) {
+        $a[1]->clearShared($error);
+      }
+    }
+    # discard info and data
+    $this->infoFlag->clearShared($error);
+    $this->infoBuf->clear($error);
+    $this->dataBuf->clear($error);
+    # clear own running flag and unlock
+    $this->writer->clear($error);
+    $this->lock->clear($error);
+    # cleanup
+    $this->reader = $this->queue = [];
+    $this->master = null;
+    return $error === null;
+  }
+  # }}}
 }
 # }}}
+/***
+### SyncAggregate: MasterReader-SlaveWriters
 abstract class SyncR1WN # {{{
 {
   static function new(
@@ -548,15 +1451,16 @@ abstract class SyncR1WN # {{{
       $id0 = $id.'-reader';
       $id1 = $id.'-lock';
       return new static(
-        ErrorEx::get(static::newReader($id0, $dir)),
-        ErrorEx::get(SyncLock::new($id1)),
-        ErrorEx::get(SyncBuffer::new($id, $size))
+        ErrorEx::peep(static::newReader($id0, $dir)),
+        ErrorEx::peep(SyncLock::new($id1)),
+        ErrorEx::peep(SyncBuffer::new($id, $size))
       );
     }
     catch (Throwable $e)
     {
       return ErrorEx::set($e, ErrorEx::fail(
-        class_basename(__CLASS__), $id, strlen($size)
+        class_basename(static::class),
+        $id, strval($size)
       ));
     }
   }
@@ -642,7 +1546,7 @@ class SyncR1WN_Reader extends SyncR1WN # {{{
     if ($this->reader)
     {
       $this->read($error);
-      return ($error === null);
+      return $error === null;
     }
     return false;
   }
@@ -651,14 +1555,12 @@ class SyncR1WN_Reader extends SyncR1WN # {{{
   {
     if ($this->reader)
     {
-      echo '[DEACTIVATION]';
-      $a = $this->lock->setWait(3000, $error);
-      var_dump($a);
+      $this->lock->setWait(3000, $error);
       $this->reader->finit($error);
       $this->buf->clear($error);
       $this->lock->clear($error);
       $this->reader = null;
-      return ($error === null);
+      return $error === null;
     }
     return true;
   }
@@ -694,7 +1596,7 @@ class SyncR1WN_Writer extends SyncR1WN # {{{
         !$this->lock->set($error))
     {
       $this->data .= $data;
-      return ($error === null);
+      return $error === null;
     }
     # write, unlock and complete
     $a = $this->_write($data, $error);
@@ -730,7 +1632,7 @@ class SyncR1WN_Writer extends SyncR1WN # {{{
       # as this instance is the only writer,
       # lock more insistently
       if (!$this->lock->setWait(100, $error)) {
-        return ($error === null);
+        return $error === null;
       }
       # check anything left to drain or
       # anything is still in the buffer
@@ -745,7 +1647,7 @@ class SyncR1WN_Writer extends SyncR1WN # {{{
     {
       # lock and drain accumulated data
       if (!$this->lock->set($error)) {
-        return ($error === null);
+        return $error === null;
       }
       if ($this->_write($this->data, $error)) {
         $this->data = '';
@@ -753,7 +1655,7 @@ class SyncR1WN_Writer extends SyncR1WN # {{{
     }
     # unlock and complete
     $this->lock->clear($error);
-    return ($error === null);
+    return $error === null;
   }
   # }}}
   function _write(string &$data, ?object &$error): bool # {{{
@@ -806,7 +1708,6 @@ class SyncR1WN_Writer extends SyncR1WN # {{{
   # }}}
 }
 # }}}
-/***
 class Syncbuf # {{{
 {
   public $membuf,$rEvent,$wEvent,$timeout;
@@ -866,6 +1767,63 @@ class Syncbuf # {{{
     $this->wEvent->reset();
     $this->rEvent->reset();
     $this->membuf->reset();
+  }
+  # }}}
+}
+# }}}
+class SyncExchange extends SyncReaderWriter # {{{
+{
+  # constructor {{{
+  static function new(array $o): object
+  {
+    try
+    {
+      # prepare
+      $id   = self::getId($o);
+      $dir  = self::getDir($o);
+      $size = self::getSize($o) ?? self::DEF_SIZE;
+      # create objects
+      $flag = $dir
+        ? SyncFlagFile::new($id.'-1', $dir)
+        : SyncFlag::new($id.'-1');
+      $lock = $dir
+        ? SyncLockFile::new($id.'-2', $dir)
+        : SyncLock::new($id.'-2');
+      # construct
+      return new static($id,
+        ErrorEx::peep(SyncBuffer::new($id, $size)),
+        ErrorEx::peep($flag), ErrorEx::peep($lock)
+      );
+    }
+    catch (Throwable $e)
+    {
+      return ErrorEx::set($e, ErrorEx::fail(
+        class_basename(static::class), __FUNCTION__
+      ));
+    }
+  }
+  protected function __construct(
+    public string $id,
+    public object $buf,
+    public object $flag,
+    public object $lock,
+    public int    $ts = 0
+  ) {}
+  # }}}
+  function &read(?object &$error=null): string # {{{
+  {
+  }
+  # }}}
+  function write(string &$data, ?object &$error=null): bool # {{{
+  {
+  }
+  # }}}
+  function flush(?object &$error=null): bool # {{{
+  {
+  }
+  # }}}
+  function close(?object &$error=null): bool # {{{
+  {
   }
   # }}}
 }

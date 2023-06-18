@@ -11,10 +11,10 @@ use function
   json_encode,json_decode,json_last_error,json_last_error_msg,
   preg_replace,
   ### filesystem
-  is_file,file_put_contents,file_get_contents,clearstatcache,
+  is_file,is_dir,file_put_contents,file_get_contents,clearstatcache,
   file_exists,unlink,filectime,filemtime,mkdir,touch,
   ### other
-  get_parent_class;
+  get_parent_class,hrtime;
 use const
   JSON_UNESCAPED_UNICODE,JSON_INVALID_UTF8_IGNORE,JSON_ERROR_NONE,
   PHP_OS_FAMILY,DIRECTORY_SEPARATOR;
@@ -234,7 +234,7 @@ function dir_path(string $path, int $level = 1): string # {{{
 # }}}
 function dir_exists(string $path): bool # {{{
 {
-  if (file_exists($path)) {
+  if (is_dir($path)) {
     return true;
   }
   if (($dir = dir_path($path)) === '') {
@@ -328,6 +328,24 @@ function json_error(): string # {{{
 {
   return (json_last_error() !== JSON_ERROR_NONE)
     ? json_last_error_msg() : '';
+}
+# }}}
+# }}}
+# other {{{
+function hrtime_delta_ms(int $t0, int $t1=0): int # {{{
+{
+  if ($t1 < 1) {
+    $t1 = hrtime(true);
+  }
+  $t0 = ($t1 > $t0)
+    ? $t1 - $t0
+    : $t0 - $t1;
+  return (int)($t0 / 1000000);
+}
+# }}}
+function hrtime_add_ms(int $t, int $ms): int # {{{
+{
+  return $t + $ms * 1000000; # milli => nano
 }
 # }}}
 # }}}

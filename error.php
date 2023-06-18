@@ -1,7 +1,10 @@
 <?php declare(strict_types=1);
 namespace SM;
 use Error,Throwable;
-use function class_alias,is_object,implode,count,array_unshift;
+use function
+  class_alias,is_object,implode,count,
+  array_unshift,array_reverse;
+###
 class ErrorEx extends Error
 {
   const # {{{
@@ -49,10 +52,13 @@ class ErrorEx extends Error
     }
     return $e;
   }
-  static function set(?object &$x, object $e): self {
-    return $x = self::from($e)->last($x);
+  static function set(?object &$x, object ...$ee): self
+  {
+    $e = (count($ee) === 1)
+      ? self::from($ee[0])
+      : self::chain(...array_reverse($ee));
+    return $x = $e->last($x);
   }
-  ###
   static function skip(): self {
     return new self(0);
   }
@@ -129,17 +135,21 @@ class ErrorEx extends Error
         : $default);
   }
   # }}}
-  function last(?self $e): self # {{{
+  function last(?object $e = null): self # {{{
   {
-    # seek to the last error
+    # check
+    if (($i = func_num_args()) && !$e) {
+      return $this;
+    }
+    # seek the last error
     $last = $this;
     while ($next = $last->next) {
       $last = $next;
     }
     # complete as setter
-    if ($e)
+    if ($i)
     {
-      $last->next = $e;
+      $last->next = self::from($e);
       return $this;
     }
     # complete as getter
@@ -158,7 +168,7 @@ class ErrorEx extends Error
   static function is(mixed $e): bool {
     return $e && is_object($e) && ($e instanceof self);
   }
-  static function get(?object $e): object
+  static function peep(?object $e): object
   {
     if ($e === null)  {throw self::skip();}
     if (self::is($e)) {throw $e;}
