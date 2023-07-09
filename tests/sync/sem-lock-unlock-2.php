@@ -1,15 +1,16 @@
-<?php
+<?php declare(strict_types=1);
 namespace SM;
 use SyncSemaphore;
 require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
 require_once DIR_SM_UTILS.'conio.php';
 ###
-$o = new SyncSemaphore('sem-lock-unlock', 1, false);
+$o = new SyncSemaphore('sem-lock-unlock', 1, 0);
 echo "press [l] to lock, [u] to unlock, [q] to quit..\n";
 while (1)
 {
-  # check for termination
-  switch (Conio::getch()) {
+  switch (Conio::getch_wait()) {
+  case 'q':
+    break 2;
   case 'l':
     if ($o->lock(0)) {
       echo "lock: ok\n";
@@ -27,10 +28,7 @@ while (1)
       echo "unlock: failed($i)\n";
     }
     break;
-  case 'q':
-    echo "\n";
-    exit(0);
-    break;
   }
 }
+echo "\n";
 

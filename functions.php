@@ -14,7 +14,7 @@ use function
   is_file,is_dir,file_put_contents,file_get_contents,clearstatcache,
   file_exists,unlink,filectime,filemtime,mkdir,touch,
   ### other
-  get_parent_class,hrtime;
+  get_parent_class,hrtime,getmypid;
 use const
   JSON_UNESCAPED_UNICODE,JSON_INVALID_UTF8_IGNORE,JSON_ERROR_NONE,
   PHP_OS_FAMILY,DIRECTORY_SEPARATOR;
@@ -89,21 +89,24 @@ function file_persist(string &$file): bool # {{{
   return file_exists($file);
 }
 # }}}
-function file_unlink(string $file, ?object &$error = null): bool # {{{
+function file_unlink(string $file, ?object &$error=null): bool # {{{
 {
   try
   {
-    if (file_persist($file) && !is_file($file))
+    if (file_persist($file))
     {
-      return ErrorEx::set($error, ErrorEx::fail(
-        __FUNCTION__, $file, 'not a file'
-      ))->val(false);
-    }
-    if (!unlink($file))
-    {
-      return ErrorEx::set($error, ErrorEx::fail(
-        __FUNCTION__, $file
-      ))->val(false);
+      if (!is_file($file))
+      {
+        throw ErrorEx::fail(
+          __FUNCTION__, $file, 'not a file'
+        );
+      }
+      if (!unlink($file))
+      {
+        throw ErrorEx::fail(
+          __FUNCTION__, $file
+        );
+      }
     }
     return true;
   }
@@ -112,21 +115,21 @@ function file_unlink(string $file, ?object &$error = null): bool # {{{
   }
 }
 # }}}
-function file_touch(string $file, ?object &$error = null): bool # {{{
+function file_touch(string $file, ?object &$error=null): bool # {{{
 {
   try
   {
     if (file_persist($file) && !is_file($file))
     {
-      return ErrorEx::set($error, ErrorEx::fail(
+      throw ErrorEx::fail(
         __FUNCTION__, $file, 'not a file'
-      ))->val(false);
+      );
     }
     if (!touch($file))
     {
-      return ErrorEx::set($error, ErrorEx::fail(
+      throw ErrorEx::fail(
         __FUNCTION__, $file
-      ))->val(false);
+      );
     }
     return true;
   }
@@ -343,9 +346,26 @@ function hrtime_delta_ms(int $t0, int $t1=0): int # {{{
   return (int)($t0 / 1000000);
 }
 # }}}
+function hrtime_expired(int $ms, int $t0, int $t1=0): bool # {{{
+{
+  return hrtime_delta_ms($t0, $t1) > $ms;
+}
+# }}}
 function hrtime_add_ms(int $t, int $ms): int # {{{
 {
   return $t + $ms * 1000000; # milli => nano
+}
+# }}}
+function proc_id(): string # {{{
+{
+  static $id=null;
+  if ($id === null)
+  {
+    $id = ($i = getmypid())
+      ? strval($i)
+      : '';
+  }
+  return $id;
 }
 # }}}
 # }}}

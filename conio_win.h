@@ -12,10 +12,10 @@ in the buffer. The program can then call _getch or _getche
 to get the keystroke.
 */
 
-int _getch(void);// unicode's better
+//int _getch(void);// unicode's better
 int _getwch(void);
-int _getch_nolock(void);// still locks!?
-int _getwch_nolock(void);
+//int _getch_nolock(void);// still locks!?
+//int _getwch_nolock(void);
 /*
 Return value
 Returns the character read. There's no error return.
@@ -36,10 +36,10 @@ single-threaded applications or where the calling scope
 already handles thread isolation.
 */
 
-int _putch(int);
+//int _putch(int);
 int _putwch(int);
-int _putch_nolock(int);
-int _putwch_nolock(int);
+//int _putch_nolock(int);
+//int _putwch_nolock(int);
 /*
 Return value
 Returns c if successful. If _putch fails,
@@ -91,4 +91,17 @@ repeats the last entered entry.
 By default, this function's global state is scoped to the application.
 To change this behavior, see Global state in the CRT.
 */
+
+//define _IOFBF 0 /* Fully buffered  */
+//define _IOLBF 1 /* Line buffered   */
+//define _IONBF 2 /* No buffering    */
+//int setvbuf(FILE *stream, char *buffer, int mode, int size);
+//int setvbuf(char*,char*,int,int);
+/*
+*/
+
+
+
+
+
 

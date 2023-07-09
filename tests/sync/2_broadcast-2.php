@@ -9,14 +9,15 @@ require_once DIR_SM_UTILS.'sync.php';
 # buffer <size> is optional, it will be negotiated anyway
 $o = SyncBroadcast::new([
   'id'       => 'test-broadcast',
-  'callback' => (function(int $s0, string $info, int $s1): void
+  'callback' => (function(int $s0, int $s1, string $info): void
   {
     static $STATUS = [
       -2 => 'closed',
       -1 => 'on hold',
-      0  => 'registration',
-      1  => 'activation',
-      2  => 'reading..',
+      0  => 'initiation',
+      1  => 'registration',
+      2  => 'activation',
+      3  => 'reading..',
     ];
     echo '> status: '.$STATUS[$s0].' => '.$STATUS[$s1];
     echo ($info ? ' ('.$info.')' : '')."\n";
@@ -36,7 +37,7 @@ $w = 'a message from the reader';
 while (1)
 {
   # operate
-  switch (Conio::getch_nowait()) {
+  switch (Conio::getch()) {
   case 'w':
     echo '> write: '.$w."\n";
     if (!$o->write($w, $e)) {

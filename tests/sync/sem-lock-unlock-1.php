@@ -1,10 +1,10 @@
-<?php
+<?php declare(strict_types=1);
 namespace SM;
 use SyncSemaphore;
 require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
 require_once DIR_SM_UTILS.'conio.php';
 ###
-$o = new SyncSemaphore('sem-lock-unlock', 1, false);
+$o = new SyncSemaphore('sem-lock-unlock', 1, 0);
 echo "locking.. ";
 if (!$o->lock(-1)) {
   echo "failed!\n";
@@ -13,7 +13,7 @@ echo "ok, waiting\n";
 while (1)
 {
   # check for termination
-  if (Conio::getch_nowait() === 'q') {
+  if (Conio::getch() === 'q') {
     break;
   }
   # take a rest

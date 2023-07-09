@@ -6,15 +6,15 @@ require_once DIR_SM_UTILS.'conio.php';
 echo "press [q] to quit\n";
 while (1)
 {
-  # wait for input
-  while (!Conio::kbhit()) {
-    echo '.';usleep(100000);
-  }
-  # print
-  $c = Conio::getch();
-  echo '['.$c.']';
-  # check for termination
-  if ($c === 'q') {
+  switch ($c = Conio::getch()) {
+  case 'q':
+    break 2;
+  case '':
+    echo '.';
+    usleep(100000);
+    break;
+  default:
+    echo '['.$c.']';
     break;
   }
 }

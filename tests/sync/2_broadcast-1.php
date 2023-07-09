@@ -35,31 +35,29 @@ if (ErrorEx::is($o))
   var_dump($o);
   exit(1);
 }
-echo "broadcast master started\n";
+exit(1);
+echo "SyncBroadcastMaster started\n";
 echo "press [w] to write, [q] to quit\n";
 $m = 'a message from the master';
 while (1)
 {
-  # operate
-  switch (Conio::getch_nowait()) {
-  case 'w':
-    echo '> write: '.$m."\n";
-    if (!$o->write($m, $e))
-    {
-      var_dump($e);
-      break 2;
-    }
-    break;
+  switch (Conio::getch()) {
   case 'q':
     echo "> quit\n";
     break 2;
+  case 'w':
+    echo '> write: '.$m."\n";
+    if (!$o->write($m, $e)) {
+      break 2;
+    }
+    break;
   case '':
+    # execute periodics
+    if (!$o->flush($e)) {
+      break 2;
+    }
     # take a rest
     usleep(100000);# 100ms
-    break;
-  }
-  # execute periodics
-  if (!$o->flush($e)) {
     break;
   }
 }
@@ -70,6 +68,6 @@ if ($e)
   echo "=ERROR=\n";
   var_dump($e);
   echo "\npress any key to quit..";
-  Conio::getch();
+  Conio::getch_wait();
 }
 

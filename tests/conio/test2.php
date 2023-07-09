@@ -8,7 +8,7 @@ while(1)
 {
   # get character from the console and
   # check it is a keycode
-  if (Conio::is_keycode($c = Conio::getch()))
+  if (Conio::is_keycode($c = Conio::getch_wait()))
   {
     # convert into array for convinience
     $a = Conio::to_keycode($c);

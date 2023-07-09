@@ -18,27 +18,30 @@ abstract class ConioBase
 {
   # common {{{
   static $error;
-  protected static $con,$init=false;
+  protected static $con,$ready=false;
   protected function __construct() {}
   abstract static function check(): bool;
   abstract static function init(): bool;
   abstract static function kbhit(): bool;
-  abstract static function getch_nowait(): string;
   abstract static function getch(): string;
+  abstract static function getch_wait(): string;
   abstract static function putch(string $c): bool;
   # }}}
   # hlp {{{
-  static function is_keycode(string $c): bool
+  static function is_keycode(string $c): bool # {{{
   {
     return (
       strlen($c) === 2 &&
       ($c[0] === "\x00" || $c[0] === "\xE0")
     );
   }
-  static function to_keycode(string $c): array {
+  # }}}
+  static function to_keycode(string $c): array # {{{
+  {
     return [ord($c[0]), ord($c[1])];
   }
-  static function int2ch(int $i): string
+  # }}}
+  static function int2ch(int $i): string # {{{
   {
     if ($i <= 255) {
       return chr($i);
@@ -50,7 +53,8 @@ abstract class ConioBase
     }
     return $c;
   }
-  static function ch2int(string $c): int
+  # }}}
+  static function ch2int(string $c): int # {{{
   {
     switch (strlen($c)) {
     case 0:
@@ -66,10 +70,11 @@ abstract class ConioBase
     return $i;
   }
   # }}}
+  # }}}
 }
 class ConioWin extends ConioBase
 {
-  const FILE = __DIR__.DIRECTORY_SEPARATOR.'conio.h';
+  const FILE = __DIR__.DIRECTORY_SEPARATOR.'conio_win.h';
   static function check(): bool # {{{
   {
     if (!class_exists('FFI'))
@@ -92,10 +97,12 @@ class ConioWin extends ConioBase
   # }}}
   static function init(): bool # {{{
   {
-    if (self::$init || !self::check()) {return false;}
+    if (self::$ready || !self::check()) {
+      return false;
+    }
     try
     {
-      self::$init  = true;
+      self::$ready = true;
       self::$con   = FFI::load(self::FILE);
     }
     catch (Throwable $e)
@@ -106,20 +113,25 @@ class ConioWin extends ConioBase
     return !!self::$con;
   }
   # }}}
-  # conio {{{
-  static function kbhit(): bool {
+  static function kbhit(): bool # {{{
+  {
     return self::$con->_kbhit() !== 0;
   }
-  static function getch_nowait(): string {
-    return self::$con->_kbhit() ? self::getch() : '';
+  # }}}
+  static function getch(): string # {{{
+  {
+    return self::$con->_kbhit()
+      ? self::getch_wait()
+      : '';
   }
-  static function getch(): string
+  # }}}
+  static function getch_wait(): string # {{{
   {
     try
     {
-      $i = self::$con->_getwch_nolock();
+      $i = self::$con->_getwch();
       return ($i === 0 || $i === 224)
-        ? chr($i).chr(self::$con->_getwch_nolock())
+        ? chr($i).chr(self::$con->_getwch())
         : self::int2ch($i);
     }
     catch (Throwable $e)
@@ -128,12 +140,13 @@ class ConioWin extends ConioBase
       return '';
     }
   }
-  static function putch(string $c): bool
+  # }}}
+  static function putch(string $c): bool # {{{
   {
     try
     {
       return ~($i = self::ch2int($c))
-        ? (self::$con->_putwch_nolock($i) === $i)
+        ? (self::$con->_putwch($i) === $i)
         : false;
     }
     catch (Throwable $e)

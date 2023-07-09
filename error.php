@@ -3,7 +3,7 @@ namespace SM;
 use Error,Throwable;
 use function
   class_alias,is_object,implode,count,
-  array_unshift,array_reverse;
+  array_unshift,array_reverse,is_string,strval;
 ###
 class ErrorEx extends Error
 {
@@ -62,16 +62,16 @@ class ErrorEx extends Error
   static function skip(): self {
     return new self(0);
   }
-  static function info(string ...$msg): self {
+  static function info(...$msg): self {
     return new self(0, $msg);
   }
-  static function warn(string ...$msg): self {
+  static function warn(...$msg): self {
     return new self(1, $msg);
   }
-  static function fail(string ...$msg): self {
+  static function fail(...$msg): self {
     return new self(2, $msg);
   }
-  static function failFn(string ...$msg): self
+  static function failFn(...$msg): self
   {
     # prefix messages with the point of failure
     $e = new self(2, $msg);
@@ -94,6 +94,9 @@ class ErrorEx extends Error
     public mixed   $value = null,
     public ?object $next  = null
   ) {
+    foreach ($msg as &$m) {
+      if (!is_string($m)) {$m = strval($m);}
+    }
     parent::__construct('', -1);
   }
   # }}}
@@ -164,7 +167,7 @@ class ErrorEx extends Error
     return $x;
   }
   # }}}
-  # util {{{
+  # other {{{
   static function is(mixed $e): bool {
     return $e && is_object($e) && ($e instanceof self);
   }
