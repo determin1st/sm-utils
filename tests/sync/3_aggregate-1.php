@@ -16,32 +16,33 @@ if (ErrorEx::is($o))
   var_dump($o);
   exit(1);
 }
-echo "aggregate master started\n";
-echo "press [q] to quit\n";
+$I = 'SyncAggregateMaster•'.proc_id();
+cli_set_process_title($I);
+echo $I." started\n";
+echo "[1] to enable/disable writing\n";
+echo "[q] to quit\n\n";
 while (1)
 {
-  # operate
   switch (Conio::getch()) {
   case 'q':
     echo "> quit\n";
     break 2;
+  case '1':
+    break;
   case '':
-    # take a rest
+    if (!$o->flush($e)) {
+      break 2;
+    }
     usleep(100000);# 100ms
     break;
   }
-  # execute periodics
-  if (!$o->flush($e)) {
-    break;
-  }
 }
-# terminate
 $o->close($e);
 if ($e)
 {
   echo "=ERROR=\n";
   var_dump($e);
   echo "\npress any key to quit..";
-  Conio::getch();
+  Conio::getch_wait();
 }
 

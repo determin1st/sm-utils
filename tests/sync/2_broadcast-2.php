@@ -4,9 +4,6 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
 require_once DIR_SM_UTILS.'conio.php';
 require_once DIR_SM_UTILS.'sync.php';
 ###
-# create an instance of broadcast listener,
-# <id>entifier is required and must match with broadcast master,
-# buffer <size> is optional, it will be negotiated anyway
 $o = SyncBroadcast::new([
   'id'       => 'test-broadcast',
   'callback' => (function(int $s0, int $s1, string $info): void
@@ -14,49 +11,62 @@ $o = SyncBroadcast::new([
     static $STATUS = [
       -2 => 'closed',
       -1 => 'on hold',
-      0  => 'initiation',
-      1  => 'registration',
-      2  => 'activation',
-      3  => 'reading..',
+      0  => 'registration',
+      1  => 'activation',
+      2  => 'confirmation',
+      3  => 'ready',
     ];
     echo '> status: '.$STATUS[$s0].' => '.$STATUS[$s1];
     echo ($info ? ' ('.$info.')' : '')."\n";
   })
 ]);
-# next, checking for construction error,
-# the result of the new() constructor is
-# either <SyncBroadcast> or <ErrorEx> object
 if (ErrorEx::is($o))
 {
   var_dump($o);
   exit(1);
 }
-echo "broadcast reader started..\n";
-echo "press [w] to write, [q] to quit\n";
-$w = 'a message from the reader';
+$I = 'SyncBroadcast•'.proc_id();
+cli_set_process_title($I);
+echo $I." started\n";
+echo "[1] to send signal\n";
+echo "[q] to quit\n\n";
 while (1)
 {
-  # operate
+  $e = null;
   switch (Conio::getch()) {
-  case 'w':
-    echo '> write: '.$w."\n";
-    if (!$o->write($w, $e)) {
-      break 2;
-    }
-    break;
   case 'q':
     echo "> quit\n";
     break 2;
-  }
-  # execute periodics
-  if ($m = $o->read($e)) {
-    echo "> read: ".$m."\n";
-  }
-  elseif ($e || !$o->flush($e)) {
+  case '1':
+    $a = 'a message from '.$I;
+    echo '> write: ';
+    while (!$o->write($a, $e))
+    {
+      if ($e)
+      {
+        if ($e->level)
+        {
+          echo "FAIL\n";
+          break 3;
+        }
+        echo "SKIP (data is pending)\n";
+        break 2;
+      }
+      usleep(50000);# 50ms
+    }
+    echo $a."\n";
     break;
-  }
-  else {# take a rest
-    usleep(100000);# 100ms
+  case '':
+    if (($a = $o->read($e)) === null)
+    {
+      if ($e) {
+        break 2;
+      }
+      usleep(100000);# 100ms
+      break;
+    }
+    echo "> read: ".$a."\n";
+    break;
   }
 }
 # terminate
@@ -66,6 +76,6 @@ if ($e)
   echo "=ERROR=\n";
   var_dump($e);
   echo "\npress any key to quit..";
-  Conio::getch();
+  Conio::getch_wait();
 }
 
