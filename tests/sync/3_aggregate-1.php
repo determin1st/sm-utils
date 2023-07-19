@@ -4,12 +4,9 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
 require_once DIR_SM_UTILS.'conio.php';
 require_once DIR_SM_UTILS.'sync.php';
 ###
-exit(0);
 $o = SyncAggregateMaster::new([
-  'id'       => 'test-aggregate',
-  'callback' => (function(): void
-  {
-  })
+  'id'=>'test-aggregate',
+  'size'=>100,
 ]);
 if (ErrorEx::is($o))
 {
@@ -19,8 +16,9 @@ if (ErrorEx::is($o))
 $I = 'SyncAggregateMaster•'.proc_id();
 cli_set_process_title($I);
 echo $I." started\n";
-echo "[1] to enable/disable writing\n";
+echo "[1] enable/disable reading\n";
 echo "[q] to quit\n\n";
+$readFlag = false;
 while (1)
 {
   switch (Conio::getch()) {
@@ -28,12 +26,32 @@ while (1)
     echo "> quit\n";
     break 2;
   case '1':
+    if ($readFlag)
+    {
+      echo "\n";
+      $readFlag = false;
+    }
+    else
+    {
+      echo "> read: ";
+      $readFlag = true;
+    }
     break;
   case '':
-    if (!$o->flush($e)) {
-      break 2;
+    if (!$readFlag)
+    {
+      usleep(100000);# 100ms
+      break;
     }
-    usleep(100000);# 100ms
+    if (($x = $o->read($e)) === null)
+    {
+      if ($e) {
+        break 2;
+      }
+      usleep(100000);# 100ms
+      break;
+    }
+    echo $x;
     break;
   }
 }
