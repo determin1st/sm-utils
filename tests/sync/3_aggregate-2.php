@@ -84,10 +84,10 @@ while (1)
     if ($o->isPending() && $o->flush($e))
     {
       if ($e) {
-        echo "|";# skip
+        echo "|";# skip/timeout
       }
       else {
-        echo "/\\";
+        echo "/\\";# flushed
       }
     }
     elseif ($e) {

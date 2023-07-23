@@ -3,7 +3,7 @@ namespace SM;
 # requirements {{{
 use
   SyncSharedMemory,SyncSemaphore,SyncEvent,
-  ArrayAccess,Throwable;
+  Throwable;
 use function
   sys_get_temp_dir,file_exists,touch,preg_match,intval,
   strval,strlen,substr,str_repeat,pack,unpack,ord,hrtime,
@@ -455,7 +455,7 @@ class SyncFlagFileMaster extends SyncFlagFile # {{{
   }
 }
 # }}}
-class SyncNum implements ArrayAccess # {{{
+class SyncNum # {{{
 {
   # constructor {{{
   const TIMEWAIT=5000;
@@ -500,7 +500,7 @@ class SyncNum implements ArrayAccess # {{{
   }
   # }}}
   # hlp {{{
-  function guardSet(): bool # {{{
+  protected function guardSet(): bool # {{{
   {
     static $E='SyncSemaphore::lock';
     if ($this->guard && !$this->guarded)
@@ -513,7 +513,7 @@ class SyncNum implements ArrayAccess # {{{
     return true;
   }
   # }}}
-  function guardClear(): bool # {{{
+  protected function guardClear(): bool # {{{
   {
     static $E='SyncSemaphore::unlock';
     if ($this->guarded)
@@ -571,20 +571,6 @@ class SyncNum implements ArrayAccess # {{{
     }
   }
   # }}}
-  # }}}
-  # [] access {{{
-  function offsetExists(mixed $k): bool {
-    return $k >= 0 && $k < $this->count;
-  }
-  function offsetGet(mixed $k): mixed {
-    return $this->memRead($k);
-  }
-  function offsetSet(mixed $k, mixed $v): void {
-    $this->memWrite($k, $v);
-  }
-  function offsetUnset(mixed $k): void {
-    $this->memWrite($k, 0);
-  }
   # }}}
   # api
   function lock(?object &$error=null): bool # {{{
@@ -701,9 +687,33 @@ class SyncNum implements ArrayAccess # {{{
   # }}}
 }
 # }}}
-abstract class ASyncLock # {{{
+class SyncLock # {{{
 {
   # constructor {{{
+  static function new(string $id, int $max=1): object
+  {
+    try
+    {
+      if ($max < 1 || $max > 1000)
+      {
+        throw ErrorEx::fail(
+          'incorrect max='.$max.
+          ', not in range=[1,1000]'
+        );
+      }
+      $num = SyncNum::new($id.'-num', ($max > 1));
+      return new static(
+        $id, $max, ErrorEx::peep($num),
+        new SyncSemaphore($id, $max, 0)
+      );
+    }
+    catch (Throwable $e)
+    {
+      return ErrorEx::set($e, ErrorEx::fail(
+        class_basename(self::class), __FUNCTION__
+      ));
+    }
+  }
   protected function __construct(
     public string $id,
     public int    $max,
@@ -711,17 +721,11 @@ abstract class ASyncLock # {{{
     public object $sem,
     public int    $state = 0
   ) {
-    # initialize
     $num->callback = $this->onChange(...);
-    if ($num->mem->first())
-    {
+    if ($num->mem->first()) {
       while ($sem->unlock()) {}
-      $this->onChange(1, 0);
     }
-    $this->restruct();
   }
-  protected function restruct(): void
-  {}
   function __destruct() {
     $this->clear();
   }
@@ -732,7 +736,7 @@ abstract class ASyncLock # {{{
     if ($n1 < 0 || $n1 > $this->max)
     {
       throw ErrorEx::fail(
-        'incorrect lock count='.$n1.
+        'incorrect lock number='.$n1.
         ', not in range=[0,'.$this->max.']'
       );
     }
@@ -867,122 +871,6 @@ abstract class ASyncLock # {{{
     return $this->_clear($error, true);
   }
   # }}}
-}
-# }}}
-class SyncLock extends ASyncLock # {{{
-{
-  static function new(string $id, int $max=1): object
-  {
-    try
-    {
-      $id0 = $id.'-num';
-      return new static($id, $max,
-        ErrorEx::peep(SyncNum::new($id0, ($max > 1))),
-        new SyncSemaphore($id, $max, 0)
-      );
-    }
-    catch (Throwable $e)
-    {
-      return ErrorEx::set($e, ErrorEx::fail(
-        class_basename(static::class), __FUNCTION__
-      ));
-    }
-  }
-}
-# }}}
-class SyncLockMaster extends SyncLock # {{{
-{
-  protected function restruct(): void
-  {
-    if ($this->sync($e) && !$this->clear($e)) {
-      throw $e;
-    }
-  }
-}
-# }}}
-class SyncLockFile extends ASyncLock # {{{
-{
-  public string $file;
-  static function new(# {{{
-    string $id, string $dir, int $max=1
-  ):object
-  {
-    try
-    {
-      $file = dir_file_path($dir, $id.'.lock');
-      if (!dir_exists($file)) {
-        throw ErrorEx::fail('incorrect file path', $file);
-      }
-      $id0  = $id.'-num';
-      $lock = new static($id, $max,
-        ErrorEx::peep(SyncNum::new($id0, ($max > 1))),
-        new SyncSemaphore($id, $max, 0)
-      );
-      $lock->file = $file;
-      return $lock;
-    }
-    catch (Throwable $e)
-    {
-      return ErrorEx::set($e, ErrorEx::fail(
-        class_basename(static::class), __FUNCTION__
-      ));
-    }
-  }
-  # }}}
-  protected function restruct(): void # {{{
-  {
-    # check the source of truth
-    if (!$this->persist() &&
-        $this->getShared($e) &&
-        !$this->clearShared($e))
-    {
-      throw $e;
-    }
-  }
-  # }}}
-  protected function onChange(int $n0, int $n1): void # {{{
-  {
-    if ($n1 < 0 || $n1 > $this->max)
-    {
-      throw ErrorEx::fail(
-        'incorrect lock count='.$n1.
-        ', not in range=[0,'.$this->max.']'
-      );
-    }
-    if ((!$n0 && !file_touch($this->file, $e)) ||
-        (!$n1 && !file_unlink($this->file, $e)))
-    {
-      throw $e;
-    }
-  }
-  # }}}
-  function persist(): bool {
-    return file_persist($this->file);
-  }
-}
-# }}}
-class SyncLockFileMaster extends SyncLockFile # {{{
-{
-  protected function restruct(): void
-  {
-    # prepare
-    if (($n = $this->sync($e)) < 0) {
-      throw $e;
-    }
-    # sync with the source of truth
-    if ($this->persist())
-    {
-      if ($n === 0 && !$this->set($e)) {
-        throw $e;
-      }
-    }
-    else
-    {
-      if ($n !== 0 && !$this->clear($e)) {
-        throw $e;
-      }
-    }
-  }
 }
 # }}}
 # Readers-Writers
@@ -1134,19 +1022,9 @@ abstract class SyncReaderWriter # {{{
     return self::getFlag($id, $dir, true);
   }
   # }}}
-  static function getLock(# {{{
-    string $id, string $dir='', bool $master=false
-  ):object
+  static function getLock(string $id): object # {{{
   {
-    $lock = $dir
-      ? ($master
-        ? SyncLockFileMaster::new($id, $dir)
-        : SyncLockFile::new($id, $dir))
-      : ($master
-        ? SyncLockMaster::new($id)
-        : SyncLock::new($id));
-    ###
-    return ErrorEx::peep($lock);
+    return ErrorEx::peep(SyncLock::new($id));
   }
   # }}}
   static function getBoolean(# {{{
@@ -1206,15 +1084,13 @@ class SyncExchange extends SyncReaderWriter # {{{
       # prepare
       $id   = self::getId($o);
       $size = self::getSize($o);
-      $dir  = self::getDir($o);
       $id1  = $id.'-r';
       $id2  = $id.'-w';
       $id3  = $id.'-x';
       # construct
       return new static(
         $id, self::getTimeWait($o),
-        self::getLock($id1, $dir),
-        self::getLock($id2, $dir),
+        self::getLock($id1), self::getLock($id2),
         self::getBuffer($id, $size),
         ErrorEx::peep(SyncNum::new($id3, true, 2))
       );
@@ -1559,7 +1435,6 @@ class SyncExchange extends SyncReaderWriter # {{{
 class SyncBroadcastMaster extends SyncReaderWriter # {{{
 {
   # Broadcast: one writer, many readers
-  # TODO: retransmission?
   # constructor {{{
   static function new(array $o): object
   {
@@ -1596,8 +1471,7 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
     public ?object $callback,
     public array   $queue  = [],
     public array   $reader = [],
-    public string  $rid    = '',
-    public bool    $ready  = true
+    public array   $state  = []
   ) {}
   # }}}
   # hlp {{{
@@ -1657,7 +1531,7 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
   }
   # }}}
   protected function dataWrite(# {{{
-    string &$data, ?array $list, ?object &$error
+    string &$data, ?object &$error
   ):bool
   {
     # check data fits into the buffer
@@ -1679,26 +1553,10 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
     }
     # enter pending state
     $this->time = hrtime(true);
-    if ($list)
+    foreach ($this->reader as &$a)
     {
-      # for selected readers
-      foreach ($this->reader as $id => &$a)
-      {
-        if (in_array($id, $list, true))
-        {
-          $a[1]->setShared($error);
-          $a[2] = 1;
-        }
-      }
-    }
-    else
-    {
-      # for all readers
-      foreach ($this->reader as &$a)
-      {
-        $a[1]->setShared($error);
-        $a[2] = 1;
-      }
+      $a[1]->setShared($error);
+      $a[2] = 1;
     }
     return true;
   }
@@ -1713,99 +1571,68 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
     return null;
   }
   # }}}
-  protected function readerAttach(# {{{
-    string $id, ?object &$error
-  ):bool
-  {
-    # create the "running" flag
-    if (ErrorEx::is($f0 = SyncFlag::new($id)))
-    {
-      $error = $f0;
-      return false;
-    }
-    # the flag must be set by the reader,
-    # make sure it is set
-    if (!$f0->getShared())
-    {
-      $error = ErrorEx::warn(
-        'reader='.$id.' is not running'
-      );
-      return false;
-    }
-    # create the "pending" flag
-    if (ErrorEx::is($f1 = SyncFlag::new($id.'-data')))
-    {
-      $error = $f1;
-      return false;
-    }
-    # initially, data is not pending,
-    # make sure that flag is cleared
-    if ($f1->getShared() &&
-        !$f1->clearShared($error))
-    {
-      return false;
-    }
-    # reader have to create the buffer,
-    # send the size of the buffer
-    $a = strval($this->data->sizeMax);
-    if (!$this->info->write($a, $error)) {
-      return false;
-    }
-    # complete
-    $this->reader[$id] = [$f0,$f1,0];
-    $this->rid = $id;
-    return true;
-  }
-  # }}}
   protected function readerDetach(# {{{
     string $id, ?object &$error
   ):void
   {
-    # clear data pending flag
+    # invalidate reader object
     $this->reader[$id][1]->clearShared($error);
-    # remove object and its identifier
     unset($this->reader[$id]);
-    $this->rid = '';
+    $this->state = [];
     # close exchange
     $this->info->pending &&
     $this->info->close($error);
   }
   # }}}
-  protected function flushReader(?object &$error): bool # {{{
+  protected function flushState(?object &$error): bool # {{{
   {
-    static $ERR='info mismatch';
-    # check no reader pending
-    if (($id = $this->rid) === '') {
+    # check no reader state
+    if (!($s = &$this->state)) {
       return true;
     }
-    # probe info
-    if (($a = $this->infoRead($error)) === null)
+    # get info
+    if (!($a = $this->infoRead($error)))
     {
-      # cancel upon error or lack of activity
+      # invalidate upon error or lack of activity
       if ($error || !$this->info->pending) {
         $this->readerDetach($id, $error);
       }
       return false;
     }
-    # check identifier
-    if ($a[1] !== $id)
+    # match operation and identifier
+    if ($s[0] !== $a[0] || $s[1] !== $a[1])
     {
-      $error = ErrorEx::fail($ERR, $a[1]);
+      $error = ErrorEx::fail(
+        'reader='.$s[1].' operation='.$s[0].
+        ' does not match info='.$a[0].':'.$a[1]
+      );
       $this->readerDetach($id, $error);
       return false;
     }
     # operate
     switch ($a[0]) {
-    case 1:# attachment complete
-      $this->rid = '';
-      if ($fn = $this->callback) {
-        $fn(1, $id, $a[2]);
+    case 1:# attachment
+      break;
+    case 2:# retransmission
+      # buffer is populated with the data,
+      # activate all readers except the one,
+      # which initiated the retransmission
+      $this->time = hrtime(true);
+      foreach ($this->reader as $id => &$reader)
+      {
+        if ($s[1] === $id) {
+          continue;
+        }
+        $reader[1]->setShared($error);
+        $reader[2] = 1;
       }
       break;
-    default:
-      $error = ErrorEx::fail($ERR, $a[0]);
-      $this->readerDetach($id, $error);
-      break;
+    }
+    # clear state
+    $s = [];
+    # invoke user callback
+    if ($fn = $this->callback) {
+      $fn($a[0], $a[1], $a[2]);
     }
     return false;
   }
@@ -1817,7 +1644,8 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
       return true;
     }
     # check reader is not attached
-    if ($a[0] !== 1 && !isset($this->reader[$a[1]]))
+    if ($a[0] !== 1 &&
+        !isset($this->reader[$a[1]]))
     {
       $error = ErrorEx::warn(
         'reader='.$a[1].' is not attached'
@@ -1826,30 +1654,81 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
       $this->info->close($error);
       return false;
     }
-    # operate
+    # handle operation
     switch ($a[0]) {
-    case 0:# detachment signal
+    case 0:# detachment signal {{{
       $this->readerDetach($a[1], $error);
       if ($fn = $this->callback) {
         $fn(0, $a[1], $a[2]);
       }
       break;
-    case 1:# attachment request
-      if ($this->readerAttach($a[1], $error)) {
-        return false;# success
+    # }}}
+    case 1:# attachment request {{{
+      # create the "running" flag
+      $f0 = SyncFlag::new($a[1]);
+      if (ErrorEx::is($f0))
+      {
+        $error = $f0;
+        break;
       }
-      break;
-    case 2:# custom signal
+      # the flag must be set by the reader,
+      # make sure it is set
+      if (!$f0->getShared())
+      {
+        $error = ErrorEx::warn(
+          'reader='.$a[1].' is not running'
+        );
+        break;
+      }
+      # create the "pending" flag
+      $f1 = SyncFlag::new($a[1].'-data');
+      if (ErrorEx::is($f1))
+      {
+        $error = $f1;
+        break;
+      }
+      # initially, no data is pending,
+      # make sure that flag is cleared
+      if ($f1->getShared() &&
+          !$f1->clearShared($error))
+      {
+        break;# failed to clear
+      }
+      # reader have to create the buffer,
+      # send the size of the buffer
+      $b = strval($this->data->sizeMax);
+      if (!$this->info->write($b, $error)) {
+        break;
+      }
+      # success
+      $this->state = $a;
+      $this->reader[$a[1]] = [$f0,$f1,0];
+      return false;
+    # }}}
+    case 2:# retransmission request {{{
+      # flushing is performed when ready,
+      # so retransmission is always allowed
+      $b = '1';
+      if (!$this->info->write($b, $error)) {
+        break;
+      }
+      # success
+      $this->state = $a;
+      return false;
+    # }}}
+    case 3:# custom signal {{{
       if ($fn = $this->callback) {
-        $fn(2, $a[1], $a[2]);
+        $fn(3, $a[1], $a[2]);
       }
       break;
-    default:
+    # }}}
+    default:# unknown {{{
       $error = ErrorEx::warn(
-        'unknown case='.$a[0].
+        'unknown operation='.$a[0].
         ' from the reader='.$a[1]
       );
       break;
+    # }}}
     }
     $this->info->pending &&
     $this->info->close($error);
@@ -1860,8 +1739,8 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
   {
     if ($this->queue)
     {
-      $a = array_shift($this->queue);
-      $this->dataWrite($a[0], $a[1], $error);
+      $data = array_shift($this->queue);
+      $this->dataWrite($data, $error);
     }
     return true;
   }
@@ -1875,14 +1754,14 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
       return false;
     }
     # write when ready
-    if (!$this->rid && $this->isReady($error)) {
-      return $this->dataWrite($data, null, $error);
+    if (!$this->time && $this->isReady($error)) {
+      return $this->dataWrite($data, $error);
     }
     elseif ($error) {
       return false;
     }
     # postpone otherwise
-    $this->queue[] = [$data,null];
+    $this->queue[] = $data;
     return true;
   }
   # }}}
@@ -1896,7 +1775,7 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
     }
     # operate
     $error = null;
-    $this->flushReader($error) &&
+    $this->flushState($error) &&
     $this->flushInfo($error)   &&
     $this->flushQueue($error);
     return $error === null;
@@ -1961,6 +1840,7 @@ class SyncBroadcast extends SyncReaderWriter # {{{
     public ?object $dataBuf,
     public ?object $callback,
     public array   $queue = [],
+    public array   $store = ['',''],# read,write
     public int     $state = 0
   ) {
     $dataFlag->clearShared();
@@ -1977,12 +1857,12 @@ class SyncBroadcast extends SyncReaderWriter # {{{
       $this->stateSet(0, 'retry', $error);
       break;
     # }}}
-    case  0:# registration {{{
+    case  0:# attachment (1) {{{
       # check master escaped
       if (!$this->writer->getShared($error)) {
         break;
       }
-      # send the request
+      # try to initiate
       $a = '1:'.$this->reader->id;
       if (!$this->info->write($a, $e))
       {
@@ -1997,8 +1877,8 @@ class SyncBroadcast extends SyncReaderWriter # {{{
       $this->stateSet(1, '', $error);
       break;
     # }}}
-    case  1:# activation {{{
-      # read the response
+    case  1:# attachment (2) {{{
+      # get the response
       if (($a = $this->info->read($error)) === null)
       {
         $error && $this->stateSet(-1, 'fail', $error);
@@ -2025,9 +1905,7 @@ class SyncBroadcast extends SyncReaderWriter # {{{
         }
         $this->dataBuf = $o;
       }
-      # send notification,
-      # as the exchange is not closed yet,
-      # it must be accepted instantly
+      # notify about success
       $a = '1:'.$this->reader->id;
       if (!$this->info->notify($a, $error))
       {
@@ -2059,6 +1937,66 @@ class SyncBroadcast extends SyncReaderWriter # {{{
       # positive
       return true;
     # }}}
+    case  4:# retransmission (1) {{{
+      # check master escaped
+      if (!$this->writer->getShared($error))
+      {
+        $this->stateSet(0, 'escape', $error);
+        break;
+      }
+      # flush pending data
+      if (!$this->dataFlush($error))
+      {
+        $this->stateSet(-1, 'fail', $error);
+        break;
+      }
+      # try to initiate
+      $a = '2:'.$this->reader->id;
+      if (!$this->info->write($a, $e))
+      {
+        if ($e && $e->level)
+        {
+          $error = $e;
+          $this->stateSet(-1, 'fail', $error);
+        }
+        break;
+      }
+      # move to the next stage
+      $this->stateSet(5, '', $error);
+      break;
+    # }}}
+    case  5:# retransmission (2) {{{
+      # get the response
+      if (($a = $this->info->read($error)) === null)
+      {
+        $error && $this->stateSet(-1, 'fail', $error);
+        break;
+      }
+      # restart when denied
+      if ($a !== '1')
+      {
+        $this->stateSet(4, 'retry', $error);
+        break;
+      }
+      # write stored data
+      $i = $this->dataBuf->write($this->store[1], $error);
+      $this->store[1] = '';
+      if ($i < 0)
+      {
+        $this->stateSet(-1, 'fail', $error);
+        break;
+      }
+      # notify about success
+      $a = '2:'.$this->reader->id;
+      if (!$this->info->notify($a, $error))
+      {
+        $this->stateSet(-1, 'fail', $error);
+        break;
+      }
+      # move to confirmation
+      $this->stateSet(2, '', $error);
+      break;
+    # }}}
     }
     return false;
   }
@@ -2067,14 +2005,8 @@ class SyncBroadcast extends SyncReaderWriter # {{{
     int $new, string $info, ?object &$error
   ):bool
   {
-    # when leaving..
-    switch ($old = $this->state) {
-    case 1:
-    case 2:
-      $this->info->close($error);
-      break;
-    }
     # when entering..
+    $old = $this->state;
     switch ($new) {
     case -2:
       # try to quit gracefully
@@ -2090,6 +2022,10 @@ class SyncBroadcast extends SyncReaderWriter # {{{
       break;
     case -1:
       $this->time = hrtime(true);
+      # falltrough..
+    case 0:
+      $this->info->pending &&
+      $this->info->close($error);
       break;
     }
     # set new state
@@ -2100,6 +2036,19 @@ class SyncBroadcast extends SyncReaderWriter # {{{
     return $error === null;
   }
   # }}}
+  protected function dataFlush(?object &$error): bool # {{{
+  {
+    if (!$this->dataFlag->getShared()) {
+      return true;
+    }
+    $data = &$this->dataBuf->readShared($error);
+    if ($data === null) {
+      return false;
+    }
+    $this->store[0] = $data;
+    return $this->dataFlag->clearShared($error);
+  }
+  # }}}
   # }}}
   function isPending(): bool # {{{
   {
@@ -2108,9 +2057,17 @@ class SyncBroadcast extends SyncReaderWriter # {{{
   # }}}
   function &read(?object &$error=null): ?string # {{{
   {
+    # prepare
     static $NONE=null;
-    # check not ready or no data pending
     $error = null;
+    # check read store
+    if ($this->store[0] !== '')
+    {
+      $data = $this->store[0];
+      $this->store[0] = '';
+      return $data;
+    }
+    # check not ready or no data pending
     if (!$this->isReady($error) ||
         !$this->dataFlag->getShared())
     {
@@ -2125,22 +2082,35 @@ class SyncBroadcast extends SyncReaderWriter # {{{
   function write(string &$data, ?object &$error=null): bool # {{{
   {
     # check not ready
-    if (!$this->isReady($error)) {
-      return false;
-    }
-    # skip when pending data
-    if ($this->dataFlag->getShared())
+    $error = null;
+    if ($data === '' || !$this->isReady($error))
     {
       $error = ErrorEx::skip();
       return false;
     }
-    # try sending custom signal
-    $a = '2:'.$this->reader->id.':'.$data;
+    # enter retransmission state
+    $this->store[1] = $data;
+    $this->stateSet(4, '', $error);
+    return true;
+  }
+  # }}}
+  function signal(string &$data, ?object &$error=null): bool # {{{
+  {
+    # check not ready
+    $error = null;
+    if ($data === '' || !$this->isReady($error))
+    {
+      $error = ErrorEx::skip();
+      return false;
+    }
+    # try to send signal
+    $a = '3:'.$this->reader->id.':'.$data;
     return $this->info->signal($a, $error);
   }
   # }}}
   function flush(?object &$error=null): bool # {{{
   {
+    $error = null;
     return $this->isReady($error);
   }
   # }}}
@@ -2156,7 +2126,7 @@ class SyncBroadcast extends SyncReaderWriter # {{{
 class SyncAggregateMaster extends SyncReaderWriter # {{{
 {
   # Aggregate: one reader, many writers
-  # TODO: chunks
+  # TODO: chunks/separation, array mode
   # constructor {{{
   static function new(array $o): object
   {

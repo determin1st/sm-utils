@@ -1,7 +1,6 @@
 <?php declare(strict_types=1);
 namespace SM;
 require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
-require_once DIR_SM_UTILS.'conio.php';
 require_once DIR_SM_UTILS.'sync.php';
 ###
 $o = SyncBroadcastMaster::new([
@@ -21,11 +20,14 @@ $o = SyncBroadcastMaster::new([
       echo $info ? ' ('.$info.')' : '';
       break;
     case 2:
-      echo 'reader['.$id.'].signal: '.$info;
+      echo 'reader['.$id.']: retransmission';
+      echo $info ? ' ('.$info.')' : '';
+      break;
+    case 3:
+      echo 'reader['.$id.']: signal: '.$info;
       break;
     case 4:
-      echo 'broadcast complete, ';
-      echo 'readers('.$info.') have read the message';
+      echo 'complete: N='.$info;
       break;
     }
     echo "\n";
@@ -36,20 +38,21 @@ if (ErrorEx::is($o))
   var_dump($o);
   exit(1);
 }
-$I = 'SyncBroadcastMaster•'.proc_id();
-cli_set_process_title($I);
+cli_set_process_title(
+  $I = 'SyncBroadcastMaster•'.proc_id()
+);
 echo $I." started\n";
-echo "press [w] to write, [q] to quit\n";
-$m = 'a message from '.$I;
+echo "[1] to broadcast a message\n";
+echo "[q] to quit\n\n";
 while (1)
 {
   switch (Conio::getch()) {
   case 'q':
     echo "> quit\n";
     break 2;
-  case 'w':
-    echo '> write: '.$m."\n";
-    if (!$o->write($m, $e)) {
+  case '1':
+    echo '> write: '.$I."\n";
+    if (!$o->write($I, $e)) {
       break 2;
     }
     break;
@@ -61,13 +64,6 @@ while (1)
     break;
   }
 }
-# terminate
 $o->close($e);
-if ($e)
-{
-  echo "=ERROR=\n";
-  var_dump($e);
-  echo "\npress any key to quit..";
-  Conio::getch_wait();
-}
+error_dump($e);
 

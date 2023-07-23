@@ -2,7 +2,6 @@
 namespace SM;
 use SyncSemaphore;
 require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
-require_once DIR_SM_UTILS.'conio.php';
 ###
 $o = new SyncSemaphore('sem-lock-unlock', 1, 0);
 echo "press [l] to lock, [u] to unlock, [q] to quit..\n";
