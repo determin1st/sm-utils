@@ -1,6 +1,7 @@
 <?php declare(strict_types=1);
+# {{{
 namespace SM;
-use # {{{
+use
   JsonSerializable,ArrayAccess,Iterator,Stringable,
   SyncEvent,SyncReaderWriter,SyncSharedMemory,
   Generator,Closure,CURLFile,

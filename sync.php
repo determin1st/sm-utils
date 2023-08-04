@@ -1,13 +1,14 @@
 <?php declare(strict_types=1);
+# defs {{{
 namespace SM;
-# requirements {{{
 use
   SyncSharedMemory,SyncSemaphore,SyncEvent,
   Throwable;
 use function
   sys_get_temp_dir,file_exists,touch,preg_match,intval,
   strval,strlen,substr,str_repeat,pack,unpack,ord,hrtime,
-  array_shift,array_unshift,is_array,is_int,is_string;
+  array_shift,array_unshift,is_array,is_int,is_string,
+  is_object;
 use function SM\{
   class_name,class_basename,dir_exists,dir_file_path,
   file_persist,file_unlink,file_touch,hrtime_delta_ms,
@@ -960,43 +961,30 @@ abstract class SyncReaderWriter # {{{
     return $i;
   }
   # }}}
-  static function getInstanceFlag(array &$o): ?object # {{{
+  static function getInstance(array &$o): object # {{{
   {
-    static $k='instance-flag';
-    if (!isset($o[$k])) {
-      return null;
-    }
-    if (!is_object($x = $o[$k]) ||
-        !($x instanceof SyncFlag))
+    static $k0='instance-flag';
+    static $k1='instance-id';
+    if (isset($o[$k0]))
     {
-      throw self::badOption($k0);
-    }
-    return $x;
-  }
-  # }}}
-  static function getInstanceId(array &$o, string $id): string # {{{
-  {
-    static $k='instance-id';
-    if (!isset($o[$k])) {
-      return $id.'-'.proc_id();
-    }
-    if (!is_string($o[$k]) ||
-        ($id = $o[$k]) === '')
-    {
-      throw self::badOption($k);
-    }
-    return $id;
-  }
-  # }}}
-  static function getInstance(# {{{
-    array &$o, string $id, string $dir, bool $master=false
-  ):object
-  {
-    if ($x = self::getInstanceFlag($o)) {
+      if (!is_object($x = $o[$k0])) {
+        throw self::badOption($k0);
+      }
       return $x;
     }
+    if (isset($o[$k1]))
+    {
+      if (!is_string($o[$k1]) ||
+          ($id = $o[$k1]) === '')
+      {
+        throw self::badOption($k1);
+      }
+    }
+    else {
+      $id = self::getId($o).'-'.proc_id();
+    }
     return self::getFlag(
-      self::getInstanceId($o, $id), $dir, $master
+      $id, self::getDir($o), true
     );
   }
   # }}}
@@ -1808,7 +1796,7 @@ class SyncBroadcast extends SyncReaderWriter # {{{
       # prepare
       $id     = self::getId($o);
       $dir    = self::getDir($o);
-      $reader = self::getInstance($o, $id, $dir, true);
+      $reader = self::getInstance($o, $id, $dir);
       $id0    = $id.'-master';
       $id1    = $reader->id.'-data';
       $info   = ErrorEx::peep(SyncExchange::new([

@@ -1,6 +1,6 @@
 <?php declare(strict_types=1);
-namespace SM;
 # defs {{{
+namespace SM;
 use
   Throwable;
 use function

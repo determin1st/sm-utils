@@ -1,6 +1,6 @@
 <?php declare(strict_types=1);
-namespace SM;
 # defs {{{
+namespace SM;
 use FFI,Throwable;
 use function
   class_exists,function_exists,file_exists,
