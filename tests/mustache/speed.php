@@ -54,7 +54,7 @@ foreach ($file as $i)
 $t = -hrtime(true);
 ###
 # select instance variant
-if ($test)
+if ($test === 1)
 {
   require_once(
     __DIR__.DIRECTORY_SEPARATOR.
@@ -67,6 +67,21 @@ if ($test)
     'recur'   => true,
   ]);
   $i = 'sm-mustache';
+}
+elseif ($test === 2)
+{
+  require_once(
+    __DIR__.DIRECTORY_SEPARATOR.
+    '..'.DIRECTORY_SEPARATOR.
+    '..'.DIRECTORY_SEPARATOR.
+    'junk'.DIRECTORY_SEPARATOR.
+    'mustache.php'
+  );
+  $m = \SM\Mustache::construct([
+    'escaper' => true,
+    'recur'   => true,
+  ]);
+  $i = 'sm-mustache-old';
 }
 else
 {

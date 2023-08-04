@@ -43,9 +43,14 @@ if (!isset(Completable::$DONE))
     function __construct(
       public int $delay = self::DEF_DELAY
     ) {}
-    function set(int $ms): self
+    function set(int $ms): object
     {
-      # milli => nano
+      # check incorrect
+      static $ERR='incorrect idle timeout';
+      if ($ms < 0 || $ms > self::MAX_TIMEOUT) {
+        return ErrorEx::fail($ERR, $ms);
+      }
+      # convert milli => nano
       $this->delay = (int)($ms * 1000000);
       return $this;
     }
@@ -56,6 +61,8 @@ if (!isset(Completable::$DONE))
     }
     function get(): int
     {
+      # determine time in the future and
+      # reset delay to the default value
       $x = self::$TIME + $this->delay;
       $this->delay = self::DEF_DELAY;
       return $x;
@@ -472,12 +479,14 @@ class Loop # {{{
   # }}}
   static function stop(): bool # {{{
   {
+    # TODO: cancellation
     return true;
   }
   # }}}
 }
 # }}}
-# actions
+# actions {{{
+# TODO: implement breakable mass
 class PromiseNone extends Completable # {{{
 {
   function complete(): ?object {
@@ -603,11 +612,15 @@ class PromiseTimeout extends Completable # {{{
   ) {
     static $E0='incorrect delay, less than zero';
     static $E1='incorrect delay, greater than maximum';
-    if ($delay < 0) {
-      throw ErrorEx::fail($E0, $delay)
+    if ($delay < 0)
+    {
+      $this->action = ErrorEx::fail($E0, $delay);
+      $this->delay  = 0;
     }
-    if ($delay > self::MAX_TIMEOUT) {
-      throw ErrorEx::fail($E1, $delay)
+    if ($delay > self::MAX_TIMEOUT)
+    {
+      $this->action = ErrorEx::fail($E1, $delay);
+      $this->delay  = 0;
     }
   }
   function complete(): ?object
@@ -696,7 +709,7 @@ class PromiseRow extends PromiseMass # {{{
     if (!($n = count($q))) {
       return self::$NEXT;
     }
-    # count and determine lowest idle
+    # prepare idle counter and idle minimum
     $i = 0;
     $j = self::$TIME + Loop::MAX_TIMEOUT;
     # execute all
@@ -760,8 +773,9 @@ class PromiseRow extends PromiseMass # {{{
   }
 }
 # }}}
-# result
-class PromiseResult implements ArrayAccess # {{{
+# }}}
+# result {{{
+class PromiseResult implements ArrayAccess
 {
   public $track,$ok,$value;
   function __construct(?object $t = null) # {{{
@@ -890,8 +904,7 @@ class PromiseResult implements ArrayAccess # {{{
   }
   # }}}
 }
-# }}}
-class PromiseResultTrack # {{{
+class PromiseResultTrack
 {
   public $ok = true,$value,$title,$error,$group;
   function __debugInfo(): array # {{{

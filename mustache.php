@@ -10,8 +10,9 @@ use function
   sprintf,ord,htmlspecialchars,ctype_alnum,ctype_space,
   array_fill,array_key_exists,key,count,explode,array_shift,array_pop;
 # }}}
-class Mustache {
-  # {{{
+class Mustache # {{{
+{
+  # base {{{
   const
     SPEC      = '1.1.2',
     NAME_SIZE = 32,# max {{name}} size (without delimiters/spacing)
@@ -19,8 +20,8 @@ class Mustache {
     DELIMS    = '{}[]()<>:%=~-_?*@!|',# valid delimiter chars
     TERMINUS  = "\nTEMPLATE";
   static
-    $DELIMS_EXP = '/^([_]{2,4})(\s+)([_]{2,4})$/',
-    $TEMPLATE   = '
+    $DELIMS   = '/^([_]{2,4})(\s+)([_]{2,4})$/',
+    $TEMPLATE = '
 
 function(object $x):string { #%s,depth=%s
 return <<<TEMPLATE
@@ -32,10 +33,16 @@ TEMPLATE;
   public
     $logger,$delims,$helper,$escaper,$recur,
     $cache,$hash,$text,$func,$total = 0;
+  private function __construct()
+  {}
+  function __debugInfo()
+  {
+    return ['total' => $this->total];
+  }
   # }}}
   static function parseDelims(string $text): ?object # {{{
   {
-    return preg_match(self::$DELIMS_EXP, $text, $x)
+    return preg_match(self::$DELIMS, $text, $x)
       ? SplFixedArray::fromArray([$x[1],$x[3]])
       : null;
   }
@@ -45,17 +52,17 @@ TEMPLATE;
     # initialize statics once
     if (self::$TEMPLATE[0] !== 'f')
     {
-      self::$DELIMS_EXP = str_replace('_', preg_quote(self::DELIMS), self::$DELIMS_EXP);
+      self::$DELIMS   = str_replace('_', preg_quote(self::DELIMS), self::$DELIMS);
       self::$TEMPLATE = str_replace("\r", "", trim(self::$TEMPLATE));
     }
     # create and initialize new instance
     $I = new self();
-    if (isset($o[$k = 'logger']) && is_callable($o[$k])) {
-      $I->logger = $o[$k];
-    }
+    $I->logger = isset($o[$k = 'logger'])
+      ? $o[$k] : (static function() {});
+    ###
     if (!($I->delims = self::parseDelims($o['delims'] ?? '{{ }}')))
     {
-      $I->log('incorrect delimiters', 1);
+      ($I->logger)('incorrect delimiters', 1);
       return null;
     }
     if (isset($o[$k = 'helper'])) {
@@ -67,26 +74,11 @@ TEMPLATE;
     $I->recur = isset($o[$k = 'recur'])
       ? $o[$k]
       : false;
-    $I->cache = array_fill(0, 65536, null);# root (~4mb)
+    $I->cache = [];
     $I->hash  = [null];
     $I->text  = [null];
     $I->func  = [null];
     return $I;
-  }
-  # }}}
-  private function __construct() # {{{
-  {}
-  # }}}
-  function __debugInfo() # {{{
-  {
-    return [
-      'total' => $this->total
-    ];
-  }
-  # }}}
-  function log(string $text, int $level = 0): void # {{{
-  {
-    ($log = $this->logger) && $log($text, $level);
   }
   # }}}
   function render(# {{{
@@ -110,7 +102,7 @@ TEMPLATE;
       # delimiters and context
       if (!is_string($p1) || !($p1 = self::parseDelims($p1)))
       {
-        $this->log('incorrect delimiters', 1);
+        ($this->logger)('incorrect delimiters', 1);
         return $text;
       }
     }
@@ -121,14 +113,14 @@ TEMPLATE;
     # check overflow
     if (($n = $this->total) >= self::CACHE_MAX)
     {
-      $this->log('cache overflow', 1);
+      ($this->logger)('cache overflow', 1);
       return $text;
     }
     # create template function and
     # execute it within context
     $i = $this->renderFunc($p1, $text);
     $x = ~$i ?
-      $this->func[$i](new MustacheContext($this, $p1, $p2))
+      $this->func[$i](new MustacheCtx($this, $p1, $p2))
       : '';
     # check failed or non-standard delimiters specified
     if ($i === -1 || $p1 !== $this->delims)
@@ -157,19 +149,19 @@ TEMPLATE;
     if ($delims === $this->delims)
     {
       # compute hash and checkout cache
-      $k = hash('md4', $text, true);
-      if (($i = $this->cacheGet($k)) !== null) {
+      $k = hash('xxh3', $text, true);
+      if (($i = $this->cache[$k] ?? -1) >= 0) {
         return $i;
       }
     }
     else {
-      $k = null;
+      $k = '';
     }
     # create parse tree
-    if ($tree === null)
+    if (!$tree)
     {
       $tree = &$this->tokenize($delims, $text);
-      if (($tree = &$this->parse($text, $tree)) === null) {
+      if (!($tree = &$this->parse($text, $tree))) {
         return -1;
       }
     }
@@ -181,64 +173,11 @@ TEMPLATE;
     $this->text[$i] = $text;
     $this->hash[$i] = $k;
     $this->total    = $i + 1;
-    $k && $this->log($f, 0);
+    $k && ($this->logger)($f, 0);
     # complete
-    return (!$k || $this->cacheSet($k, $i)) ? $i : -1;
-  }
-  # }}}
-  function cacheGet(string $k): ?int # {{{
-  {
-    # determine root index
-    $y = (ord($k[1]) << 8) + ord($k[0]);
-    $x = $this->cache[$y];
-    # lookup
-    for ($i = 2; $i < 16; ++$i)
-    {
-      if ($x === null || is_int($x)) {
-        break;
-      }
-      $x = $x[ord($k[$i])];
-    }
-    return $x;
-  }
-  # }}}
-  function cacheSet(string $k, int $ki): bool # {{{
-  {
-    # determine root index
-    $z = &$this->cache;
-    $y = (ord($k[1]) << 8) + ord($k[0]);
-    $x = $z[$y];
-    # lookup
-    for ($i = 2; $i < 16; ++$i)
-    {
-      if ($x === null)# free place
-      {
-        $z[$y] = $ki;
-        return true;
-      }
-      if (is_int($x))# hold
-      {
-        # replace invalid
-        if ($x >= $this->total)
-        {
-          $z[$y] = $ki;
-          return true;
-        }
-        # allocate new bucket
-        $b = new SplFixedArray(256);
-        # put holder to a new position
-        $a = $this->hash[$x];
-        $b[ord($a[$i])] = $x;
-        # replace holder with the bucket
-        $z[$y] = $b;
-      }
-      # traverse to the next bucket
-      $z = &$z[$y];
-      $y = ord($k[$i]);
-      $x = $z[$y];
-    }
-    $this->log('hash collision', 1);
-    return false;
+    return $k
+      ? ($this->cache[$k] = $i)
+      : $i;
   }
   # }}}
   function &tokenize(# {{{
@@ -302,7 +241,7 @@ TEMPLATE;
           (strlen($c) > self::NAME_SIZE && $c[0] !== '!'))
       {
         # report as problematic but acceptable (not an error)
-        $this->log('false tag skipped', 0);
+        ($this->logger)('false tag skipped', 0);
         # check newline
         if ($i && !$tokens[$i - 1][0] &&
             substr($tokens[$i - 1][1], -1) === "\n")
@@ -464,7 +403,7 @@ TEMPLATE;
         # block section
         if ($p === null)
         {
-          $this->log('unexpected: |'.$t[1].' at line '.$t[2], 1);
+          ($this->logger)('unexpected: |'.$t[1].' at line '.$t[2], 1);
           return $NULL;
         }
         $p[5][] = substr($text, $from, $t[4] - $from);
@@ -480,7 +419,7 @@ TEMPLATE;
         # block terminator
         if ($p === null || $t[1] !== $p[1])
         {
-          $this->log('unexpected: /'.$t[1].' at line '.$t[2], 1);
+          ($this->logger)('unexpected: /'.$t[1].' at line '.$t[2], 1);
           return $NULL;
         }
         if ($size)
@@ -502,7 +441,7 @@ TEMPLATE;
     # check
     if ($p !== null)
     {
-      $this->log('missing close: '.$p[1].' at line '.$p[2], 1);
+      ($this->logger)('missing close: '.$p[1].' at line '.$p[2], 1);
       return $NULL;
     }
     return $tree;
@@ -553,7 +492,8 @@ TEMPLATE;
   }
   # }}}
 }
-class MustacheContext # {{{
+# }}}
+class MustacheCtx # {{{
 {
   public $stack = [null,null],$last = 1;
   function __construct(
@@ -874,4 +814,4 @@ class MustacheContext # {{{
   }
 }
 # }}}
-?>
+###
