@@ -142,14 +142,13 @@ class ErrorEx extends Error
     return $x = $e->last($x);
   }
   # }}}
-  static function peep(?object $e): object # {{{
+  static function peep(?object $e): ?object # {{{
   {
-    if ($e === null)  {throw self::skip();}
-    if (self::is($e)) {throw $e;}
+    if ($e && self::is($e)) {throw $e;}
     return $e;
   }
   # }}}
-  static function is($e): bool # {{{
+  static function is(mixed $e): bool # {{{
   {
     return $e
       && is_object($e)
