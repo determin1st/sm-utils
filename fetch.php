@@ -9,6 +9,7 @@ use function
   curl_multi_strerror,curl_multi_exec,curl_multi_select,
   curl_multi_add_handle,curl_multi_remove_handle,
   curl_multi_info_read,curl_multi_getcontent,curl_multi_close,
+  ###
   is_scalar,is_array,is_object,is_string,is_int,is_bool,is_file,
   min,pow,strpos,substr,rtrim,ltrim,strtolower,http_build_query,
   basename,array_search,array_splice,array_is_list,
@@ -19,7 +20,7 @@ use function SM\{
 };
 use const
   CURLOPT_POST,CURLOPT_URL,CURLOPT_HTTPHEADER,
-  CURLOPT_POSTFIELDS,CURLOPT_TIMEOUT_MS,
+  CURLOPT_HEADER,CURLOPT_POSTFIELDS,CURLOPT_TIMEOUT_MS,
   CURLOPT_RETURNTRANSFER,CURLOPT_CUSTOMREQUEST,CURLMSG_DONE,
   PHP_QUERY_RFC3986,JSON_UNESCAPED_UNICODE,DIRECTORY_SEPARATOR;
 ###
@@ -633,8 +634,6 @@ class FetchGear # {{{
       return null;
     }
     catch (Throwable $e) {
-      echo '[LOOP ERROR!!!!]';
-      var_dump($e);
       return ErrorEx::from($e);
     }
   }

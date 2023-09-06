@@ -3,11 +3,18 @@ namespace SM;
 require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
 require_once DIR_SM_UTILS.'fetch.php';
 ###
+$token = ($_SERVER['argc'] > 1)
+  ? $_SERVER['argv'][1]
+  : '';
+###
+if (!$token)
+{
+  echo "\nspecify bot token\n\n";
+  exit(0);
+}
 $fetch = Fetch::new([
-  'baseUrl' => 'https://api.telegram.org/bot1704403321:AAFdV2pctonLeX3C0umW44iO85_r1jfmZUo/',
-  'options' => [
-    CURLOPT_VERBOSE => true,
-  ],
+  'baseUrl' => 'https://api.telegram.org/'.$token.'/',
+  #'options' => [CURLOPT_VERBOSE => true],
 ]);
 if (ErrorEx::is($fetch))
 {
@@ -28,23 +35,22 @@ while (1)
   # }}}
   case '1':# {{{
     echo "> getMe(): ";
-    $r = await($fetch([
-      'url' => 'getMe'
-    ]));
-    if (!$r->ok) {
+    $r = await(
+      $fetch(['url' => 'getMe'])
+    );
+    if (!$r->ok)
+    {
+      echo "FAIL\n";
       break 2;
     }
-    echo "ok\n";
     var_dump($r->value['content']);
     echo "\n";
     break;
   # }}}
   default:# cooldown {{{
-    usleep(100000);
+    usleep(100000);# 100ms
     break;
   # }}}
   }
 }
-#$o->close($e);
-#error_dump($e);
 ###

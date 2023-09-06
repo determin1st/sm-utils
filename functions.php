@@ -1,7 +1,7 @@
 <?php declare(strict_types=1);
 # defs {{{
 namespace SM;
-use Throwable;
+use Throwable,JsonException;
 use function
   ### arrays
   is_array,explode,implode,count,reset,next,key,array_slice,
@@ -346,18 +346,18 @@ function try_json_encode(# {{{
   try {
     return json_encode($value, $flags);
   }
-  catch (Throwable $e)
-  {
-    $error = ErrorEx::fail(
-      'json_encode', $e->getMessage()
-    );
-    return '';
+  catch (JsonException $e) {
+    $error = ErrorEx::fail('json_encode', $e->getMessage());
   }
+  catch (Throwable $e) {
+    $error = ErrorEx::from($e);
+  }
+  return '';
 }
 # }}}
-function try_json_decode(
+function try_json_decode(# {{{
   string &$s, ?object &$error=null
-):mixed # {{{
+):mixed
 {
   static $flags=0
     |JSON_INVALID_UTF8_IGNORE
@@ -365,13 +365,13 @@ function try_json_decode(
   try {
     return json_decode($s, true, 128, $flags);
   }
-  catch (Throwable $e)
-  {
-    $error = ErrorEx::fail(
-      'json_decode', $e->getMessage()
-    );
-    return null;
+  catch (JsonException $e) {
+    $error = ErrorEx::fail('json_decode', $e->getMessage());
   }
+  catch (Throwable $e) {
+    $error = ErrorEx::from($e);
+  }
+  return null;
 }
 # }}}
 # }}}
