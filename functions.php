@@ -1,8 +1,7 @@
 <?php declare(strict_types=1);
 # defs {{{
 namespace SM;
-use
-  Throwable;
+use Throwable;
 use function
   ### arrays
   is_array,explode,implode,count,reset,next,key,array_slice,
@@ -39,7 +38,7 @@ function array_string_keys(array &$a): array # {{{
   return $keys;
 }
 # }}}
-function array_import(array &$to, array &$from): void # {{{
+function &array_import(array &$to, array $from): array # {{{
 {
   foreach ($to as $k => &$v)
   {
@@ -53,9 +52,10 @@ function array_import(array &$to, array &$from): void # {{{
       }
     }
   }
+  return $to;
 }
 # }}}
-function array_import_all(array &$to, array &$from): void # {{{
+function &array_import_all(array &$to, array $from): array # {{{
 {
   foreach ($from as $k => &$v)
   {
@@ -66,9 +66,10 @@ function array_import_all(array &$to, array &$from): void # {{{
       $to[$k] = $v;
     }
   }
+  return $to;
 }
 # }}}
-function array_import_new(array &$to, array &$from): void # {{{
+function &array_import_new(array &$to, array $from): array # {{{
 {
   foreach ($from as $k => &$v)
   {
@@ -79,6 +80,7 @@ function array_import_new(array &$to, array &$from): void # {{{
       array_import_new($to[$k], $v);
     }
   }
+  return $to;
 }
 # }}}
 # }}}
@@ -331,6 +333,45 @@ function json_error(): string # {{{
 {
   return (json_last_error() !== JSON_ERROR_NONE)
     ? json_last_error_msg() : '';
+}
+# }}}
+function try_json_encode(# {{{
+  mixed &$value, ?object &$error=null
+):string
+{
+  static $flags=0
+    |JSON_INVALID_UTF8_IGNORE
+    |JSON_UNESCAPED_UNICODE
+    |JSON_THROW_ON_ERROR;
+  try {
+    return json_encode($value, $flags);
+  }
+  catch (Throwable $e)
+  {
+    $error = ErrorEx::fail(
+      'json_encode', $e->getMessage()
+    );
+    return '';
+  }
+}
+# }}}
+function try_json_decode(
+  string &$s, ?object &$error=null
+):mixed # {{{
+{
+  static $flags=0
+    |JSON_INVALID_UTF8_IGNORE
+    |JSON_THROW_ON_ERROR;
+  try {
+    return json_decode($s, true, 128, $flags);
+  }
+  catch (Throwable $e)
+  {
+    $error = ErrorEx::fail(
+      'json_decode', $e->getMessage()
+    );
+    return null;
+  }
 }
 # }}}
 # }}}

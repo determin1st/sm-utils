@@ -3,8 +3,9 @@
 namespace SM;
 use Error,Throwable;
 use function
-  class_alias,func_num_args,is_object,implode,count,
-  array_unshift,array_reverse,is_string,strval;
+  class_alias,set_error_handler,func_num_args,
+  implode,count,array_unshift,array_reverse,
+  array_pop,is_string,strval;
 ###
 # }}}
 class ErrorEx extends Error
@@ -40,16 +41,20 @@ class ErrorEx extends Error
   # constructors {{{
   function __construct(
     public int     $level = 0,
-    public array   $msg   = [],
+    public array   &$msg  = [],
     public mixed   $value = null,
     public ?object $next  = null
   ) {
     # make sure all messages are strings
-    foreach ($msg as &$m)
+    for ($i=0,$j=count($msg); $i < $j; ++$i)
     {
-      if (!is_string($m)) {
-        $m = strval($m);
+      if (!is_string($msg[$i])) {
+        $msg[$i] = strval($msg[$i]);
       }
+    }
+    # eject empty tail
+    while ($i && $msg[--$i] === '') {
+      array_pop($msg);
     }
     parent::__construct('', -1);
   }
@@ -75,21 +80,35 @@ class ErrorEx extends Error
     array_unshift($e->msg, $a);
     return $e;
   }
-  static function num(int $n, string $msg): self
+  private static function num(
+    int $n, string $msg, string $file, int $line
+  ):never
   {
-    return new self(3, [
-      (self::ERROR_NUM[$n] ?? "($n) UNKNOWN"), $msg
-    ]);
+    $s = isset(self::ERROR_NUM[$n])
+      ? self::ERROR_NUM[$n]
+      : '('.$n.') UNKNOWN';
+    $m = [$s, $msg];
+    throw new self(3, $m);
   }
   # }}}
   # outer api {{{
-  static function from(?object $e, bool $null=false): ?self # {{{
+  static function init(): bool # {{{
   {
-    if ($e === null)
-    {
-      return $null
-        ? null
-        : new self(0);
+    # this custom error handler will throw
+    # any mild/syntax errors (warnings/notices/deprecations)
+    set_error_handler(self::num(...));
+    return class_alias(
+      '\\'.__NAMESPACE__.'\\ErrorEx',
+      '\\'.__NAMESPACE__.'\\EE', false
+    );
+  }
+  # }}}
+  static function from(# {{{
+    ?object $e, bool $null=false
+  ):?self
+  {
+    if (!$e) {
+      return $null ? null : new self(0);
     }
     if ($e instanceof self)
     {
@@ -97,18 +116,24 @@ class ErrorEx extends Error
         ? ($e->errorlevel() ? $e : null)
         : $e;
     }
-    return ($e instanceof Throwable)
-      ? new self(3, [], $e)
-      : ($null
-        ? null
-        : new self(0, [], $e));
+    if ($e instanceof Throwable)
+    {
+      $msg = [];
+      return new self(3, $msg, $e);
+    }
+    if ($null) {
+      return null;
+    }
+    $msg = [];
+    return new self(0, $msg, $e);
   }
   # }}}
   static function value(object $e): self # {{{
   {
+    $msg = [];
     return ($e instanceof Throwable)
-      ? new self(3, [], $e)
-      : new self(0, [], $e);
+      ? new self(3, $msg, $e)
+      : new self(0, $msg, $e);
   }
   # }}}
   static function chain(?object ...$ee): self # {{{
@@ -148,11 +173,9 @@ class ErrorEx extends Error
     return $e;
   }
   # }}}
-  static function is(mixed $e): bool # {{{
+  static function is(&$o): bool # {{{
   {
-    return $e
-      && is_object($e)
-      && ($e instanceof self);
+    return $o instanceof self;
   }
   # }}}
   # }}}
@@ -216,6 +239,14 @@ class ErrorEx extends Error
     return $last;
   }
   # }}}
+  function raise(): self # {{{
+  {
+    if ($this->level < 3) {
+      $this->level++;
+    }
+    return $this;
+  }
+  # }}}
   function count(): int # {{{
   {
     for ($x=1, $e=$this->next; $e; $e=$e->next) {
@@ -238,11 +269,17 @@ class ErrorEx extends Error
   function isError(): bool {
     return $this->level >= 2;
   }
+  function isNotError(): bool {
+    return $this->level < 2;
+  }
   function isFatal(): bool {
     return $this->level >= 3;
   }
   function hasError(): bool {
     return $this->errorlevel(2) > 1;
+  }
+  function hasNoError(): bool {
+    return $this->errorlevel(2) < 2;
   }
   function hasIssue(): bool {
     return $this->errorlevel(1) > 0;
@@ -256,8 +293,5 @@ class ErrorEx extends Error
   }
   # }}}
 }
-return class_alias(
-  '\SM\ErrorEx',
-  '\SM\EE', false
-);
+return ErrorEx::init();
 ###

@@ -1032,7 +1032,7 @@ abstract class SyncReaderWriter # {{{
   # }}}
   static function badOption(string $k): object # {{{
   {
-    return ErrorEx::fail('incorrect option: '.$k);
+    return ErrorEx::fail('incorrect option', $k);
   }
   # }}}
   static function parseInfo(string &$s, ?object &$e): ?array # {{{

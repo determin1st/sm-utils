@@ -1,9 +1,9 @@
 <?php declare(strict_types=1);
 # defs {{{
 namespace SM;
-use ArrayAccess,Closure,Error,Throwable;
+use Closure,Error,Throwable,ArrayAccess;
 use function
-  hrtime,sleep,usleep,count,in_array,
+  hrtime,sleep,usleep,count,in_array,is_array,
   array_shift,array_unshift,array_splice;
 use const
   DIRECTORY_SEPARATOR;
@@ -17,7 +17,7 @@ abstract class Completable # {{{
   function cancel(): ?object {
     return null;
   }
-  static object $THEN;# continuator
+  static object $THEN;# dynamic continuator
   static int    $TIME=0;# current nanotime
   static function from(?object $x): object
   {
@@ -42,7 +42,9 @@ abstract class Reversible extends Completable # {{{
     if ($q = &$this->reverse)
     {
       # undo previously finished reversibles
-      foreach ($q as $p) {$p->undo();}
+      for ($i=0,$j=count($q); $i < $j; ++$i) {
+        $q[$i]->undo();
+      }
       $q = [];
     }
   }
@@ -71,17 +73,19 @@ class Promise extends Reversible # {{{
   # construction {{{
   static function from(?object $x): self # {{{
   {
-    return (!$x || !($x instanceof self))
-      ? new self(Completable::from($x))
-      : $x;
+    return ($x instanceof self)
+      ? $x : new self(Completable::from($x));
   }
   # }}}
   static function Value(...$v): self # {{{
   {
-    return new self((count($v) === 1)
-      ? new PromiseValue($v[0])
-      : new PromiseValue($v)
-    );
+    $a = match (count($v))
+    {
+      0 => new PromiseValue(null),
+      1 => new PromiseValue($v[0]),
+      default => new PromiseValue($v)
+    };
+    return new self($a);
   }
   # }}}
   static function Func(object $f, ...$a): self # {{{
@@ -453,65 +457,65 @@ class Promise extends Reversible # {{{
 # }}}
 class Loop # {{{
 {
-  # base {{{
+  # TODO: performance measuring mode
+  # TODO: cancellation/stop
+  # constructor {{{
   const MAX_TIMEOUT = 60*60*1000000000;# 1h=60*60sec in nano
-  public  static int   $pending = 0;
-  public  static int   $idle    = 0;
-  private static int   $timeout = 0;
-  private static array $columns = [];
-  private static array $row     = [];
-  private function __construct()
-  {}
+  private static ?self $I=null;
+  private function __construct(
+    public int   $pending = 0,
+    public int   $idle    = 0,
+    public int   $timeout = 0,
+    public array $columns = [],
+    public array $row     = []
+  ) {}
   # }}}
-  static function add(object $p, string $id=''): bool # {{{
+  # core {{{
+  function add(object $p, string $id=''): self # {{{
   {
-    $p = Promise::from($p);
     if ($id === '')
     {
-      if (isset(self::$columns[$id])) {
-        self::$columns[$id][] = $p;
-      }
-      else
-      {
-        self::$columns[$id] = [$p];
-        self::$pending++;
-      }
+      $this->row[] = $p;
+      $this->pending++;
+    }
+    elseif (isset($this->columns[$id])) {
+      $this->columns[$id][] = $p;
     }
     else
     {
-      self::$row[] = $p;
-      self::$pending++;
+      $this->columns[$id] = [$p];
+      $this->pending++;
     }
-    return true;
+    return $this;
   }
   # }}}
-  static function spin(): bool # {{{
+  function spin(): bool # {{{
   {
     # check nothing to do
-    $n0 = count(self::$columns);
-    $n1 = count(self::$row);
+    $n0 = count($this->columns);
+    $n1 = count($this->row);
     if (!$n0 && !$n1)
     {
-      self::$pending = 0;
-      self::$idle    = 0;
-      self::$timeout = 0;
+      $this->pending = 0;
+      $this->idle    = 0;
+      $this->timeout = 0;
       return false;
     }
-    # prepare
-    $idle = 0;
+    # set current nanotime
     Completable::$TIME = $t = hrtime(true);
-    $min = $t + self::MAX_TIMEOUT;
+    $min  = $t + self::MAX_TIMEOUT;
+    $idle = 0;
     # execute
     if ($n0)
     {
-      foreach (self::$columns as $id => &$q)
+      foreach ($this->columns as $id => &$q)
       {
         if ($q[0]->complete())
         {
           array_shift($q);
           if (!$q)
           {
-            unset(self::$columns[$id]);
+            unset($this->columns[$id]);
             $n0--;
           }
         }
@@ -524,7 +528,7 @@ class Loop # {{{
     }
     if ($n1)
     {
-      $q = &self::$row;
+      $q = &$this->row;
       for ($i=0; $i < $n1; ++$i)
       {
         if ($q[$i]->complete())
@@ -540,9 +544,9 @@ class Loop # {{{
       }
     }
     # update counters
-    self::$pending = $i = $n0 + $n1;
-    self::$idle    = $idle;
-    self::$timeout = 0;
+    $this->pending = $i = $n0 + $n1;
+    $this->idle    = $idle;
+    $this->timeout = 0;
     # check exhausted
     if (!$i) {
       return false;
@@ -552,15 +556,15 @@ class Loop # {{{
     if ($i === $idle && $min > $t)
     {
       $t = (int)(($min - $t) / 1000);# nano=>micro
-      self::$timeout = $t ?: 1;
+      $this->timeout = $t ?: 1;
     }
     # positive, more work to do
     return true;
   }
   # }}}
-  static function cooldown(): void # {{{
+  function cooldown(): void # {{{
   {
-    $t = &self::$timeout;
+    $t = &$this->timeout;
     while ($t > 1000000)
     {
       sleep(1);
@@ -570,20 +574,33 @@ class Loop # {{{
     $t = 0;
   }
   # }}}
-  static function run(): void # {{{
-  {
-    # TODO: performance measuring mode
-    while (self::spin()) {
-      self::cooldown();
-    }
-  }
   # }}}
-  static function stop(): bool # {{{
+  static function init(): bool # {{{
   {
-    # TODO: cancellation
+    if (self::$I) {
+      return false;
+    }
+    self::$I = new self();
     return true;
   }
   # }}}
+  static function await(object $p): object # {{{
+  {
+    $I = self::$I->add($p);
+    while ($I->spin() && $p->pending) {
+      $I->cooldown();
+    }
+    return $p->result;
+  }
+  # }}}
+}
+# }}}
+function await(object|array $p): object # {{{
+{
+  return Loop::await(is_array($p)
+    ? Promise::Row($p)
+    : Promise::from($p)
+  );
 }
 # }}}
 # actions {{{
@@ -671,7 +688,7 @@ class PromiseValue extends Completable # {{{
   ) {}
   function complete(): ?object
   {
-    $this->result->value = $this->value;
+    $this->result->set($this->value);
     return self::$THEN->hop();
   }
 }
@@ -712,11 +729,11 @@ class PromiseTimeout extends Completable # {{{
   {
     static $E0='incorrect delay, less than zero';
     static $E1='incorrect delay, greater than maximum';
-    if ($delay < 0) {
-      return ErrorEx::fail($E0, $delay);
+    if ($ms < 0) {
+      return ErrorEx::fail($E0, $ms);
     }
-    if ($delay > self::MAX_DELAY) {
-      return ErrorEx::fail($E1, $delay);
+    if ($ms > self::MAX_DELAY) {
+      return ErrorEx::fail($E1, $ms);
     }
     return null;# good
   }
@@ -984,13 +1001,15 @@ class PromiseResult implements ArrayAccess
   ###
   public object $track;
   public bool   $ok;
-  public mixed  $value = null;
+  public mixed  $value;
+  public array  $store;
   ###
   function __construct(?object $r=null)
   {
     $this->track = new PromiseResultTrack();
     $this->ok    = &$this->track->ok;
-    if ($r) {$this->value = $r->value;}
+    $this->store = $r ? $r->store : [null];
+    $this->value = &$this->store[0];
   }
   # }}}
   # getters {{{
@@ -1031,6 +1050,19 @@ class PromiseResult implements ArrayAccess
   # }}}
   # }}}
   # setters {{{
+  function extend(): self # {{{
+  {
+    array_unshift($this->store, null);
+    $this->value = &$this->store[0];
+    return $this;
+  }
+  # }}}
+  function set(mixed &$value): self # {{{
+  {
+    $this->extend()->value = $value;
+    return $this;
+  }
+  # }}}
   function info(...$msg): self # {{{
   {
     array_unshift(
@@ -1061,9 +1093,10 @@ class PromiseResult implements ArrayAccess
   # }}}
   function error(object $e): self # {{{
   {
+    $e = ErrorEx::from($e);
     array_unshift(
       $this->current()->trace,
-      [self::IS_ERROR, ErrorEx::from($e)]
+      [self::IS_ERROR, $e]
     );
     if ($e->hasError()) {
       $this->ok = false;
@@ -1233,4 +1266,5 @@ if (!isset(Completable::$THEN))
   };
 }
 # }}}
+return Loop::init();
 ###
