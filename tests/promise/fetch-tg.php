@@ -14,7 +14,11 @@ if (!$token)
 }
 $fetch = Fetch::new([
   'baseUrl' => 'https://api.telegram.org/'.$token.'/',
-  #'options' => [CURLOPT_VERBOSE => true],
+  'options' => [
+    CURLOPT_VERBOSE => true
+    CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE,
+    CURLOPT_PIPEWAIT     => true,# be lazy/multiplexy
+  ],
 ]);
 if (ErrorEx::is($fetch))
 {

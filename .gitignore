@@ -1,4 +1,4 @@
 *.vim
 *.swp
 *.opcode
-junk/
+__*

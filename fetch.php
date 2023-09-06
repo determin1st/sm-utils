@@ -105,20 +105,20 @@ class FetchGear # {{{
     CURLOPT_PROTOCOLS        => (
       CURLPROTO_HTTP|CURLPROTO_HTTPS
     ),
+    CURLOPT_HTTP_VERSION     => CURL_HTTP_VERSION_NONE,
+    CURLOPT_PIPEWAIT         => false,# be lazy/multiplexy?
     CURLOPT_TCP_NODELAY      => true,
     CURLOPT_TCP_KEEPALIVE    => 1,
     CURLOPT_TCP_KEEPIDLE     => 300,
     CURLOPT_TCP_KEEPINTVL    => 300,
-    CURLOPT_HTTP_VERSION     => CURL_HTTP_VERSION_2_PRIOR_KNOWLEDGE,
-    CURLOPT_PIPEWAIT         => true,# be lazy/multiplexy
     CURLOPT_SSL_ENABLE_ALPN  => true,# negotiate to h2
     CURLOPT_SSL_VERIFYSTATUS => false,# require OCSP during the TLS handshake?
     CURLOPT_SSL_VERIFYHOST   => 0,# are you afraid of MITM?
-    CURLOPT_SSL_VERIFYPEER   => false,# disallow self-signed certs?
+    CURLOPT_SSL_VERIFYPEER   => false,# false allows self-signed certs
   ];
   const RETRY = [
     'callback' => null,
-    'fast'     => 1,# fast retry count (0:none)
+    'fast'     => 0,# fast retry count (0:none,-1:unlimited)
     'slow'     => 0,# slow retry count (0:none,-1:unlimited)
     'pause'    => 1800,# first slow retry pause (ms)
     'backoff'  => 6,# pause progression steps

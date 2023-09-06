@@ -70,16 +70,6 @@ class ErrorEx extends Error
   static function fail(...$msg): self {
     return new self(2, $msg);
   }
-  static function failFn(...$msg): self
-  {
-    # prefix messages with the point of failure
-    $e = new self(2, $msg);
-    $a = (count($a = $e->getTrace()) > 1)
-      ? $a[1]['function'].'@'.$a[0]['line']
-      : $a[0]['function'];
-    array_unshift($e->msg, $a);
-    return $e;
-  }
   private static function num(
     int $n, string $msg, string $file, int $line
   ):never
