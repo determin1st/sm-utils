@@ -46,12 +46,7 @@ class ErrorEx extends Error
     public ?object $next  = null
   ) {
     # make sure all messages are strings
-    for ($i=0,$j=count($msg); $i < $j; ++$i)
-    {
-      if (!is_string($msg[$i])) {
-        $msg[$i] = strval($msg[$i]);
-      }
-    }
+    self::stringify($msg);
     # eject empty tail
     while ($i && $msg[--$i] === '') {
       array_pop($msg);
@@ -82,6 +77,17 @@ class ErrorEx extends Error
   }
   # }}}
   # outer api {{{
+  static function &stringify(array &$a): array # {{{
+  {
+    for ($i=0,$j=count($a); $i < $j; ++$i)
+    {
+      if (!is_string($a[$i])) {
+        $a[$i] = strval($a[$i]);
+      }
+    }
+    return $a;
+  }
+  # }}}
   static function init(): bool # {{{
   {
     # this custom error handler will throw
@@ -245,9 +251,14 @@ class ErrorEx extends Error
     return $x;
   }
   # }}}
+  function logScheme(): array # {{{
+  {
+    return [];
+  }
+  # }}}
   ###
-  function  val(mixed  $v): mixed {return $v;}
   function &var(mixed &$v): mixed {return $v;}
+  function  val(mixed  $v): mixed {return $v;}
   # }}}
   # is/has {{{
   function isInfo(): bool {

@@ -17,7 +17,8 @@ return (PHP_OS_FAMILY === 'Windows')
 abstract class ConioBase
 {
   # common {{{
-  static $error;
+  static ?object $ERROR=null;
+  static string  $LAST_CHAR='';
   protected static $con,$ready=false;
   protected function __construct() {}
   abstract static function check(): bool;
@@ -48,7 +49,7 @@ abstract class ConioBase
     }
     if (($c = mb_chr($i, 'UTF-16LE')) === false)
     {
-      self::$error = ErrorEx::warn('mb_chr', strval($i));
+      self::$ERROR = ErrorEx::warn('mb_chr', strval($i));
       return '';
     }
     return $c;
@@ -64,7 +65,7 @@ abstract class ConioBase
     }
     if (($i = mb_ord($c, 'UTF-8')) === false)
     {
-      self::$error = ErrorEx::warn('mb_ord', $s);
+      self::$ERROR = ErrorEx::warn('mb_ord', $s);
       return -1;
     }
     return $i;
@@ -79,17 +80,17 @@ class ConioWin extends ConioBase
   {
     if (!class_exists('FFI'))
     {
-      self::$error = ErrorEx::fail('extension required: FFI');
+      self::$ERROR = ErrorEx::fail('extension required: FFI');
       return false;
     }
     if (!function_exists('mb_ord'))
     {
-      self::$error = ErrorEx::fail('extension required: mbstring');
+      self::$ERROR = ErrorEx::fail('extension required: mbstring');
       return false;
     }
     if (!file_exists(self::FILE))
     {
-      self::$error = ErrorEx::fail('file not found: '.self::FILE);
+      self::$ERROR = ErrorEx::fail('file not found: '.self::FILE);
       return false;
     }
     return true;
@@ -107,7 +108,7 @@ class ConioWin extends ConioBase
     }
     catch (Throwable $e)
     {
-      self::$error = ErrorEx::from($e);
+      self::$ERROR = ErrorEx::from($e);
       self::$con   = null;
     }
     return !!self::$con;
@@ -122,7 +123,7 @@ class ConioWin extends ConioBase
   {
     return self::$con->_kbhit()
       ? self::getch_wait()
-      : '';
+      : (self::$LAST_CHAR = '');
   }
   # }}}
   static function getch_wait(): string # {{{
@@ -130,14 +131,16 @@ class ConioWin extends ConioBase
     try
     {
       $i = self::$con->_getwch();
-      return ($i === 0 || $i === 224)
+      $c = ($i === 0 || $i === 224)
         ? chr($i).chr(self::$con->_getwch())
         : self::int2ch($i);
+      ###
+      return self::$LAST_CHAR = $c;
     }
     catch (Throwable $e)
     {
-      self::$error = ErrorEx::from($e);
-      return '';
+      self::$ERROR = ErrorEx::from($e);
+      return self::$LAST_CHAR = '';
     }
   }
   # }}}
@@ -151,7 +154,7 @@ class ConioWin extends ConioBase
     }
     catch (Throwable $e)
     {
-      self::$error = ErrorEx::from($e);
+      self::$ERROR = ErrorEx::from($e);
       return false;
     }
   }

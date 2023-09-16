@@ -12,8 +12,8 @@ use function
   ###
   is_scalar,is_array,is_object,is_string,is_int,is_bool,is_file,
   min,pow,strpos,substr,rtrim,ltrim,strtolower,http_build_query,
-  basename,array_search,array_splice,array_is_list,
-  array_shift,explode,count;
+  strtoupper,ctype_upper,basename,array_search,array_splice,
+  array_is_list,array_shift,explode,count;
 use function SM\{
   array_import,array_import_new,array_import_all,file_unlink,
   try_json_decode,try_json_encode
@@ -36,12 +36,9 @@ class Fetch # {{{
     }
     try
     {
-      # prepare
-      $head = FetchGear::o_headers($o, []);
-      $opts = FetchGear::o_options($o, $head);
-      # construct
-      return new self(
-        $opts, $head,
+      $h = FetchGear::o_headers($o);
+      return new self($h,
+        FetchGear::o_options($o, $h),
         FetchGear::o_retry($o),
         FetchGear::o_string($o, 'baseUrl'),
         FetchGear::o_bool($o, 'mounted')
@@ -53,8 +50,8 @@ class Fetch # {{{
   }
   # }}}
   private function __construct(# {{{
-    public array  &$options,
     public array  &$headers,
+    public array  &$options,
     public array  &$retry,
     public string $baseUrl,
     public bool   $mounted
@@ -66,13 +63,50 @@ class Fetch # {{{
       $options[CURLOPT_POST] = true;
       $options[CURLOPT_URL]  = $baseUrl;
       $options[CURLOPT_HTTPHEADER] =
-        self::headers_pack($headers);
+        FetchGear::headers_pack($headers);
     }
   }
   # }}}
   function __invoke(array $o=[]): object # {{{
   {
-    try {
+    try
+    {
+      return $this->mounted
+        ? FetchGear::promise_easy($this, $o)
+        : FetchGear::promise($this, $o);
+    }
+    catch (Throwable $e) {
+      return Promise::from($e);
+    }
+  }
+  # }}}
+  function __call(string $name, array $args): object # {{{
+  {
+    try
+    {
+      # create options with the chosen method
+      $o = ($name !== 'post')
+        ? ['method' => strtoupper($name)]
+        : [];# POST is the default
+      # when instance has its url fixed,
+      # treat first argument as content,
+      # otherwise set both url and content
+      if ($this->mounted)
+      {
+        if ($args) {
+          $o['content'] = $args[0];
+        }
+      }
+      else
+      {
+        switch (count($args)) {
+        case 2:
+          $o['content'] = $args[1];
+        case 1:
+          $o['url'] = $args[0];
+        }
+      }
+      # construct
       return FetchGear::promise($this, $o);
     }
     catch (Throwable $e) {
@@ -116,7 +150,10 @@ class FetchGear # {{{
     CURLOPT_SSL_VERIFYHOST   => 0,# are you afraid of MITM?
     CURLOPT_SSL_VERIFYPEER   => false,# false allows self-signed certs
   ];
-  const RETRY = [
+  const HEADERS = [
+    'accept' => 'application/json',
+  ];
+  const  RETRY = [
     'callback' => null,
     'fast'     => 0,# fast retry count (0:none,-1:unlimited)
     'slow'     => 0,# slow retry count (0:none,-1:unlimited)
@@ -150,7 +187,7 @@ class FetchGear # {{{
       return $defs;
     }
     if (!is_array($o[$k])) {
-      throw self::o_error($k);
+      throw self::o_error($k, 'not an array');
     }
     if (!$defs) {
       return $o[$k];
@@ -165,7 +202,7 @@ class FetchGear # {{{
     if (isset($o[$k]))
     {
       if (!is_string($o[$k])) {
-        throw self::o_error($k);
+        throw self::o_error($k, 'not a string');
       }
       return $o[$k];
     }
@@ -179,7 +216,7 @@ class FetchGear # {{{
     if (isset($o[$k]))
     {
       if (!is_int($o[$k])) {
-        throw self::o_error($k);
+        throw self::o_error($k, 'not an integer');
       }
       return $o[$k];
     }
@@ -193,16 +230,32 @@ class FetchGear # {{{
     if (isset($o[$k]))
     {
       if (!is_bool($o[$k])) {
-        throw self::o_error($k);
+        throw self::o_error($k, 'not a boolean');
       }
       return $o[$k];
     }
     return $def;
   }
   # }}}
-  static function o_error(string $k): object # {{{
+  static function o_error(# {{{
+    string $k, string $desc=''
+  ):object
   {
-    return ErrorEx::fail('incorrect option', $k);
+    return ErrorEx::fail('option', $k, $desc);
+  }
+  # }}}
+  static function o_method(array &$o): string # {{{
+  {
+    static $k='method';
+    # check empty
+    if (!($s = self::o_string($o, $k))) {
+      return '';
+    }
+    # check correct
+    if (!ctype_upper($s)) {
+      throw self::o_error($k, 'must be uppercase');
+    }
+    return $s;
   }
   # }}}
   static function o_url(array &$o, string &$base): string # {{{
@@ -219,15 +272,17 @@ class FetchGear # {{{
     return $base.$url;
   }
   # }}}
-  static function &o_headers(array &$o, array $defs): array # {{{
+  static function &o_headers(# {{{
+    array &$o, array $def=self::HEADERS
+  ):array
   {
     if (!($a = self::o_array($o, 'headers'))) {
-      return $defs;
+      return $def;
     }
     if (array_is_list($a)) {
       $a = self::headers_unpack($a);
     }
-    return array_import_new($a, $defs);
+    return array_import_new($a, $def);
   }
   # }}}
   static function &o_options(array &$o, array &$h): array # {{{
@@ -266,26 +321,37 @@ class FetchGear # {{{
   ):string|array
   {
     static $k0='content',$k1='content-type';
-    if (!isset($o[$k0])) {
+    static $T0='text/plain';
+    static $T1='multipart/form-data';
+    static $T2='application/x-www-form-urlencoded';
+    static $T3='application/json';
+    if (!isset($o[$k0]))
+    {
       $x = '';
+      if (isset($h[$k1])) {
+        unset($h[$k1]);
+      }
     }
-    elseif (is_string($x = &$o[$k0])) {
-      $h[$k1] = 'text/plain';
+    elseif (is_string($x = &$o[$k0]))
+    {
+      if (!isset($h[$k1])) {
+        $h[$k1] = $T0;
+      }
     }
     elseif (!is_array($x)) {
-      throw self::o_error($k0);
+      throw self::o_error($k0, 'not an array');
     }
     elseif (self::has_file($x)) {
-      $h[$k1] = 'multipart/form-data';
+      $h[$k1] = $T1;
     }
     elseif (isset($o['formenc']))
     {
-      $h[$k1] = 'application/x-www-form-urlencoded';
+      $h[$k1] = $T2;
       $x = http_build_query($x, '', null, PHP_QUERY_RFC3986);
     }
     else
     {
-      $h[$k1] = 'application/json';
+      $h[$k1] = $T3;
       $x = try_json_encode($x, $e);
       $e && throw $e;
     }
@@ -300,8 +366,18 @@ class FetchGear # {{{
     # compose request
     $q = $x->options;# copy
     $q[CURLOPT_URL] = self::o_url($o, $x->baseUrl);
-    $q[CURLOPT_HTTPHEADER] = &self::headers_pack($head);
-    if ($body)
+    $q[CURLOPT_HTTPHEADER] = self::headers_pack($head);
+    if ($method = self::o_method($o))
+    {
+      $q[CURLOPT_CUSTOMREQUEST] = $method;
+      if ($body) {
+        $q[CURLOPT_POSTFIELDS] = &$body;
+      }
+      elseif (isset($q[CURLOPT_POSTFIELDS])) {
+        unset($q[CURLOPT_POSTFIELDS]);
+      }
+    }
+    elseif ($body)
     {
       $q[CURLOPT_POST] = true;
       $q[CURLOPT_POSTFIELDS] = &$body;
@@ -323,7 +399,7 @@ class FetchGear # {{{
     return false;
   }
   # }}}
-  static function &headers_pack(array &$a): array # {{{
+  static function headers_pack(array &$a): array # {{{
   {
     $list = [];
     foreach ($a as $k => &$v) {
@@ -332,7 +408,7 @@ class FetchGear # {{{
     return $list;
   }
   # }}}
-  static function &headers_unpack(array &$a): array # {{{
+  static function headers_unpack(array &$a): array # {{{
   {
     $map = [];
     for ($i=0,$j=count($a); $i < $j; ++$i)
@@ -401,7 +477,7 @@ class FetchGear # {{{
     return $running;
   }
   # }}}
-  static function &murl_info(object $murl): ?array # {{{
+  static function murl_info(object $murl): ?array # {{{
   {
     static $NONE=null;
     if (!($a = curl_multi_info_read($murl))) {
@@ -470,7 +546,7 @@ class FetchGear # {{{
     return $curl;
   }
   # }}}
-  static function &curl_info(object $curl): array # {{{
+  static function curl_info(object $curl): array # {{{
   {
     if ($x = curl_getinfo($curl)) {
       return $x;
@@ -560,7 +636,7 @@ class FetchGear # {{{
         ->reject($e);
     }
     # get the result
-    $v = &self::curl_info($curl);
+    $v = self::curl_info($curl);
     $s = curl_multi_getcontent($curl);
     # parse headers
     if ($action->request[CURLOPT_HEADER] &&
@@ -568,7 +644,7 @@ class FetchGear # {{{
     {
       $a = explode("\r\n", rtrim(substr($s, 0, $i)));
       $s = substr($s, $i);
-      $v['headers'] = &self::headers_unpack($a);
+      $v['headers'] = self::headers_unpack($a);
     }
     else {
       $v['headers'] = [];
@@ -712,25 +788,23 @@ class FetchGear # {{{
     object $x, array &$o
   ):object
   {
-    if ($x->mounted)
-    {
-      # simplified instance transfer
-      $s = try_json_encode($o, $e);
-      $e && throw $e;
-      $x->options[CURLOPT_POSTFIELDS] = &$s;
-      $a = new FetchAction(
-        self::$I, $x, $x->options, $x->retry
-      );
-    }
-    else
-    {
-      $a = new FetchAction(
-        self::$I, $x,
-        self::o_request($o, $x),
-        self::o_retry($o, $x->retry),
-      );
-    }
-    return Promise::from($a);
+    return Promise::from(new FetchAction(
+      self::$I, $x,
+      self::o_request($o, $x),
+      self::o_retry($o, $x->retry)
+    ));
+  }
+  # }}}
+  static function promise_easy(# {{{
+    object $x, array &$o
+  ):object
+  {
+    $s = try_json_encode($o, $e);
+    $e && throw $e;
+    $x->options[CURLOPT_POSTFIELDS] = &$s;
+    return Promise::from(new FetchAction(
+      self::$I, $x, $x->options, $x->retry
+    ));
   }
   # }}}
 }
@@ -796,7 +870,7 @@ class FetchAction extends Completable # {{{
   # }}}
   function resolve(array &$v): bool # {{{
   {
-    $this->result->value = $v;
+    $this->result->setRef($v);
     $this->curl = null;
     return true;
   }
@@ -808,7 +882,7 @@ class FetchAction extends Completable # {{{
       return false;
     }
     # fail
-    $this->result->value = $v;
+    $this->result->setRef($v);
     $this->result->error($e);
     $this->curl = null;
     return true;
