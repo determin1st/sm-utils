@@ -45,13 +45,8 @@ class ErrorEx extends Error
     public mixed   $value = null,
     public ?object $next  = null
   ) {
-    # make sure all messages are strings
-    self::stringify($msg);
-    # eject empty tail
-    while ($i && $msg[--$i] === '') {
-      array_pop($msg);
-    }
     parent::__construct('', -1);
+    self::stringify($msg);
   }
   static function skip(): self {
     return new self(0);
@@ -79,11 +74,16 @@ class ErrorEx extends Error
   # outer api {{{
   static function &stringify(array &$a): array # {{{
   {
+    # convert items
     for ($i=0,$j=count($a); $i < $j; ++$i)
     {
       if (!is_string($a[$i])) {
         $a[$i] = strval($a[$i]);
       }
+    }
+    # remove empty tail
+    while ($i && $a[--$i] === '') {
+      array_pop($a);
     }
     return $a;
   }

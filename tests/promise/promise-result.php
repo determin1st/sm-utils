@@ -86,7 +86,7 @@ while (1)
       })
     );
     var_dump($r);
-    var_dump($r->scheme());
+    #var_dump($r->scheme());
     echo "\n";
     break;
   # }}}
