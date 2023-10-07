@@ -6,7 +6,7 @@ use
   Closure,Error,Throwable,ArrayAccess;
 use function
   is_array,count,array_unshift,array_pop,array_push,
-  in_array,implode,time,hrtime,usleep;
+  array_reverse,in_array,implode,time,hrtime,usleep;
 use const
   DIRECTORY_SEPARATOR;
 ###
@@ -397,7 +397,7 @@ class Promise extends Reversible # {{{
           $q->shift();
           return --$i
             ? $this->complete()
-            : $this->result->done();
+            : $this->result->_end();
         case 3:# immediate expansive recursion
           $i += self::expand($q, $x->getAction());
           return $this->complete();
@@ -408,11 +408,11 @@ class Promise extends Reversible # {{{
           return $this->cancel();
         case 6:# immediate completion
           $i = 0;
-          return $this->result->done();
+          return $this->result->_end();
         default:# skip unknown
           $q->shift();
           return --$i
-            ? null : $this->result->done();
+            ? null : $this->result->_end();
         }
       }
       # collect reversible
@@ -430,7 +430,7 @@ class Promise extends Reversible # {{{
     # one complete, eject and finish
     $q->shift();
     return --$i
-      ? null : $this->result->done();
+      ? null : $this->result->_end();
   }
   # }}}
   function cancel(): ?object # {{{
@@ -447,14 +447,14 @@ class Promise extends Reversible # {{{
     }
     # undo all finished and complete
     $this->undo();
-    return $this->result->done();
+    return $this->result->_end();
   }
   # }}}
   function undo(): void # {{{
   {
     if ($q = &$this->reverse)
     {
-      $r = $this->result->reverse();
+      $r = $this->result->_undo();
       $i = count($q);
       while (--$i >= 0)
       {
@@ -597,14 +597,11 @@ class Loop # {{{
   {
     if ($t > 1000000)
     {
-      usleep(500000);
-      usleep(500000);
-      $t -= 1000000;
+      usleep(500000);$t -= 500000;
+      usleep(500000);$t -= 500000;
     }
-    else
-    {
-      usleep($t);
-      $t = 0;
+    else {
+      usleep($t);$t = 0;
     }
   }
   # }}}
@@ -763,7 +760,7 @@ class PromiseFuse extends PromiseNop # {{{
   ) {}
   function complete(): ?object
   {
-    $this->result->fuse();
+    $this->result->_fuse();
     return self::$THEN->fuse($this->action);
   }
 }
@@ -854,9 +851,7 @@ class PromiseColumn extends PromiseGroup # {{{
     if ($i < 0)
     {
       $p = $q[$i = 0];
-      $p->result = new PromiseResult(
-        $this->result->store
-      );
+      $p->result = $this->result->_column($j);
     }
     elseif (!($p = $q[$i])->result) {
       $p->result = $q[$i - 1]->result;
@@ -872,9 +867,9 @@ class PromiseColumn extends PromiseGroup # {{{
     # collect reversible
     $p->reverse && $this->reverseAdd($p);
     # check all complete
-    if (++$i === $j)
+    if (++$i >= $j)
     {
-      $this->result->column($r, $i, $j);
+      $this->result->_columnEnd($i);
       return null;
     }
     # check breakable failed
@@ -899,13 +894,11 @@ class PromiseColumn extends PromiseGroup # {{{
     # check not finished
     if ($i < ($j = $this->cnt))
     {
-      # cancel one
+      # cancel one and finish
       $q = &$this->group;
       $q[$i]->result && $q[$i]->cancel();
-      # finish
-      $this->result->column(
-        $q[0]->result, $i, $i = $j
-      );
+      $this->result->_columnEnd($i);
+      $i = $j;
     }
     return $this->result;
   }
@@ -931,7 +924,6 @@ class PromiseRow extends PromiseGroup # {{{
   function complete(): ?object # {{{
   {
     # prepare
-    $r = $this->result;
     $q = &$this->group;
     $i = &$this->idx;
     # check finished
@@ -940,23 +932,23 @@ class PromiseRow extends PromiseGroup # {{{
     }
     # initialize
     if ($i < 0) {
-      $i = $r->row($q, $j);
+      $i = $this->result->_row($q, $j);
     }
     # to enter idle state, the number of idle items and
     # the closest idle timeout must be determined
     $idleTime = self::$HRTIME + Loop::MAX_TIMEOUT;
     $idleCnt  = 0;
-    # iterate and execute all
+    # execute all
     for ($k=0; $k < $j; ++$k)
     {
-      # check this one is complete
+      # checkout
       if (!($p = $q[$k]))
       {
         $idleCnt++;
         continue;
       }
-      # execute one
-      if (!($x = $p->complete()))
+      # execute
+      if (!($r = $p->complete()))
       {
         if ($p->idle)
         {
@@ -968,12 +960,12 @@ class PromiseRow extends PromiseGroup # {{{
         continue;
       }
       # one complete
-      $q[$k] = $r->cell($x, $k, true);
-      $i++; $idleCnt++;
-      # collect reversible
+      $q[$k] = $this->result->_rowDone($r, $k, ++$i);
+      $idleCnt++;
+      # collect reversibles
       $p->reverse && $this->reverseAdd($p);
       # check break condition
-      if ($this->break && !$x->ok)
+      if ($this->break && !$r->ok)
       {
         if (--$this->break) {
           continue;# more to break
@@ -1006,18 +998,11 @@ class PromiseRow extends PromiseGroup # {{{
       return null;
     }
     # check not finished
-    if ($i < ($j = $this->cnt))
+    if ($i < $this->cnt)
     {
-      # cancel all unfinished
-      $q = &$this->group;
-      for ($k=0; $k < $j; ++$k)
-      {
-        $q[$k] && $this->result->cell(
-          $q[$k]->cancel(), $k, false
-        );
-      }
-      # set finished
-      $i = $j;
+      $i = $this->result->_rowCancel(
+        $this->group, $this->cnt
+      );
     }
     return $this->result;
   }
@@ -1026,19 +1011,19 @@ class PromiseRow extends PromiseGroup # {{{
 # }}}
 # }}}
 # result {{{
-class PromiseResult implements ArrayAccess
+class PromiseResult
+  implements ArrayAccess,Loggable
 {
-  # TODO: timestamp and time measurement
   # constructor {{{
   const
-    IS_INFO     = 0,
-    IS_WARNING  = 1,
-    IS_FAILURE  = 2,
-    IS_ERROR    = 3,# ErrorEx object
-    IS_COLUMN   = 4,# result of the column/row
-    IS_ROW      = 5,# a group of cells
-    IS_FUSION   = 6,# all => one track
-    IS_REVERSAL = 8;# all => cancellation track
+    IS_INFO    = 0,
+    IS_WARNING = 1,
+    IS_FAILURE = 2,
+    IS_ERROR   = 3,# ErrorEx object
+    IS_COLUMN  = 4,# column group
+    IS_ROW     = 5,# row group
+    IS_FUSION  = 6,# all => one track
+    IS_UNDO    = 8;# all => cancellation track
   ###
   public int    $time;
   public object $track;
@@ -1055,7 +1040,7 @@ class PromiseResult implements ArrayAccess
     $this->setRef($x);
   }
   # }}}
-  # getters {{{
+  # util {{{
   function __debugInfo(): array # {{{
   {
     return [
@@ -1064,98 +1049,45 @@ class PromiseResult implements ArrayAccess
     ];
   }
   # }}}
-  static function trace_info(# {{{
-    array $trace
-  ):array
+  static function trace_info(array $t): array # {{{
   {
-    foreach ($trace as &$t)
+    foreach ($t as &$a)
     {
-      $t = match ($t[0]) {
+      $a = match ($a[0]) {
       self::IS_INFO
-        => 'INFO: '.implode('·', $t[1]),
+        => 'INFO: '.implode('·', $a[1]),
       self::IS_WARNING
-        => 'WARNING: '.implode('·', $t[1]),
+        => 'WARNING: '.implode('·', $a[1]),
       self::IS_FAILURE
-        => 'FAILURE: '.implode('·', $t[1]),
+        => 'FAILURE: '.implode('·', $a[1]),
       self::IS_ERROR
-        => 'ERROR: '.$t[1]->message(),
+        => 'ERROR: '.$a[1]->message(),
       self::IS_COLUMN
-        => ['COLUMN: '.$t[2].'/'.$t[3], $t[1]],
+        => ['COLUMN: '.$a[2].'/'.$a[3], $a[1]],
       self::IS_ROW
-        => ['ROW: '.$t[2].'/'.$t[3], $t[1]],
+        => ['ROW: '.$a[2].'/'.$a[3], $a[1]],
       self::IS_FUSION
-        => ['FUSION', $t[1]],
-      self::IS_REVERSAL
-        => ['REVERSE', $t[1]],
+        => ['FUSE', $a[1]],
+      self::IS_UNDO
+        => ['UNDO', $a[1]],
       default
         => '?',
       };
     }
-    return $trace;
+    return $t;
   }
   # }}}
-  ###
-  static function trace_scheme(# {{{
-    bool $ok, array $title, int $time, array $trace
-  ):array
+  function current(): object # {{{
   {
-    $a = [];
-    $i = count($trace);
-    while (--$i)
-    {
-      $t = &$trace[$i];
-      switch ($t[0]) {
-      case self::IS_COLUMN:
-      case self::IS_ROW:
-      case self::IS_FUSION:
-      case self::IS_REVERSAL:
-        break;
-      default:
-        $a[] = [$depth,$ok];
-        break;
-      }
+    if (!$this->track->title) {
+      return $this->track;
     }
-    return $a;
+    $t = new PromiseResultTrack($this->track);
+    $this->track = $t;
+    $this->ok = &$t->ok;
+    return $t;
   }
   # }}}
-  function logScheme(): array # {{{
-  {
-    ### log
-    # type  => 0=element,1=header,2=block
-    # level => 0=green,1=yellow,2=red
-    # ...
-    ### log::element
-    # msg  => [..]
-    ### log::header
-    # msg  => [..]
-    # ts   => integer (sec)
-    # span => integer (nanosec)
-    ### log::block
-    # msg  => [..]
-    # ts   => integer (sec)
-    # span => integer (nanosec)
-    # logs => [..]
-    ###
-    $t = $this->track;
-    $a = [
-      'type'  => 2,
-      'level' => ($t->ok ? 0 : 2),
-      'msg'   => ($t->title ?: []),
-      'ts'    => $t->time,
-      'span'  => 0,
-    ];
-    do
-    {
-      if ($t->title)
-      {
-      }
-      array_push($a, ...self::trace_scheme(
-        $t->trace
-      ));
-    }
-    while ($t = $t->prev);
-    return $a;
-  }
   # }}}
   # [] access {{{
   function offsetExists(mixed $k): bool {
@@ -1176,17 +1108,194 @@ class PromiseResult implements ArrayAccess
   function offsetUnset(mixed $k): void
   {}
   # }}}
-  function current(): object # {{{
+  # loggable {{{
+  function log(): array # {{{
   {
-    # select unconfirmed first
-    if (!$this->track->title) {
-      return $this->track;
+    $t = $this->track;
+    $a = self::trace_logs($t->trace);
+    $t->prev && array_push(
+      $a, ...self::track_logs($t->prev)
+    );
+    return [
+      'level' => $t->ok ? 0 : 2,
+      'msg'   => $t->title,
+      'span'  => self::track_span($t),
+      'time'  => $this->time,
+      'logs'  => $a
+    ];
+  }
+  # }}}
+  static function track_level(object $track): int # {{{
+  {
+    if (!$track->ok) {
+      return 2;
     }
-    # create new unconfirmed
-    $t = new PromiseResultTrack($this->track);
-    $this->track = $t;
-    $this->ok = &$t->ok;
-    return $t;
+    foreach ($track->trace as $t)
+    {
+      switch ($t[0]) {
+      case self::IS_WARNING:
+        return 1;
+      case self::IS_ERROR:
+        if ($t[1]->hasIssue()) {
+          return 1;
+        }
+        break;
+      case self::IS_COLUMN:
+        if (self::track_level($t[1])) {
+          return 1;
+        }
+        break;
+      }
+    }
+    return 0;
+  }
+  # }}}
+  static function track_span(object $t): int # {{{
+  {
+    $x = 0;
+    do {
+      $x += $t->span + self::trace_span($t->trace);
+    }
+    while ($t = $t->prev);
+    return $x;
+  }
+  # }}}
+  static function track_logs(object $track): array # {{{
+  {
+    $a = [];
+    do
+    {
+      if ($t = &$track->trace)
+      {
+        $a[] = [
+          'level' => self::track_level($track),
+          'msg'   => $track->title,
+          'span'  => $track->span,
+          'logs'  => self::trace_logs($t)
+        ];
+      }
+      else
+      {
+        $a[] = [
+          'level' => $track->ok ? 0 : 2,
+          'msg'   => $track->title,
+          'span'  => $track->span,
+        ];
+      }
+    }
+    while ($track = $track->prev);
+    return $a;
+  }
+  # }}}
+  static function trace_span(array &$t): int # {{{
+  {
+    $x = 0;
+    $i = count($t);
+    while (--$i >= 0)
+    {
+      switch ($t[$i][0]) {
+      case self::IS_COLUMN:
+      case self::IS_ROW:
+        $x += $t[$i][4];
+        break;
+      case self::IS_FUSION:
+      case self::IS_UNDO:
+        $x += self::track_span($t[$i][1]);
+        break;
+      }
+    }
+    return $x;
+  }
+  # }}}
+  static function trace_logs(array &$trace): array # {{{
+  {
+    # trace should be iterated in reverse order
+    $a = [];
+    $i = count($trace);
+    while (--$i >= 0)
+    {
+      $t = &$trace[$i];
+      switch ($t[0]) {
+      case self::IS_INFO:
+      case self::IS_WARNING:
+      case self::IS_FAILURE:
+        $a[] = [
+          'level' => $t[0],
+          'msg'   => $t[1],
+        ];
+        break;
+      case self::IS_ERROR:
+        $a[] = $t[1]->log();
+        break;
+      case self::IS_COLUMN:
+        $trk = $t[1];
+        $a[] = [
+          'level' => self::track_level($trk),
+          'msg'   => ['COLUMN',$t[2].'/'.$t[3]],
+          'span'  => self::track_span($trk),
+          'logs'  => self::trace_logs($trk->trace)
+        ];
+        break;
+      case self::IS_ROW:
+        $j = 0;
+        $b = [];
+        foreach ($t[1] as $c)
+        {
+          $trk = $c[0];
+          $k = $trk->ok ? 0 : 2;
+          $m = '#'.$c[1];
+          $d = self::trace_logs($trk->trace);
+          $trk->prev && array_push(
+            $d, ...self::track_logs($trk->prev)
+          );
+          $b[] = [
+            'level' => $k,
+            'msg'   => [$m, ...$trk->title],
+            'span'  => self::track_span($trk),
+            'logs'  => $d
+          ];
+          if ($k && !$j) {
+            $j = 2;
+          }
+        }
+        $a[] = [
+          'level' => $j,
+          'msg'   => ['ROW',$t[2].'/'.$t[3]],
+          'span'  => $t[4],
+          'logs'  => $b
+        ];
+        break;
+      case self::IS_FUSION:
+        $trk = $t[1];
+        if ($trk->title) {
+          $b = self::track_logs($trk);
+        }
+        else
+        {
+          $b = self::trace_logs($trk->trace);
+          $trk->prev && array_push(
+            $b, ...self::track_logs($trk->prev)
+          );
+        }
+        $a[] = [
+          'level' => self::track_level($trk),
+          'msg'   => [$trk->ok?'FUSED':'DEFUSED'],
+          'span'  => self::track_span($trk),
+          'logs'  => $b
+        ];
+        break;
+      case self::IS_UNDO:
+        $trk = $t[1];
+        $a[] = [
+          'level' => $t[1]->ok ? 0 : 2,
+          'msg'   => ['UNDO'],
+          'span'  => self::track_span($trk),
+          'logs'  => self::track_logs($trk)
+        ];
+        break;
+      }
+    }
+    return $a;
   }
   # }}}
   # }}}
@@ -1202,13 +1311,122 @@ class PromiseResult implements ArrayAccess
     $this->store[0] = &$value;
     $this->value    = &$this->store[0];
   }
-  function set(mixed $value): void
-  {
-    $this->extend();
-    $this->setRef($value);
+  function set(mixed $value): void {
+    $this->extend()->setRef($value);
   }
   # }}}
   # track setters {{{
+  # internal use
+  function _column(int $total): object # {{{
+  {
+    $r = new PromiseResult($this->store);
+    $this->current()->trace[] = [
+      self::IS_COLUMN, $r, 0, $total,
+      Completable::$HRTIME
+    ];
+    return $r;
+  }
+  # }}}
+  function _columnEnd(int $done): void # {{{
+  {
+    $e = &$this->track->trace;
+    $e = &$e[count($e) - 1];
+    $r = $e[1];
+    $e[1] = $r->track;
+    $e[2] = $done;
+    $e[4] = Completable::$HRTIME - $e[4];
+    ###
+    if (!$r->ok && $this->ok) {
+      $this->ok = false;
+    }
+    array_pop($r->store);
+    $this->extend()->setRef($r->store);
+  }
+  # }}}
+  function _row(array &$q, int $total): int # {{{
+  {
+    for ($v=[],$i=0; $i < $total; ++$i)
+    {
+      $q[$i]->result = $r = new self($this->store);
+      $v[$i] = &$r->store;
+    }
+    $this->current()->trace[] = [
+      self::IS_ROW, [], 0, $total,
+      Completable::$HRTIME
+    ];
+    $this->extend()->setRef($v);
+    return 0;
+  }
+  # }}}
+  function _rowDone(# {{{
+    object $r, int $i, int $n
+  ):void
+  {
+    # get row element
+    $e = &$this->track->trace;
+    $e = &$e[count($e) - 1];
+    # store completed result's track
+    $e[1][] = [$r->track, $i];
+    $e[2]++;
+    # determine total duration at last completion
+    if ($n >= $e[3]) {
+      $e[4] = Completable::$HRTIME - $e[4];
+    }
+    # change current state upon failure
+    if (!$r->ok && $this->ok) {
+      $this->ok = false;
+    }
+    # remove initial value from individual store
+    array_pop($this->value[$i]);
+  }
+  # }}}
+  function _rowCancel(array &$q, int $total): int # {{{
+  {
+    $e = &$this->track->trace;
+    $e = &$e[count($e) - 1];
+    for ($i=0; $i < $total; ++$i)
+    {
+      if ($p = $q[$i])
+      {
+        $e[1][] = [$p->cancel()->track, $i];
+        array_pop($this->value[$i]);
+      }
+    }
+    $e[4] = Completable::$HRTIME - $e[4];
+    return $total;
+  }
+  # }}}
+  function _fuse(): self # {{{
+  {
+    if (!($t0 = $this->track)->title) {
+      $t0->span = Completable::$HRTIME - $t0->span;
+    }
+    $t1 = new PromiseResultTrack();
+    $this->track = $t1;
+    $this->ok    = &$t1->ok;
+    $t1->trace[] = [self::IS_FUSION, $t0];
+    return $this;
+  }
+  # }}}
+  function _undo(): self # {{{
+  {
+    $t0 = $this->track;
+    $t1 = new PromiseResultTrack(
+      null, $t0->ok
+    );
+    $this->track = $t1;
+    $this->ok    = &$t1->ok;
+    $t0->trace[] = [self::IS_UNDO, $t0];
+    return $this;
+  }
+  # }}}
+  function _end(): self # {{{
+  {
+    $this->track->title || $this->confirm('{}');
+    return $this;
+  }
+  # }}}
+  # external
   function info(...$msg): void # {{{
   {
     $this->current()->trace[] = [
@@ -1241,85 +1459,11 @@ class PromiseResult implements ArrayAccess
     }
   }
   # }}}
-  function column(# {{{
-    object $r, int $complete, int $total
-  ):void
-  {
-    $this->current()->trace[] = [
-      self::IS_COLUMN, $r->track,
-      $complete, $total
-    ];
-    if (!$r->ok && $this->ok) {
-      $this->ok = false;
-    }
-    array_pop($r->store);
-    $this->extend()->setRef($r->store);
-  }
-  # }}}
-  function row(array &$q, int $total): int # {{{
-  {
-    for ($v=[],$i=0; $i < $total; ++$i)
-    {
-      $q[$i]->result = $r = new self($this->store);
-      $v[$i] = &$r->store;
-    }
-    $this->current()->trace[] = [
-      self::IS_ROW, [], 0, $total
-    ];
-    $this->extend()->setRef($v);
-    return 0;
-  }
-  # }}}
-  function cell(# {{{
-    object $r, int $index, bool $done
-  ):void
-  {
-    $t = &$this->track->trace;
-    $i = count($t) - 1;
-    if ($i < 0 || $t[$i][0] !== self::IS_ROW) {
-      throw ErrorEx::fail('no row for a cell');
-    }
-    $t = &$t[$i];
-    $t[1][] = [$r->track, $index];
-    if ($done)
-    {
-      $t[2]++;
-      if (!$r->ok && $this->ok) {
-        $this->ok = false;
-      }
-    }
-    array_pop($this->value[$index]);
-  }
-  # }}}
-  function fuse(): void # {{{
-  {
-    $t0 = $this->track;
-    $t1 = new PromiseResultTrack();
-    $this->track = $t1;
-    $this->ok    = &$t1->ok;
-    $t1->trace[] = [self::IS_FUSION, $t0];
-  }
-  # }}}
-  function reverse(): self # {{{
-  {
-    $t0 = $this->track;
-    $t1 = new PromiseResultTrack(null, false);
-    $this->track = $t1;
-    $this->ok    = &$t1->ok;
-    $t0->trace[] = [self::IS_REVERSAL, $t0];
-    return $this;
-  }
-  # }}}
   function confirm(...$msg): void # {{{
   {
     $t = $this->current();
     $t->title = ErrorEx::stringify($msg);
-    $t->time  = Completable::$HRTIME - $t->time;
-  }
-  # }}}
-  function done(): self # {{{
-  {
-    return $this;
+    $t->span  = Completable::$HRTIME - $t->span;
   }
   # }}}
   # }}}
@@ -1330,10 +1474,10 @@ class PromiseResultTrack
     public ?object $prev  = null,
     public bool    $ok    = true,
     public ?array  $title = null,
-    public int     $time  = 0,
-    public array   $trace = []
+    public array   $trace = [],
+    public int     $span  = 0
   ) {
-    $this->time = Completable::$HRTIME;
+    $this->span = Completable::$HRTIME;
   }
   # }}}
   function __debugInfo(): array # {{{
@@ -1342,7 +1486,7 @@ class PromiseResultTrack
     if ($this->title)
     {
       $a['title'] = implode('·', $this->title);
-      $a['time(ms)'] = (int)($this->time / 1000000);
+      $a['span(ms)'] = (int)($this->span / 1000000);
     }
     $a['trace'] = PromiseResult::trace_info(
       array_reverse($this->trace)
@@ -1366,29 +1510,25 @@ if (!isset(Completable::$THEN))
     # setters
     function delay(int $ms=0): object # {{{
     {
-      # check specified
       if ($ms)
       {
-        # check incorrect
         if ($e = PromiseTimeout::check($ms)) {
           return $e;
         }
-        # convert milli => nano
-        $ms = (int)($ms * 1000000);
+        $ms = (int)($ms * 1000000);# milli => nano
       }
       else {
         $ms = self::DEF_DELAY;
       }
-      # complete
-      $this->time = self::$HRTIME + $ms;
       $this->id = 1;
+      $this->time = self::$HRTIME + $ms;
       return $this;
     }
     # }}}
     function idle(int $ns): self # {{{
     {
-      $this->time = $ns;
       $this->id = 1;
+      $this->time = $ns;
       return $this;
     }
     # }}}
@@ -1396,8 +1536,8 @@ if (!isset(Completable::$THEN))
     {
       if ($action)
       {
-        $this->action = $action;
         $this->id = 3;
+        $this->action = $action;
       }
       else {
         $this->id = 2;
@@ -1407,8 +1547,8 @@ if (!isset(Completable::$THEN))
     # }}}
     function fuse(object $action): self # {{{
     {
-      $this->action = $action;
       $this->id = 4;
+      $this->action = $action;
       return $this;
     }
     # }}}

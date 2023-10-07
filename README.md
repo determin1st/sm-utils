@@ -1,19 +1,29 @@
 # sm-utils
 
-
 <details>
-<summary>array</summary>
+<summary>promise</summary>
 
+### about
 ...
+
+### effects
+a very special handling of a promise constitute a new concept of the effect.
+the effect is whether a result value of a promise is not needed or is consumed
+internally, by the last action handler of the promise itself.
+
+every effect must bear an important attribute - identifier.
+it allows to enqueue effects with ease, at any time, otherwise,
+the burden of managing effects is purely on the user side.
+
 </details>
 <details>
 <summary>mustache</summary>
 
 ### about
-mustache is [mustache templates](https://mustache.github.io/) **eval**uator
-(reduced from [prototype](https://github.com/bobthecow/mustache.php))
+mustache is an **eval**uator of [mustache templates](https://mustache.github.io/)
+(which was reduced from this [prototype](https://github.com/bobthecow/mustache.php))
 ### performance
-This implementation (running in JIT mode) is comparable to JS implementation of
+this implementation (running in JIT mode) is comparable to JS implementation of
 [mustache.js](https://github.com/janl/mustache.js)
 (later has one [issue](https://github.com/janl/mustache.js/issues/65))
 ### spec
@@ -26,7 +36,7 @@ deviations are:
 - no escaping by default, escape function or flag must be specified explicitly.
 - no `{{{tripple stashes}}}`, this mode is set explicitly with `&` variable tag.
 - template recursions are disabled by default.
-### template syntax
+### syntax
 <details>
 <summary>delimiters</summary>
 

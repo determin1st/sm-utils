@@ -6,7 +6,7 @@ require_once DIR_SM_UTILS.'promise.php';
 test_info('PromiseResult','
 [1] dump Promise::Column
 [2] dump Promise::Row
-[3] scheme
+[3] ErrorLog::from(<PromiseResult>)
 ');
 while (1)
 {
@@ -76,17 +76,34 @@ while (1)
     break;
   # }}}
   case '3':# {{{
-    echo "> SHEME: ";
+    echo "> ErrorLog::from(<PromiseResult>): ";
     $r = await(
       Promise::Func(function($f) {
         $r = $f->result;
         $r->info('information','is','very','good');
-        $r->warn('wow');
+        $r->warn(
+          'wow',"warning\nplus multiline message"
+        );
+        $r->info('standard positive message');
+        $r->error(ErrorEx::fatal());
         $r->confirm('title','number','one');
       })
+      ->okay(function($f) {
+        $f->result->info('this message never appears');
+      })
+      ->failFuse(function($f) {
+        $r = $f->result;
+        $r->warn('something bad happened but im going to fix it all!');
+        $r->info('yes','yes','well done!!!');
+        $r->confirm('this','title','is','fixed');
+      })
+      ->okay(function($f) {
+        $f->result->info('this message never appears');
+      })
     );
-    var_dump($r);
-    #var_dump($r->scheme());
+    #var_dump($r);
+    #var_dump($r->log());
+    echo "\n".ErrorLog::from($r);
     echo "\n";
     break;
   # }}}
