@@ -39,7 +39,7 @@ foreach ($file as $i)
     foreach ($j['tests'] as &$k)
     {
       $e = $k['data']['lambda'];
-      $f = 'return (function($text){'.$e.'});';
+      $f = 'return (function($m,$text=""){'.$e.'});';
       $k['data']['lambda_e'] = $e;
       $k['data']['lambda'] = Closure::fromCallable(eval($f));
     }
@@ -63,8 +63,8 @@ if ($test === 1)
     'mustache.php'
   );
   $m = \SM\Mustache::construct([
-    'escaper' => true,
-    'recur'   => true,
+    'escape'  => true,
+    'recurse' => true,
   ]);
   $i = 'sm-mustache';
 }
@@ -74,7 +74,7 @@ elseif ($test === 2)
     __DIR__.DIRECTORY_SEPARATOR.
     '..'.DIRECTORY_SEPARATOR.
     '..'.DIRECTORY_SEPARATOR.
-    'junk'.DIRECTORY_SEPARATOR.
+    '__junk'.DIRECTORY_SEPARATOR.
     'mustache.php'
   );
   $m = \SM\Mustache::construct([
@@ -85,7 +85,13 @@ elseif ($test === 2)
 }
 else
 {
-  require __DIR__.DIRECTORY_SEPARATOR.'mustache_php'.DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR.'autoload.php';
+  require_once(
+    __DIR__.
+    DIRECTORY_SEPARATOR.
+    'mustache.php'.DIRECTORY_SEPARATOR.
+    'vendor'.DIRECTORY_SEPARATOR.
+    'autoload.php'
+  );
   $m = new Mustache_Engine();
   $i = 'mustache';
 }

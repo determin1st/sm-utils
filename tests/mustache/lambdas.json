@@ -16,7 +16,7 @@
       "desc": "A lambda's return value should be parsed.",
       "data": {
         "planet": "world",
-        "lambda": "return \"{{planet}}\";"
+        "lambda": "return $m->render(\"{{planet}}\");"
       },
       "template": "Hello, {{lambda}}!",
       "expected": "Hello, world!"
@@ -65,7 +65,7 @@
       "desc": "Lambdas used for sections should have their results parsed.",
       "data": {
         "planet": "Earth",
-        "lambda": "return $text . \"{{planet}}\" . $text;"
+        "lambda": "return $text . $m->render(\"{{planet}}\") . $text;"
       },
       "template": "<{{#lambda}}-{{/lambda}}>",
       "expected": "<-Earth->"

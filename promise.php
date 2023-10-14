@@ -553,7 +553,7 @@ class Loop # {{{
         }
       }
     }
-    # spin row
+    # spin the row
     $q1 = $this->row;
     if ($n1 = &$this->rowCnt)
     {
@@ -1077,7 +1077,7 @@ class PromiseResult
     return $t;
   }
   # }}}
-  function current(): object # {{{
+  function _track(): object # {{{
   {
     if (!$this->track->title) {
       return $this->track;
@@ -1125,23 +1125,23 @@ class PromiseResult
     ];
   }
   # }}}
-  static function track_level(object $track): int # {{{
+  static function track_level(object $t): int # {{{
   {
-    if (!$track->ok) {
+    if (!$t->ok) {
       return 2;
     }
-    foreach ($track->trace as $t)
+    foreach ($t->trace as $e)
     {
-      switch ($t[0]) {
+      switch ($e[0]) {
       case self::IS_WARNING:
         return 1;
       case self::IS_ERROR:
-        if ($t[1]->hasIssue()) {
+        if ($e[1]->hasIssue()) {
           return 1;
         }
         break;
       case self::IS_COLUMN:
-        if (self::track_level($t[1])) {
+        if (self::track_level($e[1])) {
           return 1;
         }
         break;
@@ -1160,30 +1160,30 @@ class PromiseResult
     return $x;
   }
   # }}}
-  static function track_logs(object $track): array # {{{
+  static function track_logs(object $t): array # {{{
   {
     $a = [];
     do
     {
-      if ($t = &$track->trace)
+      if ($t->trace)
       {
         $a[] = [
-          'level' => self::track_level($track),
-          'msg'   => $track->title,
-          'span'  => $track->span,
-          'logs'  => self::trace_logs($t)
+          'level' => self::track_level($t),
+          'msg'   => $t->title,
+          'span'  => $t->span,
+          'logs'  => self::trace_logs($t->trace)
         ];
       }
       else
       {
         $a[] = [
-          'level' => $track->ok ? 0 : 2,
-          'msg'   => $track->title,
-          'span'  => $track->span,
+          'level' => $t->ok ? 0 : 2,
+          'msg'   => $t->title,
+          'span'  => $t->span,
         ];
       }
     }
-    while ($track = $track->prev);
+    while ($t = $t->prev);
     return $a;
   }
   # }}}
@@ -1320,7 +1320,7 @@ class PromiseResult
   function _column(int $total): object # {{{
   {
     $r = new PromiseResult($this->store);
-    $this->current()->trace[] = [
+    $this->_track()->trace[] = [
       self::IS_COLUMN, $r, 0, $total,
       Completable::$HRTIME
     ];
@@ -1350,7 +1350,7 @@ class PromiseResult
       $q[$i]->result = $r = new self($this->store);
       $v[$i] = &$r->store;
     }
-    $this->current()->trace[] = [
+    $this->_track()->trace[] = [
       self::IS_ROW, [], 0, $total,
       Completable::$HRTIME
     ];
@@ -1429,21 +1429,21 @@ class PromiseResult
   # external
   function info(...$msg): void # {{{
   {
-    $this->current()->trace[] = [
+    $this->_track()->trace[] = [
       self::IS_INFO, ErrorEx::stringify($msg)
     ];
   }
   # }}}
   function warn(...$msg): void # {{{
   {
-    $this->current()->trace[] = [
+    $this->_track()->trace[] = [
       self::IS_WARNING, ErrorEx::stringify($msg)
     ];
   }
   # }}}
   function fail(...$msg): void # {{{
   {
-    $this->current()->trace[] = [
+    $this->_track()->trace[] = [
       self::IS_FAILURE, ErrorEx::stringify($msg)
     ];
     $this->ok = false;
@@ -1451,7 +1451,7 @@ class PromiseResult
   # }}}
   function error(object $e): void # {{{
   {
-    $this->current()->trace[] = [
+    $this->_track()->trace[] = [
       self::IS_ERROR, ErrorEx::set($e)
     ];
     if ($e->hasError() && $this->ok) {
@@ -1461,7 +1461,7 @@ class PromiseResult
   # }}}
   function confirm(...$msg): void # {{{
   {
-    $t = $this->current();
+    $t = $this->_track();
     $t->title = ErrorEx::stringify($msg);
     $t->span  = Completable::$HRTIME - $t->span;
   }

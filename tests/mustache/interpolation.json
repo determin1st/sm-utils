@@ -157,6 +157,17 @@
       "expected": "I () be seen!"
     },
     {
+      "name": "Dotted Names - simpliest",
+      "desc": "",
+      "data": {
+        "person": {
+          "name": "Joe"
+        }
+      },
+      "template": "\"{{person.name}}\" == \"{{person.name}}\"",
+      "expected": "\"Joe\" == \"Joe\""
+    },
+    {
       "name": "Dotted Names - Basic Interpolation",
       "desc": "Dotted names should be considered a form of shorthand for sections.",
       "data": {

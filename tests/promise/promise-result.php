@@ -86,6 +86,7 @@ while (1)
         );
         $r->info('standard positive message');
         $r->error(ErrorEx::fatal());
+        $f->pupa();
         $r->confirm('title','number','one');
       })
       ->okay(function($f) {
@@ -94,6 +95,11 @@ while (1)
       ->failFuse(function($f) {
         $r = $f->result;
         $r->warn('something bad happened but im going to fix it all!');
+        $r->info(
+          "today we'll discuss a new concept of mankurtism,\n".
+          "it is very common in asian countries which were\n".
+          "influenced by the soviet union."
+        );
         $r->info('yes','yes','well done!!!');
         $r->confirm('this','title','is','fixed');
       })

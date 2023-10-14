@@ -10,6 +10,386 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
 require_once DIR_SM_UTILS.'functions.php';
 require_once DIR_SM_UTILS.'promise.php';
 # }}}
+echo "empty(array) VS !array"; # {{{
+echo "\n\n";
+$n = 100000000;
+$a = [1,2,3];
+$b = [];
+###
+###
+echo "> A: empty(array): ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (empty($a)) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> A: !array: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (!$a) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: empty(array): ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (empty($b)) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: !array: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (!$b) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+###
+exit(0);
+# }}}
+echo "truthy VS ===1"; # {{{
+echo "\n\n";
+$n = 100000000;
+$a = 1;
+$b = 0;
+###
+###
+echo "> A: truthy: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if ($a) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> A: ===1: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if ($a === 1) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: truthy: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if ($b) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: ===1: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if ($b === 1) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+###
+exit(0);
+# }}}
+echo "boolval() VS !!"; # {{{
+echo "\n\n";
+$n = 10000000;
+$a = [1,2,3];
+$b = [];
+###
+###
+echo "> A: boolval(): ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (boolval($a)) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> A: !!: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (!!$a) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: boolval(): ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (boolval($b)) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: !!: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (!!$b) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+###
+exit(0);
+# }}}
+echo "[e0,e1] = a; VS e0=a[0];e1=a[1]"; # {{{
+echo "\n\n";
+$n = 10000000;
+class PoopObject {
+  const MAP=['item' => [1,2]];
+}
+$o = new PoopObject();
+$k = 'item';
+###
+###
+echo "> [e0,e1]=[..]: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  [$e0,$e1] = $o::MAP[$k];
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> e0=[.],e1=[.]: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  $e0 = $o::MAP[$k][0];
+  $e1 = $o::MAP[$k][1];
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+###
+exit(0);
+# }}}
+echo "object property shortcut?"; # {{{
+echo "\n\n";
+$n = 1000000;
+class ObjPropShortcut {
+  public array $prop=[1,2,3,4,5];
+}
+$o = new ObjPropShortcut();
+$k = 4;
+###
+###
+echo "> without shortcut: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  for ($k=0; $k < 5; ++$k) {
+    $o->prop[$k] = $i + 1;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> with shortcut: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  $v = &$o->prop;
+  for ($k=0; $k < 5; ++$k) {
+    $v[$k] = $i + 1;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+###
+exit(0);
+# }}}
+echo "check for empty string"; # {{{
+echo "\n\n";
+$n = 100000000;
+$a = '';
+$b = 'not empty';
+###
+###
+echo "> A: !not: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (!$a) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> A: ==='': ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if ($a === '') {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> A: =='': ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if ($a == '') {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> A: empty: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (empty($a)) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> A: strlen===0: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (strlen($a) === 0) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: !not: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (!$b) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: ==='': ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if ($b === '') {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: =='': ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if ($b == '') {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: empty: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (empty($b)) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: strlen===0: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (strlen($b) === 0) {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+###
+exit(0);
+# }}}
+echo "substr+=== vs isset+substr"; # {{{
+echo "\n\n";
+$n = 100000000;
+$a = '.is.path.to.something';
+$b = '.';
+###
+###
+echo "> A: substr+===: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (($c = \substr($a, 1)) === '') {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> A: isset+substr: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (isset($a[1])) {
+    $c = \substr($a, 1);
+  }
+  else {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: substr+===: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (($c = \substr($b, 1)) === '') {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> B: isset+substr: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if (isset($b[1])) {
+    $c = \substr($b, 1);
+  }
+  else {
+    $j++;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+###
+exit(0);
+# }}}
 echo "expansive replacement: array_splice vs Ds\Deque vs SplDoublyLinkedList"; # {{{
 echo "\n\n";
 $n = 10000000;

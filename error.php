@@ -9,7 +9,10 @@ use function
   array_pop,array_push,array_is_list,array_slice,
   is_string,strval,strpos,strrpos,str_replace,
   substr,sprintf;
+use const
+  DIRECTORY_SEPARATOR;
 ###
+require_once __DIR__.DIRECTORY_SEPARATOR.'mustache.php';
 # }}}
 interface Loggable # {{{
 {
@@ -27,14 +30,21 @@ class ErrorLog # {{{
   implements Stringable,JsonSerializable
 {
   const OPTIONS = [# {{{
-    # ●◆◎∙▪■✶ ▶▼ ■▄ ◥◢◤◣  ►◄ ∙･·•
-    'level'  => ['green','yellow','red'],
-    'span'   => [' ~%s･%s','black',1],# format,color,bright
+    'level' => [
+      'green', # 0:information/success/pass
+      'yellow',# 1:warning/issue
+      'red',   # 2:error/failure
+    ],
+    'span'  => [# format,ansi,variant
+      ' ~%s･%s','black',1
+    ],
+    # ●◆◎∙▪■✶ ▶▼ ■▄ ◥◢◤◣  ►◄ ∙･·• →
     'prefix' => [
       '◆',# 0:depth=0, header
       '▪',# 1:depth>0, item
       '●',# 2:untitled group
     ],
+    'words' => '･',
     'header-type' => [' ► ',' ◄ '],# output,input
     'item-type'   => [' ► ',' ◄ '],# output,input
     'group' => [
@@ -42,28 +52,40 @@ class ErrorLog # {{{
       '├─',
       '└─',
     ],
-    'words' => '･',
+    'textbox' => [
+      '╓',# spacer
+      '╢ ',# first line / title
+      '║ ',# multiline content
+      '╙',# spacer
+    ],
+    'textbox-title' => [# format,ansi,variant
+      '%s','underline',0
+    ],
+    'subgroup' => [
+      # * title
+      # │╓
+      # └╢ multiline message
+      #  ║ may be placed here
+      #  ╙
+      '│╓',
+      '└╢ ',
+      ' ║ ',
+      ' ╙',
+      # * title
+      # │╓
+      # ├╢ multiline message
+      # │║ may be placed here
+      # │╙
+      '│╓',
+      '├╢ ',
+      '│║ ',
+      '│╙',
+    ],
     'block' => [
       '╓ ',
       '║ ',
       '╙ ',
-      /***
-      '┌ ',
-      '│ ',
-      '└ ',
-      /***/
     ],
-  ];
-  # }}}
-  const COLORS = [# {{{
-    'black'   => [30,90],
-    'red'     => [31,91],
-    'green'   => [32,92],
-    'yellow'  => [33,93],
-    'blue'    => [34,94],
-    'magenta' => [35,95],
-    'cyan'    => [36,96],
-    'white'   => [37,97],
   ];
   # }}}
   # base {{{
@@ -103,7 +125,8 @@ class ErrorLog # {{{
     $block    = ['' => $opts['block']];
     $group    = ['' => $opts['group']];
     $words    = ['' => $opts['words']];
-    foreach (self::COLORS as $k => $v)
+    $textbox  = ['' => $opts['textbox']];
+    foreach ($opts['level'] as $k)
     {
       $prefix[$k] = $opts['prefix'];
       foreach ($prefix[$k] as &$a) {
@@ -119,7 +142,7 @@ class ErrorLog # {{{
       }
       $group[$k] = $opts['group'];
       foreach ($group[$k] as &$a) {
-        $a = self::color_fg($a, $k, 1);
+        $a = self::color_fg($a, $k, 0);
       }
       $block[$k] = $opts['block'];
       foreach ($block[$k] as &$a) {
@@ -128,6 +151,10 @@ class ErrorLog # {{{
       $words[$k] = self::color_fg(
         $opts['words'], $k, 1
       );
+      $textbox[$k] = $opts['textbox'];
+      foreach ($textbox[$k] as &$a) {
+        $a = self::color_fg($a, $k, 1);
+      }
     }
     $o = $opts['span'];
     $opts['span'] = $o[1]
@@ -139,36 +166,146 @@ class ErrorLog # {{{
     $opts['block']       = $block;
     $opts['group']       = $group;
     $opts['words']       = $words;
+    $opts['textbox']     = $textbox;
     return $opts;
   }
   # }}}
-  static function color_fg(# {{{
-    string $s, string $color, int $strong=0
+  # }}}
+  # ansi renderer {{{
+  const TEMPLATES = [# {{{
+    'header' => '
+      {{#level}}{:red-bright:}{{|}}{:green-bright:}{{/level}}
+      ◆{:end-color:}
+      {{msg}}{{span}}{{logs}}
+    ',
+    'span' => '
+      {:black-bright:}~{{time}}{{unit}}{:end-color:}
+    ',
+    'logs' => '
+    ',
+  ];
+  # }}}
+  const ANSI_CODE = [# {{{
+    # styles
+    'reset'         => "\033[0m",
+    'bold'          => "\033[1m",
+    'faint'         => "\033[2m",
+    'italic'        => "\033[3m",
+    'underline'     => "\033[4m",
+    'blink'         => "\033[5m",
+    'inverse'       => "\033[7m",
+    'hide'          => "\033[8m",
+    'strike'        => "\033[9m",# strikethrough
+    'end-bold'      => "\033[21m",
+    'end-faint'     => "\033[22m",
+    'end-italic'    => "\033[23m",
+    'end-underline' => "\033[24m",
+    'end-blink'     => "\033[25m",
+    'end-inverse'   => "\033[27m",
+    'end-hide'      => "\033[28m",
+    'end-strike'    => "\033[29m",
+    # foreground colors
+    'black'          => "\033[30m",
+    'red'            => "\033[31m",
+    'green'          => "\033[32m",
+    'yellow'         => "\033[33m",
+    'blue'           => "\033[34m",
+    'magenta'        => "\033[35m",
+    'cyan'           => "\033[36m",
+    'white'          => "\033[37m",
+    'black-bright'   => "\033[90m",
+    'red-bright'     => "\033[91m",
+    'green-bright'   => "\033[92m",
+    'yellow-bright'  => "\033[93m",
+    'blue-bright'    => "\033[94m",
+    'magenta-bright' => "\033[95m",
+    'cyan-bright'    => "\033[96m",
+    'white-bright'   => "\033[97m",
+    # background colors
+    'bg-black'          => "\033[40m",
+    'bg-red'            => "\033[41m",
+    'bg-green'          => "\033[42m",
+    'bg-yellow'         => "\033[43m",
+    'bg-blue'           => "\033[44m",
+    'bg-magenta'        => "\033[45m",
+    'bg-cyan'           => "\033[46m",
+    'bg-white'          => "\033[47m",
+    'bg-black-bright'   => "\033[100m",
+    'bg-red-bright'     => "\033[101m",
+    'bg-green-bright'   => "\033[102m",
+    'bg-yellow-bright'  => "\033[103m",
+    'bg-blue-bright'    => "\033[104m",
+    'bg-magenta-bright' => "\033[105m",
+    'bg-cyan-bright'    => "\033[106m",
+    'bg-white-bright'   => "\033[107m",
+    # color resets
+    'end-color'    => "\033[39m",
+    'end-bg-color' => "\033[49m",
+    'end-colors'   => "\033[39;49m",
+  ];
+  # }}}
+  static function ansi(# {{{
+    string $k, int $i=0
   ):string
   {
-    static $z = '[0m';
-    if (!isset(self::COLORS[$color])) {
-      return $s;
-    }
-    $i = $strong ? 1 : 0;
-    $i = self::COLORS[$color][$i];
-    $c = '['.$i.'m';
-    return strpos($s, $z)
-      ? $c.str_replace($z, $z.$c, $s).$z
-      : $c.$s.$z;
+    return "\033[".self::ANSI[$k][$i].'m';
+  }
+  # }}}
+  static function ansi_wrap(# {{{
+    string $s, string $k, int $i=0
+  ):string
+  {
+    static $b = "\033[0m";
+    $a = "\033[".self::ANSI[$k][$i].'m';
+    return $a.$s.$b;
+  }
+  # }}}
+  ###
+  const ANSI = [# {{{
+    # styles: standard,negation,extra
+    'bold'      => [1,21],
+    'faint'     => [2,22],
+    'italic'    => [3,23],
+    'underline' => [4,24],
+    'blink'     => [5,25,6],
+    'inverse'   => [7,27],
+    'hide'      => [8,28],
+    'strike'    => [9,29],# strikethrough
+    'font'      => [10,11,12,13,14,15,16,17,18,19,20],
+    'reset'     => [0,39,49],# all,foreground,background
+    # foreground colors: normal,bright
+    'black'   => [30,90],
+    'red'     => [31,91],
+    'green'   => [32,92],
+    'yellow'  => [33,93],
+    'blue'    => [34,94],
+    'magenta' => [35,95],
+    'cyan'    => [36,96],
+    'white'   => [37,97],
+  ];
+  # }}}
+  static function color_fg(# {{{
+    string $s, string $k, int $i=0
+  ):string
+  {
+    static $b = "\033[0m";
+    $a = "\033[".self::ANSI[$k][$i].'m';
+    return strpos($s, $b)
+      ? $a.str_replace($b, $b.$a, $s).$b
+      : $a.$s.$b;
   }
   # }}}
   static function color_bg(# {{{
     string $s, string $color, int $strong=0
   ):string
   {
-    static $z = '[0m';
-    if (!isset(self::COLORS[$color])) {
+    static $z = "\033[0m";
+    if (!isset(self::ANSI[$color])) {
       return $s;
     }
     $i = $strong ? 1 : 0;
-    $i = self::COLORS[$color][$i] + 10;# +10=background
-    $c = '['.$i.'m';
+    $i = self::ANSI[$color][$i] + 10;# +10=background
+    $c = "\033[".$i.'m';
     if (strpos($s, $z)) {
       $s = str_replace($z, $z.$c, $s);
     }
@@ -205,7 +342,7 @@ class ErrorLog # {{{
       $s .= self::span($a['span'], $o['span']);
     }
     if (isset($a['logs'])) {
-      $x = "\n".self::group($a['logs'], $o, $c);
+      $x = "\n".self::group($a['logs'], $o, $c, 0);
     }
     return $s.$x;
   }
@@ -242,86 +379,156 @@ class ErrorLog # {{{
   }
   # }}}
   static function group(# {{{
-    array $a, array $o, string $c
+    array $a, array $o, string $c, int $depth
   ):string
   {
-    # get group links
+    # prepare group links
     [$g0,$g1,$g2] = $o['group'][$c];
-    # compose all items except the last one
-    $gx = '';
-    if (($n = count($a) - 1) > 0)
+    if ($depth)
     {
-      $g0 = "\n".$g0;
-      for ($i=0; $i < $n; ++$i)
-      {
-        # compose next item
-        $x = self::item($a[$i], $o);
-        # for multiline representation,
-        # add the link to the next item
-        if (strpos($x, "\n")) {
-          $x = str_replace("\n", $g0, $x);
-        }
-        # accumulate
-        $gx .= $g1.$x."\n";
-      }
+      $s  = str_repeat(' ', 2*$depth);
+      $g0 = $s.$g0;
+      $g1 = $s.$g1;
+      $g2 = $s.$g2;
+    }
+    # compose all items except the last one
+    $s = '';
+    $n = count($a) - 1;
+    for ($i=0; $i < $n; ++$i)
+    {
+      $s .= self::item($a[$i], $o, $depth, $g0, $g1);
+      $s .= "\n";
     }
     # compose the last item
-    $x = self::item($a[$n], $o);
-    # for multiline representation,
-    # add simple padding
-    if (strpos($x, "\n")) {
-      $x = str_replace("\n", "\n  ", $x);
-    }
-    # complete
-    return $gx.$g2.$x;
+    return $s.self::item($a[$n], $o, $depth, $g0, $g2);
   }
   # }}}
-  static function item(array $a, array $o): string # {{{
+  static function item(# {{{
+    array $a, array $o, int $depth,
+    string $g0, string $g1
+  ):string
   {
-    $b = isset($a['msg']);
-    $i = $b ? 1 : 2;
+    # prepare
     $c = $o['level'][$a['level']];
-    $s = $o['prefix'][$c][$i];
-    $x = '';
-    if ($b)
-    {
-      # compose title
-      if (($i = count($a['msg'])) > 1)
+    $n = isset($a['msg'])
+      ? count($a['msg'])
+      : 0;
+    # compose
+    switch ($n) {
+    case 0:# untitled
+      $s = $g1.$o['prefix'][$c][2];
+      break;
+    case 1:
+      $s = $a['msg'][0];
+      if (strpos($s, "\n") === false)
       {
-        # join all as words except the last one
-        if ($i > 2)
-        {
-          $d = implode($o['words'][$c],
-            array_slice($a['msg'], 0, -1)
-          );
-        }
-        else {
-          $d = $a['msg'][0];
-        }
-        # add the last one using the type separator
-        $j = (isset($a['type']) && $a['type']) ? 1 : 0;
-        $e = $o['item-type'][$c][$j];
-        $s = $s.$d.$e.$a['msg'][$i - 1];
+        $s =
+          $g1.
+          $o['prefix'][$c][1].
+          $s;
       }
-      else {
-        $s = $s.$a['msg'][0];
-      }
-      # compose a block when multiline
-      if ($i = strpos($s, "\n"))
+      else
       {
-        $x = "\n".self::block(
-          substr($s, $i + 1), $o['block'][$c]
+        $s = self::textbox(
+          trim($s), $o['textbox'][$c], $g0, $g1
         );
-        $s = substr($s, 0, $i);
       }
+      break;
+    case 2:
+      $s = $a['msg'][1];
+      if (($i = strpos($s, "\n")) === false)
+      {
+        $s =
+          $g1.
+          $o['prefix'][$c][1].
+          $a['msg'][0].
+          $o['item-type'][$c][0].
+          $s;
+      }
+      elseif ($i === 0)
+      {
+        $s = self::textbox(
+          trim($s), $o['textbox'][$c], $g0, $g1
+        );
+      }
+      else
+      {
+      }
+      ###
+      $s = $o['prefix'][$c][1];
+      $s = $s.implode(
+        $o['item-type'][$c][0], $a['msg']
+      );
+      /***
+      $x = "\n".self::block(
+        substr($s, $i + 1), $o['block'][$c]
+      );
+      $s = substr($s, 0, $i);
+      /***/
+      break;
+    default:# ...
+      # ...
+      $s = $o['prefix'][$c][1];
+      # join all as words except the last one
+      $s = $s.implode(
+        $o['words'][$c],
+        array_slice($a['msg'], 0, -1)
+      );
+      # add the last one using the type separator
+      $i = (isset($a['type']) && $a['type']) ? 1 : 0;
+      $b = $o['item-type'][$c][$i];
+      $s = $s.$b.$a['msg'][$n - 1];
+      $s = $g1.$s;
+      break;
     }
+    # add duration
     if (isset($a['span'])) {
       $s .= self::span($a['span'], $o['span']);
     }
-    if (isset($a['logs'])) {
-      $x = "\n".self::group($a['logs'], $o, $c);
+    # add group
+    if (isset($a['logs']))
+    {
+      $s .= "\n".self::group(
+        $a['logs'], $o, $c, 1 + $depth
+      );
     }
-    return $s.$x;
+    return $s;
+  }
+  # }}}
+  static function textbox(# {{{
+    string $s, array $o, string $g0, string $g1
+  ):string
+  {
+    [$a0,$a1,$a2,$a3] = $o;
+    return
+      $g0.$a0."\n".$g1.$a1.
+      str_replace("\n", "\n".$g0.$a2, $s).
+      "\n".$g0.$a3;
+  }
+  # }}}
+  static function subgroup(# {{{
+    array $a, array $o, string $c, int $depth
+  ):string
+  {
+    # prepare group links
+    [$g0,$g1,$g2] = $o['group'][$c];
+    if ($depth)
+    {
+      $s  = str_repeat(' ', 2*$depth);
+      $g0 = $s.$g0;
+      $g1 = $s.$g1;
+      $g2 = $s.$g2;
+    }
+    # compose all items except the last one
+    $s = '';
+    $n = count($a) - 1;
+    for ($i=0; $i < $n; ++$i)
+    {
+      $s .= self::item($a[$i], $o, $depth, $g0, $g1);
+      $s .= "\n";
+    }
+    # compose the last item
+    return $s.self::item($a[$n], $o, $depth, $g0, $g2);
   }
   # }}}
   # }}}
@@ -658,7 +865,7 @@ class ErrorEx extends Error # {{{
     $msg = $this->msg;
     if (($lvl = $this->level) > 2)
     {
-      # compose message with trace
+      # compose a message with debug backtrace
       $lvl = 2;
       if ($e = $this->value)
       {
@@ -668,10 +875,10 @@ class ErrorEx extends Error # {{{
           self::trace($e);
       }
       elseif ($i = count($msg)) {
-        $msg[$i - 1] .= "\n".self::trace($this, 1);
+        $msg[$i - 1] .= "\n".self::trace($this);
       }
       else {
-        $msg[0] = "FATAL\n".self::trace($this, 1);
+        $msg[0] = self::trace($this);
       }
     }
     return [
@@ -698,15 +905,18 @@ class ErrorEx extends Error # {{{
       if ($i = strrpos($s, \DIRECTORY_SEPARATOR)) {
         $s = substr($s, $i + 1);
       }
-      $s = $s.'('.$a['line'].'): ';
+      #$s = $a['line'].':'.$s;
+      #$s = $s.'('.$a['line'].')';
+      $s = $s.':'.$a['line'];
     }
     else {
-      $s = 'INTERNAL: ';
+      $s = 'INTERNAL';
     }
     $f = isset($a['class'])
       ? $a['class'].$a['type'].$a['function']
       : $a['function'];
-    return $s.$f;
+    ###
+    return $s.' → '.$f;
   }
   # }}}
   # }}}

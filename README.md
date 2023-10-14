@@ -1,22 +1,6 @@
 # sm-utils
 
 <details>
-<summary>promise</summary>
-
-### about
-...
-
-### effects
-a very special handling of a promise constitute a new concept of the effect.
-the effect is whether a result value of a promise is not needed or is consumed
-internally, by the last action handler of the promise itself.
-
-every effect must bear an important attribute - identifier.
-it allows to enqueue effects with ease, at any time, otherwise,
-the burden of managing effects is purely on the user side.
-
-</details>
-<details>
 <summary>mustache</summary>
 
 ### about
@@ -93,26 +77,28 @@ if-not-else block has two sections, one is always rendered
 ```
 </details>
 <details>
-<summary>switch</summary>
+<summary>switch block</summary>
 
-switch block is similar to if/if-else block.
-only one section may be rendered.
+switch block is composed of multiple sections.
+when one section matches the value, it is rendered,
+otherwise, block renders empty.
 ```
   {{#block}}
-    truthy section (default)
-  {{|0}}
-    zero (string)
-  {{|1}}
-    one (string/number)
-  {{|2}}
-    two (string/number)
+    when other sections dont match,
+    will match TRUE or TRUTHY values
   {{|}}
-    falsy section
+    when other sections dont match,
+    will match FALSE or FALSY values
+  {{|0}}
+    will match 0,"0"
+  {{|1}}
+    will match 1,"1"
+  {{|2}}
+    will match 2,"2"
+  {{|hello}}
+    will match "hello"
   {{/block}}
 ```
-</details>
-<details>
-<summary>switch-not</summary>
 
 switch-not block is similar to if-not block.
 only one section may be rendered.
@@ -134,5 +120,20 @@ it is more natural than switch block because default section is not the first on
 
 ---
 </details>
+<details>
+<summary>promise</summary>
 
+### about
+...
+
+### effects
+a very special handling of a promise constitute a new concept of the effect.
+the effect is whether a result value of a promise is not needed or is consumed
+internally, by the last action handler of the promise itself.
+
+every effect must bear an important attribute - identifier.
+it allows to enqueue effects with ease, at any time, otherwise,
+the burden of managing effects is purely on the user side.
+
+</details>
 

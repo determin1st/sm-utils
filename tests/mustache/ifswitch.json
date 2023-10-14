@@ -3,8 +3,8 @@
   "speed": 0,
   "tests": [
     {
-      "name": "if-else (1)",
-      "desc": "truthy section",
+      "name": "TRUTHY OR (1)",
+      "desc": "...",
       "data": {
         "if": true
       },
@@ -12,17 +12,35 @@
       "expected": "true"
     },
     {
-      "name": "if-else (2)",
-      "desc": "falsy section",
+      "name": "TRUTHY OR (2)",
+      "desc": "...",
       "data": {
-        "if": false
+        "if": ""
       },
       "template": "{{#if}}true{{|}}false{{/if}}",
       "expected": "false"
     },
     {
-      "name": "switch",
-      "desc": "switch section rendered",
+      "name": "FALSY OR (1)",
+      "desc": "...",
+      "data": {
+        "if": 0
+      },
+      "template": "{{^if}}Yes={{if}}{{|}}No{{/if}}",
+      "expected": "Yes=0"
+    },
+    {
+      "name": "FALSY OR (2)",
+      "desc": "...",
+      "data": {
+        "if": 1
+      },
+      "template": "{{^if}}No{{|}}Yes={{if}}{{/if}}",
+      "expected": "Yes=1"
+    },
+    {
+      "name": "SWITCH (1)",
+      "desc": "...",
       "data": {
         "if": 1
       },
@@ -30,8 +48,8 @@
       "expected": "x=1"
     },
     {
-      "name": "switch-not (1)",
-      "desc": "switch section rendered",
+      "name": "SWITCH (2)",
+      "desc": "...",
       "data": {
         "if": 1
       },
@@ -39,8 +57,8 @@
       "expected": "x=1"
     },
     {
-      "name": "switch-not (2)",
-      "desc": "nothing is rendered (no default section)",
+      "name": "SWITCH (3)",
+      "desc": "...",
       "data": {
         "if": 2
       },
@@ -48,12 +66,30 @@
       "expected": ""
     },
     {
-      "name": "if-only (truthy)",
-      "desc": "value is not iterated",
+      "name": "SWITCH (4)",
+      "desc": "...",
+      "data": {
+        "if": 2
+      },
+      "template": "{{#if}}truthy{{|1}}x=1{{/if}}",
+      "expected": "truthy"
+    },
+    {
+      "name": "SWITCH (5)",
+      "desc": "...",
+      "data": {
+        "if": "two"
+      },
+      "template": "{{#if}}truthy{{|one}}x=one{{|two}}two{{/if}}",
+      "expected": "two"
+    },
+    {
+      "name": "SWITCH (6)",
+      "desc": "...",
       "data": {
         "if": [1,2,3,4,5]
       },
-      "template": "{{?if}}true{{#if}}{{.}}{{/if}}{{|1}}1{{|}}false{{/if}}",
+      "template": "{{#if}}true{{#if}}{{.}}{{/if}}{{|1}}1{{|}}false{{/if}}",
       "expected": "true12345"
     }
   ]

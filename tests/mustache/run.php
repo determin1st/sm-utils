@@ -86,7 +86,7 @@ foreach ($file as $i)
     foreach ($j['tests'] as &$k)
     {
       $e = $k['data']['lambda'];
-      $f = 'return (function($text){'.$e.'});';
+      $f = 'return (function($m,$text=""){'.$e.'});';
       $k['data']['lambda_e'] = $e;
       $k['data']['lambda'] = Closure::fromCallable(eval($f));
     }
@@ -98,10 +98,8 @@ logit("selected: ".implode('/', array_keys($json))."\n");
 # }}}
 # run {{{
 $m = \SM\Mustache::construct([
-  'logger'  => ~$test ? Closure::fromCallable('logit') : null,
-  #'logger'  => Closure::fromCallable('logit'),
-  'escaper' => true,
-  'recur'   => true,
+  'escape'  => true,
+  'recurse' => true,
 ]);
 if (~$test)
 {
