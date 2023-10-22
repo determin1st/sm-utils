@@ -1,12 +1,13 @@
 <?php declare(strict_types=1);
 # defs {{{
 namespace SM;
-use Stringable,Traversable,Closure;
+use Countable,Closure;
 use function
   is_callable,is_scalar,is_object,is_array,
-  is_bool,is_string,method_exists,abs,
-  hash,htmlspecialchars,ctype_alnum,ctype_space,
-  str_replace,trim,ltrim,strval,strlen,strpos,substr,
+  is_bool,is_string,method_exists,abs,hash,
+  htmlspecialchars,ctype_alnum,ctype_space,
+  preg_replace,str_replace,trim,ltrim,strval,
+  strlen,strpos,substr,addcslashes,str_repeat,
   count,explode,array_is_list;
 use const
   DIRECTORY_SEPARATOR;
@@ -15,38 +16,40 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
 # }}}
 interface Mustachable # {{{
 {
-  #  STASH: [name => [access,type]]
-  # access: 0=method,1=property
-  #   type: -1=mixed,0=scalar,1=array,2=object,3=Mustachable
+  # type:
+  #  0=unknown,
+  #  1=string,2=numeric,3=bool,
+  #  4=array,5=object,6=Mustachable,
+  #  7=callable, 7+N=callable+result
   ###
-  const STASH=[];
+  const STASH=[];# name => type
 }
 # }}}
-class Mustache
+class Mustache # {{{
 {
   # constructor {{{
-  const TERMINUS = "\nTEMPLATE";
-  const TPL_BEG =
-    'return (function(object $x):string {'.
-    "\nreturn <<<TEMPLATE\n";
-  const TPL_END =
-    "\nTEMPLATE;\n});";
-  ###
-  public string  $s0='{{',$s1='}}';# delimiters
+  static string  $EMPTY='';# hash of an empty string
+  public string  $s0='{{',$s1='}}';# default delimiters
   public int     $n0=2,$n1=2;# delimiter sizes
+  public bool    $pushed=false;# data pushed to stack
   public ?object $escape=null;# callable
-  public int     $total=1;# cache size >0
-  public array   $cache=[''=>0];# hash=>index
-  public array   $templ=[''],$func=[null];# index=>*
+  public int     $index=0;# hash/text/code/func
+  public array   $hash=[],$text=[''];
+  public array   $code=[''],$func=[];
+  public array   $cache=[];# hash=>index
   public object  $ctx;
-  private function __construct() {
+  private function __construct()
+  {
+    $this->cache[self::$EMPTY] = 0;
+    $this->hash[] = self::$EMPTY;
+    $this->func[] = (
+      static function():string {return '';}
+    );
     $this->ctx = new MustacheCtx($this);
   }
-  static function construct(array $o=[]): object
+  static function new(array $o=[]): object
   {
-    # create new instance
     $I = new self();
-    # initialize
     if (isset($o[$k = 'delims']))
     {
       $sep   = explode(' ', $o[$k], 2);
@@ -59,73 +62,29 @@ class Mustache
         ? $o[$k] : htmlspecialchars(...);
     }
     if (isset($o[$k = 'helper'])) {
-      $I->ctx->extend($o[$k]);
+      $I->helper($o[$k]);
     }
     return $I;
   }
   # }}}
   # hlp {{{
+  static function init(): bool # {{{
+  {
+    if (self::$EMPTY === '') {
+      self::$EMPTY=hash('xxh3', '', true);
+    }
+    return true;
+  }
+  # }}}
   function __debugInfo(): array # {{{
   {
-    return ['total' => $this->total];
+    return [
+      'cache size' => 1 + $this->index,
+    ];
   }
   # }}}
-  function _func(string &$tpl): object # {{{
-  {
-    # compute template hash
-    $k = hash('xxh3', $tpl, true);
-    # checkout cache
-    if (isset($this->cache[$k])) {
-      return $this->func[$this->cache[$k]];
-    }
-    # create template renderer function
-    #$s = (
-    $func = eval(
-      self::TPL_BEG.
-      $this->_compose(
-        $this->_parse($tpl,
-          $this->_tokenize(
-            $tpl, $this->s0, $this->s1,
-            $this->n0, $this->n1
-          )
-        )
-      ).
-      self::TPL_END
-    );
-    #var_dump($s);
-    #$func = eval($s);
-    # store and complete
-    $i = $this->total;
-    $this->total     = $i + 1;
-    $this->templ[$i] = $tpl;
-    $this->cache[$k] = $i;
-    return $this->func[$i] = $func;
-  }
-  # }}}
-  function _index(string &$tpl, array &$tree): int # {{{
-  {
-    # compute template hash
-    $k = hash('xxh3', $tpl, true);
-    # checkout cache
-    if (isset($this->cache[$k])) {
-      return $this->cache[$k];
-    }
-    # create template renderer function
-    $func = eval(
-      self::TPL_BEG.
-      $this->_compose($tree).
-      self::TPL_END
-    );
-    # store and complete
-    $i = $this->total;
-    $this->total     = $i + 1;
-    $this->templ[$i] = $tpl;
-    $this->func[$i]  = $func;
-    return $this->cache[$k] = $i;
-  }
-  # }}}
-  function &_tokenize(# {{{
-    string &$tpl, string $s0, string $s1,
+  function _tokenize(# {{{
+    string $tpl, string $s0, string $s1,
     int $n0, int $n1
   ):array
   {
@@ -180,10 +139,8 @@ class Mustache
       # find closing delimiter, check for false opening and
       # validate tag (first character)
       $b += $n0;# shift to the tag name
-      if (($a = strpos($tpl, $s1, $b)) === false ||
-          !($c = trim(substr($tpl, $b, $a - $b), ' ')) ||
-          (!ctype_alnum($c[0]) && strpos('#^?|/.&!', $c[0]) === false) ||
-          (strlen($c) > 32 && $c[0] !== '!'))
+      if (!($a = strpos($tpl, $s1, $b)) ||
+          !($c = trim(substr($tpl, $b, $a - $b))))
       {
         # SKIP INCORRECT TAG..
         # check newline
@@ -205,7 +162,7 @@ class Mustache
       switch ($c[0]) {
       case '#':
       case '^':
-      case '?':
+      case '@':
         # block start
         $tokens[$i++] = [
           $c[0],ltrim(substr($c, 1), ' '),
@@ -232,13 +189,15 @@ class Mustache
           '!','',$line,$indent
         ];
         break;
-      case '&':
-        # tagged variable
+      case '_':# assisted variable
+      case '&':# tagged variable
         $c = $c[0].ltrim(substr($c, 1), ' ');
         # fallthrough..
       default:
         # variable
-        $tokens[$i++] = ['_',$c,$line,$indent];
+        $tokens[$i++] = [
+          '_',$c,$line,$indent
+        ];
         break;
       }
       # continue
@@ -306,7 +265,7 @@ class Mustache
         $n1 = 0;
       }
       # count blocks
-      if (($a = $tokens[$i][0]) && strpos('#^|/!', $a) !== false) {
+      if (($a = $tokens[$i][0]) && strpos('#^@|/!', $a) !== false) {
         ++$n1;
       }
     }
@@ -316,18 +275,22 @@ class Mustache
     return $tokens;
   }
   # }}}
-  function &_parse(# {{{
-    string &$tpl,
-    array  &$tokens,
+  function _parse(# {{{
+    string $tpl,
+    array  $tokens,
     int    &$i = 0,
     ?array &$p = null
   ):array
   {
     ###
-    #  tree: node1,node2,..
-    #  node: type,name,line,indent,size,block
-    # block: section1,section2,..
-    # section: text,tree,condition
+    # result/tree:
+    #  node1,node2,..
+    # node:
+    #  type,name,line/argument,indent,3*count,sections
+    # sections:
+    #  section1,section2,..
+    # section:
+    #  type/condition,text,tree
     ###
     # prepare
     $tree = [];
@@ -347,7 +310,7 @@ class Mustache
       switch ($t[0]) {
       case '#':
       case '^':
-      case '?':
+      case '@':
         # block opener
         $t[5] = [];
         $this->_parse($tpl, $tokens, $i, $t);
@@ -388,7 +351,9 @@ class Mustache
         }
         if ($size)
         {
-          $p[5][] = substr($tpl, $from, $t[4] - $from);
+          $p[5][] = substr(
+            $tpl, $from, $t[4] - $from
+          );
           $p[5][] = &$tree;
           $p[4]   = count($p[5]);
         }
@@ -413,68 +378,60 @@ class Mustache
     return $tree;
   }
   # }}}
-  function _compose(array &$tree): string # {{{
+  function _compose(# {{{
+    array $tree, int $depth=0
+  ):string
   {
-    static $TYPE=['^'=>0,'#'=>1,'?'=>2];
-    # compose code for evaluation
+    # prepare
+    if ($depth >= 0)
+    {
+      $nextDepth = $depth + 1;
+      $index     = $this->index;
+    }
+    else
+    {
+      $nextDepth = 1;
+      $index     = $depth;
+    }
     $x = '';
-    for ($i=0,$j=count($tree); $i < $j; ++$i)
+    $i = $t = 0;
+    $j = $k = count($tree);
+    # compose pieces of code
+    do
     {
       $t0 = $tree[$i][0];
       $t1 = $tree[$i][1];
       switch ($t0) {
       case '':
         # plaintext
-        # apply heredoc guards
-        if (strpos($t1, '\\') !== false) {
-          $t1 = str_replace('\\', '\\\\', $t1);
-        }
-        if (strpos($t1, '$') !== false) {
-          $t1 = str_replace('$', '\\$', $t1);
-        }
-        $x .= $t1;
+        $x .= "'".addcslashes($t1, "'\\")."'";
         break;
       case '_':
-        # variable
-        # check marked as clean
-        if ($t1[0] === '&')
+        # variable {{{
+        if ($this->_path($t1, $t, true))
         {
-          $t1 = substr($t1, 1);
-          $s0 = 0;
-        }
-        elseif ($this->escape) {
-          $s0 = 1;
+          $t++;
+          $x .= '$x->v('.$t1.')';
         }
         else {
-          $s0 = 0;
+          $x .= '$x->av('.$t1.')';
         }
-        $x .= '{$x->v(\''.$t1.'\','.$s0.')}';
+        # }}}
         break;
-      case '#':
-      case '^':
-      case '?':
-        # block
-        ###
-        # static arguments:
-        #  0: block name
-        #  1: block type
-        #  3: FALSY section index or 0
-        #  2: TRUTHY section index or 0
-        #  4: count of variadics (N)
-        # variadic arguments:
-        #  0-M: section condition (N-1)
-        #  1-N: section index (M+1)
-        ###
+      default:
+        # block {{{
+        # prepare
         $t4 = $tree[$i][4];
         $t5 = $tree[$i][5];
-        $s0 = 0;
-        $s1 = 0;
-        for ($a='',$n=0,$k=0; $k < $t4; $k+=3)
+        $s0 = 0;# FALSY section
+        $s1 = 0;# TRUTHY section
+        # collect sections
+        for ($a='',$n=0,$m=0; $m < $t4; $m+=3)
         {
           $b = $this->_index(
-            $t5[$k+1], $t5[$k+2]
+            $t5[$m+1], $t5[$m+2], $nextDepth
           );
-          switch ($t5[$k]) {
+          switch ($t5[$m]) {
           case 0:
             $s0 = $b;
             break;
@@ -482,665 +439,1074 @@ class Mustache
             $s1 = $b;
             break;
           default:
-            $a .= ','.$t5[$k].','.$b;
+            $a .= ','.$t5[$m].','.$b;
             $n += 2;
             break;
           }
         }
         # compose
-        if ($n)
+        if ($this->_path($t1, $t))
         {
-          # SWITCH
-          $a = '"'.$t1.'",'.$s0.','.$s1.','.$n.$a;
-          $x .= '{$x->b2('.$a.')}';
-        }
-        elseif ($t0 === '^')
-        {
-          # FALSY OR
-          $a = '"'.$t1.'",'.$s0.','.$s1;
-          $x .= '{$x->b0('.$a.')}';
+          $t++;
+          if ($n)
+          {
+            # SWITCH
+            # static arguments:
+            #  0-4: name group
+            #  5-6: FALSY/TRUTHY sections
+            #  7: count of variadics (N)
+            # variadic arguments:
+            #  0-M: section condition (N-1)
+            #  1-N: section index (M+1)
+            ###
+            $a  = $t1.','.$s0.','.$s1.','.$n.$a;
+            $x .= '$x->b2('.$a.')';
+          }
+          elseif ($t0 === '^')
+          {
+            # FALSY OR
+            $a  = $t1.','.$s0.','.$s1;
+            $x .= '$x->b0('.$a.')';
+          }
+          elseif ($t0 === '@')
+          {
+            # ITERABLE
+            $a  = $t1.','.$s1.','.$s0;
+            $x .= '$x->b1a('.$a.')';
+          }
+          else
+          {
+            # TRUTHY OR
+            $a  = $t1.','.$s1.','.$s0;
+            $x .= '$x->b1('.$a.')';
+          }
         }
         else
         {
-          # TRUTHY OR
-          $a = '"'.$t1.'",'.$s1.','.$s0;
-          $x .= '{$x->b1('.$a.')}';
+          if ($n)
+          {
+            $a  = $t1.','.$s0.','.$s1.','.$n.$a;
+            $x .= '$x->a2('.$a.')';
+          }
+          elseif ($t0 === '^')
+          {
+            $a  = $t1.','.$s0.','.$s1;
+            $x .= '$x->a0('.$a.')';
+          }
+          else
+          {
+            $a  = $t1.','.$s1.','.$s0;
+            $x .= '$x->a1('.$a.')';
+          }
         }
+        # }}}
         break;
       }
+      # add joiner
+      if (--$k) {
+        $x .= ".";
+      }
     }
-    # apply heredoc terminator guard
-    if (strpos($x, self::TERMINUS)) {
-      $x = str_replace(self::TERMINUS, '{$x}', $x);
+    while (++$i < $j);
+    # compose types
+    if ($t)
+    {
+      $a = '0'.str_repeat(',0', $t - 1);
+      $a = "\n".'static $T=['.$a.'];';
     }
-    # complete
-    return $x;
+    else {
+      $a = '';
+    }
+    # compose depth dependency
+    if ($depth > 0) {
+      $a .= "\nreturn ".$x.";\n";
+    }
+    else
+    {
+      $a .= "\n".'$x->index='.$index.';';
+      $a .= "\n".'$r='.$x.';';
+      $a .= "\n".'$x->index=0;';
+      $a .= "\n".'return $r;'."\n";
+    }
+    # compose function
+    return
+      'return'.
+      ' (static function($x)'.
+      ' {'.$a.'});';
   }
   # }}}
+  function _index(# {{{
+    string $tpl, array $tree, int $depth
+  ):int
+  {
+    if ($tpl === '') {
+      return 0;# empty function
+    }
+    # arrays should be populated naturally,
+    # but the index may jump further in compose,
+    # so populate them beforhand
+    $i = ++$this->index;
+    $this->hash[$i] = '';
+    $this->text[$i] = $tpl;
+    $this->code[$i] = '';
+    $this->func[$i] = null;
+    $e = $this->_compose($tree, $depth);
+    $this->code[$i] = $e;
+    $this->func[$i] = eval($e);
+    return $i;
+  }
+  # }}}
+  function _path(# {{{
+    string &$s, int $typeIdx, bool $var=false
+  ):int
+  {
+    # check assisted
+    if ($s[0] === '_')
+    {
+      # count backpedal
+      for ($p=1; $s[$p] === '_'; ++$p)
+      {}
+      # complete
+      $s = "'".substr($s, $p)."',".$p;
+      return 0;
+    }
+    # prepare typed access
+    $t = ',$T['.$typeIdx.']';
+    # check unescaped scalar
+    if ($var)
+    {
+      if ($s[0] === '&')
+      {
+        $s = substr($s, 1);
+        $e = ',0';
+      }
+      elseif ($this->escape) {
+        $e = ',1';
+      }
+      else {
+        $e = ',0';
+      }
+      $e = $t.$e;
+    }
+    else {
+      $e = $t;
+    }
+    # check implicit iterator
+    if ($s === '.')
+    {
+      $s = "'',0,null".$e;
+      return 1;
+    }
+    # dot notation
+    $a = explode('.', $s);
+    $s = "'".$a[0]."'";
+    # single name
+    if (!($j = count($a) - 1))
+    {
+      $s = $s.',0,null'.$e;
+      return 2;
+    }
+    # multiple names
+    for ($b='',$i=1; $i < $j; ++$i) {
+      $b .= "'".$a[$i]."',";
+    }
+    $b = $b."'".$a[$j]."'";
+    $s = $s.','.$j.',['.$b.']'.$e;
+    return 2;
+  }
+  # }}}
+  # }}}
+  function helper(array|object $h): void # {{{
+  {
+    $this->ctx->raise($h);
+  }
+  # }}}
+  function trim(string $tpl, bool $all=false): string # {{{
+  {
+    return preg_replace('/\n[ \t]+/', '',
+      str_replace("\r", '', trim($tpl))
+    );
+  }
+  # }}}
+  function alltrim(string $tpl): string # {{{
+  {
+    return preg_replace('/\n[ \n\t]+/', '',
+      str_replace("\r", '', trim($tpl))
+    );
+  }
   # }}}
   function prepare(# {{{
-    string $tpl, string $delims, array $data
+    string $tpl, $dta=null, string $sep=''
   ):string
   {
-    # template preparation (no caching)
-    # get delimiters
-    [$s0,$s1] = explode(' ', $delims, 2);
-    # check delimiter presence
-    if (strpos($tpl, $s0) === false) {
-      return $tpl;
+    # check delimieters
+    if ($sep === '')
+    {
+      $n0 = $this->n0; $s0 = $this->s0;
+      $n1 = $this->n1; $s1 = $this->s1;
     }
-    # determine delimiter sizes
-    $n0 = strlen($s0);
-    $n1 = strlen($s1);
-    # create renderer function
-    $f = eval(
-      self::TPL_BEG.
-      $this->_compose($this->_parse(
-        $tpl, $this->_tokenize(
-          $tpl, $s0, $s1, $n0, $n1
-        ))
-      ).
-      self::TPL_END
-    );
-    # execute it within the context
-    return $f($this->ctx->set($data));
-  }
-  # }}}
-  function render(# {{{
-    string $tpl, string|array $data=''
-  ):string
-  {
+    else
+    {
+      $a  = explode(' ', $sep, 2);
+      $n0 = strlen($s0 = $a[0]);
+      $n1 = strlen($s1 = $a[1]);
+    }
     # check necessity
-    if (($len = strlen($tpl)) < 5 ||
-        strpos($tpl, $this->s0) === false)
+    if (strlen($tpl) <= $n0 + $n1 ||
+        strpos($tpl, $s0) === false)
     {
       return $tpl;
     }
-    # create renderer and
-    # execute within the context
-    return $this->_func($tpl)(
-      $this->ctx->set($data)
-    );
+    # create renderer
+    $i = $this->index;
+    $f = eval($this->_compose(
+      $this->_parse($tpl,
+        $this->_tokenize(
+          $tpl, $s0, $s1, $n0, $n1
+        )
+      ), -1
+    ));
+    # execute
+    $x = $this->ctx;
+    if ($dta === null)
+    {
+      if ($this->pushed && !$x->index)
+      {
+        $this->pushed = false;
+        $x->pop();
+      }
+      $r = $f($x);
+    }
+    else
+    {
+      $r = $f($x->push($dta));
+      $x->pop();
+    }
+    # although the main template is not cached,
+    # its pieces are, so do the cleanup
+    $this->clear($i);
+    return $r;
+  }
+  # }}}
+  function render(string $tpl, $dta=null): string # {{{
+  {
+    # check lambda recursion
+    if (($x = $this->ctx)->index)
+    {
+      # render without caching as with preparation
+      $i = $this->index;
+      $f = eval($this->_compose(
+        $this->_parse($tpl,
+          $this->_tokenize(
+            $tpl, $this->s0, $this->s1,
+            $this->n0, $this->n1
+          )
+        ), -1
+      ));
+      if ($dta === null) {
+        $r = $f($x);
+      }
+      else
+      {
+        $r = $f($x->push($dta));
+        $x->pop();
+      }
+      $this->clear($i);
+      return $r;
+    }
+    # compute template hash
+    $k = hash('xxh3', $tpl, true);
+    # checkout cache
+    if (isset($this->cache[$k])) {
+      $f = $this->func[$this->cache[$k]];
+    }
+    else
+    {
+      # create new renderer
+      $i = ++$this->index;
+      $this->cache[$k] = $i;
+      $this->hash[$i]  = $k;
+      $this->text[$i]  = $tpl;
+      $this->code[$i]  = '';
+      $this->func[$i]  = null;
+      $e = $this->_compose($this->_parse(
+        $tpl, $this->_tokenize(
+          $tpl, $this->s0, $this->s1,
+          $this->n0, $this->n1
+        )
+      ));
+      $this->code[$i]  = $e;
+      $this->func[$i]  = $f = eval($e);
+    }
+    # execute
+    if ($dta === null)
+    {
+      if ($this->pushed)
+      {
+        $this->pushed = false;
+        $x->pop();
+      }
+      return $f($x);
+    }
+    if ($this->pushed) {
+      return $f($x->set($dta));
+    }
+    $this->pushed = true;
+    return $f($x->push($dta));
+  }
+  # }}}
+  function set(string $tpl): int # {{{
+  {
+    # compute template hash
+    $k = hash('xxh3', $tpl, true);
+    # checkout cache
+    if (isset($this->cache[$k])) {
+      return $this->cache[$k];
+    }
+    # create new renderer
+    $i = ++$this->index;
+    $this->cache[$k] = $i;
+    $this->hash[$i]  = $k;
+    $this->text[$i]  = $tpl;
+    $this->code[$i]  = '';
+    $this->func[$i]  = null;
+    $e = $this->_compose($this->_parse(
+      $tpl, $this->_tokenize(
+        $tpl, $this->s0, $this->s1,
+        $this->n0, $this->n1
+      )
+    ));
+    $this->code[$i]  = $e;
+    $this->func[$i]  = eval($e);
+    return $i;
+  }
+  # }}}
+  function clear(int $to=0): void # {{{
+  {
+    for ($i=$this->index; $i > $to; --$i)
+    {
+      if (($k = $this->hash[$i]) !== '') {
+        unset($this->cache[$k]);
+      }
+      unset(
+        $this->hash[$i], $this->text[$i],
+        $this->code[$i], $this->func[$i]
+      );
+    }
+    $this->index = $to;
+  }
+  # }}}
+  function get(int $i, $dta=null): string # {{{
+  {
+    $f = $this->func[$i];
+    if (($x = $this->ctx)->index)
+    {
+      if ($dta === null) {
+        return $f($x);
+      }
+      $r = $f($x->push($dta));
+      $x->pop();
+      return $r;
+    }
+    if ($dta === null)
+    {
+      if ($this->pushed)
+      {
+        $this->pushed = false;
+        $x->pop();
+      }
+      return $f($x);
+    }
+    if ($this->pushed) {
+      return $f($x->set($dta));
+    }
+    $this->pushed = true;
+    return $f($x->push($dta));
   }
   # }}}
 }
-class MustacheCtx
-  implements Stringable
+# }}}
+class MustacheCtx # {{{
 {
   # constructor {{{
+  public array  $stack=[null],$type=[0],$help=[];
+  public int    $current=0,$helpSz=0,$index=0;
   public object $base;
-  public array  $stack=[null];
-  public array  $type=[0];
-  public int    $last=0;
   function __construct(object $mustache) {
     $this->base = $mustache;
   }
   # }}}
   # hlp {{{
-  function __toString(): string # {{{
+  static function typeof($v): int # {{{
   {
-    return Mustache::TERMINUS;
+    return is_array($v)
+      ? 4
+      : (is_object($v)
+        ? (($v instanceof Closure)
+          ? 7
+          : (($v instanceof Mustachable)
+            ? 6
+            : 5))
+        : (is_string($v)
+          ? 1
+          : (is_bool($v)
+            ? 3
+            : 2)));
   }
   # }}}
-  static function typeof(&$x): int # {{{
+  static function type_456($v): int # {{{
   {
-    if (is_scalar($x)) {
-      return 4;
-    }
-    if (is_array($x)) {
-      return 1;
-    }
-    if (is_object($x)) {
-      return 3;
-    }
-    return 0;
+    return is_array($v)
+      ? 4
+      : (is_object($v)
+        ? (($v instanceof Mustachable)
+          ? 6
+          : 5)
+        : 0);
   }
   # }}}
-  function extend(array|object &$x): void # {{{
+  function raise(array|object $x): void # {{{
   {
-    $i = &$this->last;
-    $this->stack[$i] = &$x;
-    $this->type[$i]  = is_array($x)
-      ? 1
-      : (($x instanceof Mustachable)
-        ? 3
-        : 2);
-    #####
-    $i++;
-    $this->stack[$i] = null;
-    $this->type[$i]  = 0;
+    $i = ++$this->current;
+    $this->stack[$i] = $x;
+    $this->type[$i]  = self::type_456($x);
   }
   # }}}
-  function set(array|string &$x): self # {{{
+  function pop(): void # {{{
   {
-    if (is_array($x))
-    {
-      if (!$x) {
-        return $this;
-      }
-      $type = 1;
-    }
-    elseif ($x === '') {
-      return $this;
-    }
-    else {
-      $type = 0;
-    }
-    $i = $this->last;
-    $this->stack[$i] = &$x;
-    $this->type[$i]  = $type;
+    $i = $this->current--;
+    unset($this->stack[$i]);
+  }
+  # }}}
+  function push($x): self # {{{
+  {
+    $i = ++$this->current;
+    $this->stack[$i] = $x;
+    $this->type[$i]  = self::typeof($x);
     return $this;
   }
   # }}}
-  function &get_OLD(string $name): mixed # {{{
+  function set($x): self # {{{
   {
-    static $EMPTY='';
-    # resolve first name,
-    # check for implicit iterator
-    if ($name[0] === '.')
-    {
-      # take currect stack value
-      $v = &$this->stack[$this->last];
-      # when there's more to resolve,
-      # compose the names chain
-      if (isset($name[1])) {
-        $a = substr($name, 1);
-      }
-      else {# use current
-        return $v;
-      }
-    }
-    else
-    {
-      # in case of dot notation,
-      # extract first name from the chain
-      if ($i = strpos($name, '.'))
-      {
-        $a = substr($name, $i + 1);
-        $name = substr($name, 0, $i);
-      }
-      # find first value in the stack
-      # {{{
-      $v = &$this->stack;
-      $t = &$this->type;
-      for ($j=$this->last; $j >= 0; --$j)
-      {
-        switch ($t[$j]) {
-        case 1:# array
-          if (isset($v[$j][$name]))
-          {
-            if ($i)
-            {
-              $v = &$v[$j][$name];
-              break 2;
-            }
-            return $v[$j][$name];
-          }
-          break;
-        case 2:# object
-          if (isset($v[$j]->$name))
-          {
-            if ($i)
-            {
-              $v = &$v[$j]->$name;
-              break 2;
-            }
-            return $v[$j]->$name;
-          }
-          break;
-        case 3:# friendly object
-          if (isset($v[$j]::MAP[$name]))
-          {
-            # property
-            if ($v[$j]::MAP[$name])
-            {
-              if ($i)
-              {
-                $v = &$v[$j]->$name;
-                break 2;
-              }
-              return $v[$j]->$name;
-            }
-            # method
-            if ($i)
-            {
-              $w = $v[$j]->$name();
-              $v = &$w;
-              break 2;
-            }
-            $w = $v[$j]->$name(...);
-            return $w;
-          }
-          break;
-        }
-      }
-      # check not found
-      if ($j < 0) {
-        return $EMPTY;
-      }
-      # }}}
-    }
-    # resolve names further,
-    # traverse the value til the last name
-    while (($i = strpos($a, '.')) !== false)
-    {
-      # select next name and cut the chain
-      $b = substr($a, 0, $i);
-      $a = substr($a, $i + 1);
-      # select next value
-      if (is_array($v))
-      {
-        if (!isset($v[$b])) {
-          return $EMPTY;
-        }
-        $v = &$v[$b];
-      }
-      elseif (is_object($v))
-      {
-        if (!isset($v->$b)) {
-          return $EMPTY;
-        }
-        $v = &$v->$b;
-      }
-      else {# non-traversible
-        return $EMPTY;
-      }
-    }
-    # check rare case of the dot at the end
-    if ($a === '') {
-      return $v;
-    }
-    # resolve the last name
-    if (is_array($v))
-    {
-      if (isset($v[$a])) {
-        return $v[$a];
-      }
-    }
-    elseif (is_object($v))
-    {
-      if (isset($v->$a)) {
-        return $v->$a;
-      }
-      if (method_exists($a, $v)) {
-        return $v->$a(...);
-      }
-    }
-    return $EMPTY;
+    $i = $this->current;
+    $this->stack[$i] = $x;
+    $this->type[$i]  = self::typeof($x);
+    return $this;
   }
   # }}}
-  function &get(# {{{
-    string $name, int &$type=-1
+  function get(# {{{
+    string $p, int $n, ?array $pn, int &$t
   ):mixed
   {
-    static $EMPTY='';
-    # get stack index
-    $i = $this->last;
-    # resolve first name,
-    # check for implicit iterator
-    if ($name[0] === '.')
+    static $NOT_FOUND=null;
+    # resolve first name {{{
+    $i = $this->current;
+    if ($p === '')
     {
-      # take currect stack value
-      $v = &$this->stack[$i];
-      # when there's more to resolve,
-      # compose the names chain
-      if (isset($name[1])) {
-        $a = substr($name, 1);
+      # take current value
+      $v = $this->stack[$i];
+      if ($n) {
+        $j = $this->type[$i] ?: self::type_456($v);
       }
       else
       {
-        # use current
-        $type = $this->type[$i];
+        # single dot - implicit iterator
+        if ($t) {
+          return $v;
+        }
+        $t = $this->type[$i] ?: self::typeof($v);
         return $v;
       }
     }
     else
     {
-      # in case of dot notation,
-      # extract first name from the chain
-      if ($j = strpos($name, '.'))
-      {
-        $a = substr($name, $j + 1);
-        $name = substr($name, 0, $j);
-      }
-      # find first value in the stack
-      # {{{
-      $v = &$this->stack;
-      $t = &$this->type;
-      while ($i >= 0)
-      {
-        switch ($t[$i]) {
-        case 1:# array
-          if (isset($v[$i][$name]))
+      search:
+        $v = $this->stack[$i];
+        switch ($this->type[$i]) {
+        case 4:
+          if (isset($v[$p]))
           {
-            if ($j)
+            if ($n)
             {
-              $v = &$v[$i][$name];
-              break 2;
+              $v = $v[$p];
+              $j = self::type_456($v);
+              goto found;
             }
-            return $v[$i][$name];
+            if ($t) {
+              return $v[$p];
+            }
+            $v = $v[$p];
+            $t = self::typeof($v);
+            return $v;
           }
           break;
-        case 2:# object
-          if (isset($v[$i]->$name))
+        case 5:
+          if (isset($v->$p))
           {
-            if ($j)
+            if ($n)
             {
-              $v = &$v[$i]->$name;
-              break 2;
+              $v = $v->$p;
+              $j = self::type_456($v);
+              goto found;
             }
-            return $v[$i]->$name;
+            if ($t) {
+              return $v->$p;
+            }
+            $v = $v->$p;
+            $t = self::typeof($v);
+            return $v;
           }
           break;
-        case 3:# friendly object
-          if (isset($v[$i]::STASH[$name]))
+        case 6:
+          if (isset($v::STASH[$p]))
           {
-            # property?
-            $v = &$v[$i];
-            if ($v::STASH[$name][0])
+            if ($n)
             {
-              if ($j)
-              {
-                $v = &$v->$name;
-                break 2;
+              if (($j = $v::STASH[$p]) < 7) {
+                $v = $v->$p;
               }
-              $type = $v::STASH[$name][1];
-              return $v->$name;
+              else {
+                $v = $v->$p();
+              }
+              goto found;
             }
-            # method!
-            if ($j)
+            if ($t)
             {
-              $w = $v->$name();
-              $v = &$w;
-              break 2;
+              if ($v::STASH[$p] < 7) {
+                return $v->$p;
+              }
+              return $v->$p(...);
             }
-            $type = 5 + $v::STASH[$name][1];
-            $func = $v->$name(...);
-            return $func;
+            if (($t = $v::STASH[$p]) < 7) {
+              return $v->$p;
+            }
+            return $v->$p(...);
           }
           break;
+        }
+        # continue?
+        if ($i < 2) {
+          return $NOT_FOUND;
         }
         $i--;
-      }
-      # check not found
-      if ($i < 0)
-      {
-        $type = 0;
-        return $EMPTY;
-      }
-      # }}}
+        goto search;
+      found:
     }
-    # resolve names further,
-    # traverse the value til the last name
-    while (($i = strpos($a, '.')) !== false)
+    # }}}
+    # resolve in-between {{{
+    for ($i=0,--$n; $i < $n; ++$i)
     {
-      # select next name and cut the chain
-      $b = substr($a, 0, $i);
-      $a = substr($a, $i + 1);
-      # select next value
-      if (is_array($v))
-      {
-        if (!isset($v[$b]))
+      $p = $pn[$i];
+      switch ($j) {
+      case 4:
+        if (isset($v[$p]))
         {
-          $type = 0;
-          return $EMPTY;
+          $v = $v[$p];
+          $j = self::type_456($v);
+          break;
         }
-        $v = &$v[$b];
-      }
-      elseif (is_object($v))
-      {
-        if (!isset($v->$b))
+        return $NOT_FOUND;
+      case 5:
+        if (isset($v->$p))
         {
-          $type = 0;
-          return $EMPTY;
+          $v = $v->$p;
+          $j = self::type_456($v);
+          break;
         }
-        $v = &$v->$b;
+        return $NOT_FOUND;
+      case 6:
+        if (isset($v::STASH[$p]))
+        {
+          if (($j = $v::STASH[$p]) < 7) {
+            $v = $v->$p;
+          }
+          else
+          {
+            $v = $v->$p();
+            $j = $j - 7;
+          }
+          break;
+        }
+        # fallthrough..
+      default:
+        return $NOT_FOUND;
       }
-      else
+    }
+    # }}}
+    # resolve last name {{{
+    switch ($j) {
+    case 4:
+      $p = $pn[$n];
+      if (isset($v[$p]))
       {
-        $type = 0;
-        return $EMPTY;
+        if ($t) {
+          return $v[$p];
+        }
+        $v = $v[$p];
+        $t = self::typeof($v);
+        return $v;
       }
-    }
-    # check rare case of the dot at the end
-    if ($a === '') {
-      return $v;
-    }
-    # resolve the last name
-    if (is_array($v))
-    {
-      if (isset($v[$a])) {
-        return $v[$a];
+      break;
+    case 5:
+      $p = $pn[$n];
+      if ($t)
+      {
+        return ($t < 7)
+          ? $v->$p
+          : $v->$p(...);
       }
-    }
-    elseif (is_object($v))
-    {
-      if (isset($v->$a)) {
-        return $v->$a;
+      if (isset($v->$p))
+      {
+        $v = $v->$p;
+        $t = self::typeof($v);
+        return $v;
       }
-      if (method_exists($a, $v)) {
-        return $v->$a(...);
+      if (method_exists($v, $p))
+      {
+        $t = 7;
+        return $v->$p(...);
       }
+      break;
+    case 6:
+      $p = $pn[$n];
+      if ($t)
+      {
+        return ($t < 7)
+          ? $v->$p
+          : $v->$p(...);
+      }
+      if (isset($v::STASH[$p]))
+      {
+        return (($t = $v::STASH[$p]) < 7)
+          ? $v->$p
+          : $v->$p(...);
+      }
+      break;
     }
-    $type = 0;
-    return $EMPTY;
+    return $NOT_FOUND;
+    # }}}
   }
   # }}}
   # }}}
   function b0(# FALSY OR {{{
-    string $name, int $i0, int $i1
+    string $p, int $n, ?array $pn, int &$t,
+    int $i0, int $i1
   ):string
   {
-    # prepare
+    # prepare {{{
     $E = $this->base;
-    $t = -1;
-    $v = &$this->get($name, $t);
-    # check truthy
-    if ($v)
-    {
-      # checkout lambda and
-      # render falsy when result is falsy
-      if ((($t > 3) ||
-           ($v instanceof Closure)) &&
-          !$v($E))
-      {
-        return $E->func[$i0]($this);
-      }
-      # render truthy
-      return $i1
-        ? $E->func[$i1]($this)
-        : '';
+    $v = $this->get($p, $n, $pn, $t);
+    # check not found
+    if ($v === null) {
+      return $E->func[$i0]($this);
     }
-    # render falsy
-    return $E->func[$i0]($this);
+    # }}}
+    # handle lambda {{{
+    if ($t >= 7)
+    {
+      # invoke
+      $v = $v($E);
+      # clarify
+      if ($t > 7) {
+        $j = $t - 7;
+      }
+      else
+      {
+        $j = self::typeof($v);
+        $t = 7 + $j;
+      }
+    }
+    else {
+      $j = $t;
+    }
+    # }}}
+    # render {{{
+    switch ($j) {
+    case 1:
+      return ($v === '')
+        ? $E->func[$i0]($this)
+        : ($i1 ? $E->func[$i1]($this) : '');
+    case 2:
+    case 3:
+    case 4:
+      return $v
+        ? ($i1 ? $E->func[$i1]($this) : '')
+        : $E->func[$i0]($this);
+    }
+    return $i1 ? $E->func[$i1]($this) : '';
+    # }}}
   }
   # }}}
   function b1(# TRUTHY OR {{{
-    string $name, int $i1, int $i0
+    string $p, int $n, ?array $pn, int &$t,
+    int $i1, int $i0
   ):string
   {
-    # prepare
+    # prepare {{{
     $E = $this->base;
-    $t = -1;
-    $v = &$this->get($name, $t);
-    # clarify type of value
-    if ($t < 0)
-    {
-      $t = is_scalar($v)
-        ? 0
-        : (is_array($v)
-          ? 1
-          : (($v instanceof Closure)
-            ? 4
-            : 2));
+    $v = $this->get($p, $n, $pn, $t);
+    # check not found
+    if ($v === null) {
+      return $i0 ? $E->func[$i0]($this) : '';
     }
-    # handle lambda
-    if ($t > 3) # 4..8 => -1..3
+    # }}}
+    # handle lambda {{{
+    if ($t >= 7)
     {
-      # invoke
-      $r = $v($E, $E->templ[$i1]);
-      # when result is scalar,
-      # try content substitution
-      if ($t === 5 || is_scalar($r))
-      {
-        # render falsy
-        if (!$r)
-        {
-          return ($r === '0')
-            ? $r
-            : ($i0
-              ? $E->func[$i0]($this)
-              : '');
-        }
-        # render simple truth or a substitute
-        return ($r === true)
-          ? $E->func[$i1]($this)
-          : $r;
-      }
-      # reassign
-      $v = &$r;
-      # clarify type of result
-      if ($t > 4) {
-        $t -= 5;# from Mustachable
+      # invoke with section content
+      $v = $v($E, $E->text[$i1]);
+      # clarify
+      if ($t > 7) {
+        $j = $t - 7;
       }
       else
       {
-        $t = is_scalar($v)
-          ? 0
-          : (is_array($v)
-            ? 1
-            : 2);
+        $j = self::typeof($v);
+        $t = 7 + $j;
+      }
+      # perform content substitution
+      switch ($j) {
+      case 1:
+        return ($v === '')
+          ? ($i0 ? $E->func[$i0]($this) : '')
+          : $v;
+      case 2:
+        return strval($v);
       }
     }
-    # handle value
-    switch ($t) {
-    case 0:
-      # render boolean
-      if (is_bool($v))
-      {
-        return $v
-          ? $E->func[$i1]($this)
-          : ($i0
-            ? $E->func[$i0]($this)
-            : '');
-      }
-      # convert to string
-      if (!is_string($v))
-      {
-        $w = strval($v);
-        $v = &$w;
-      }
-      # render empty string as falsy
-      if ($v === '')
-      {
-        return $i0
-          ? $E->func[$i0]($this)
-          : '';
+    else {
+      $j = $t;
+    }
+    # }}}
+    # render falsy or helper {{{
+    switch ($j) {
+    case 1:
+      # check empty
+      if ($v === '') {
+        return $i0 ? $E->func[$i0]($this) : '';
       }
       # string helper
-      $i = ++$this->last;
+      $i = ++$this->current;
       $this->stack[$i] = &$v;
-      $this->type[$i]  = 0;
+      $this->type[$i]  = 1;
       $x = $E->func[$i1]($this);
-      $this->last--;
+      $this->current--;
       return $x;
-      ###
-    case 1:
-      # render falsy
-      if (!($k = count($v)))
-      {
-        return $i0
-          ? $E->func[$i0]($this)
-          : '';
-      }
-      # prepare
-      $i = ++$this->last;
-      # check
-      if (array_is_list($v))
-      {
-        # array iteration!
-        # prepare
-        $S = &$this->stack;
-        $f = $E->func[$i1];
-        $x = '';
-        $j = 0;
-        # set type (assume uniformity)
-        $this->type[$i] = is_scalar($v[0])
-          ? 0 # array of scalars
-          : (is_array($v[0])
-            ? 1 # array of arrays
-            : (($v[0] instanceof Mustachable)
-              ? 3 # array of friendly objects
-              : 2)); # array of objects
-        # iterate
-        do
-        {
-          $S[$i] = &$v[$j];
-          $x .= $f($this);
-        }
-        while (++$j < $k);
-      }
-      else
-      {
-        # array helper
-        $this->stack[$i] = &$v;
-        $this->type[$i]  = 1;
-        $x = $E->func[$i1]($this);
-      }
-      # complete
-      $this->last--;
-      return $x;
-      ###
     case 2:
-      # TODO
-      # prepare
-      $i = ++$this->last;
-      # check
-      if ($v instanceof Traversable)
-      {
-        # object iteration!
-        # ...
-        $f = $E->func[$i1];
-        $x = 'TODO: object iteration';
+      # numeric helper
+      $i = ++$this->current;
+      $this->stack[$i] = &$v;
+      $this->type[$i]  = 2;
+      $x = $E->func[$i1]($this);
+      $this->current--;
+      return $x;
+    case 4:
+      # check empty
+      if (!($k = count($v))) {
+        return $i0 ? $E->func[$i0]($this) : '';
       }
-      elseif ($v instanceof Mustachable)
+      # check iterable
+      if (array_is_list($v)) {
+        break;
+      }
+      # array helper
+      $i = ++$this->current;
+      $this->stack[$i] = &$v;
+      $this->type[$i]  = 4;
+      $x = $E->func[$i1]($this);
+      $this->current--;
+      return $x;
+    case 5:
+    case 6:
+      # check iterable
+      if ($v instanceof Countable)
       {
-        # friendly object helper
-        $this->stack[$i] = &$v;
-        $this->type[$i]  = 3;
-        $x = $E->func[$i1]($this);
+        # check empty
+        if (!($k = count($v))) {
+          return $i0 ? $E->func[$i0]($this) : '';
+        }
+        break;
+      }
+      # object helper
+      $i = ++$this->current;
+      $this->stack[$i] = &$v;
+      $this->type[$i]  = $j;
+      $x = $E->func[$i1]($this);
+      $this->current--;
+      return $x;
+    default:
+      # simplified selection
+      return $v
+        ? $E->func[$i1]($this)
+        : ($i0 ? $E->func[$i0]($this) : '');
+    }
+    # }}}
+    # render iterable {{{
+    # array/object iteration
+    $i = ++$this->current;
+    $w = $v[0];
+    $this->stack[$i] = &$w;
+    $this->type[$i]  = self::type_456($w);
+    $f = $E->func[$i1];
+    $x = $f($this);
+    $j = 0;
+    while (++$j < $k)
+    {
+      $w  = $v[$j];
+      $x .= $f($this);
+    }
+    unset($this->stack[$i]);
+    $this->current--;
+    return $x;
+    # }}}
+  }
+  # }}}
+  function b1a(# ITERABLE OR {{{
+    string $p, int $n, ?array $pn, int &$t,
+    int $i1, int $i0
+  ):string
+  {
+    # prepare {{{
+    $E = $this->base;
+    $v = $this->get($p, $n, $pn, $t);
+    # check not found
+    if ($v === null) {
+      return $i0 ? $E->func[$i0]($this) : '';
+    }
+    # }}}
+    # handle lambda {{{
+    if ($t >= 7)
+    {
+      # invoke
+      $v = $v($E, $E->text[$i1]);
+      # clarify
+      if ($t > 7) {
+        $j = $t - 7;
       }
       else
       {
-        # object helper
-        $this->stack[$i] = &$v;
-        $this->type[$i]  = 2;
-        $x = $E->func[$i1]($this);
+        $j = self::typeof($v);
+        $t = 7 + $j;
       }
-      # complete
-      $this->last--;
-      return $x;
     }
-    return '';
+    else {
+      $j = $t;
+    }
+    # }}}
+    # render {{{
+    # check empty
+    if (!($k = count($v))) {
+      return $i0 ? $E->func[$i0]($this) : '';
+    }
+    # array/object iteration with helper!
+    # prepare
+    $i = ++$this->current;
+    $w = $v[0];
+    $this->stack[$i] = &$w;
+    $this->type[$i]  = 0;
+    $f = $E->func[$i1];
+    # add iteration helper
+    $h = [
+      'first' => true,
+      'last'  => false,
+      'index' => 0,
+      'count' => $k,
+    ];
+    $this->help[$this->helpSz++] = &$h;
+    # start
+    if (--$k)
+    {
+      # do first
+      $x = $f($this);
+      # do next
+      $h['first'] = false;
+      for ($j=1; $j < $k; ++$j)
+      {
+        $h['index'] = $j;
+        $w  = $v[$j];
+        $x .= $f($this);
+      }
+      # do last
+      $h['index'] = $j;
+      $h['last'] = true;
+      $w  = $v[$j];
+      $x .= $f($this);
+    }
+    else
+    {
+      # first is last
+      $h['last'] = true;
+      $x = $f($this);
+    }
+    # cleanup and complete
+    unset(
+      $this->stack[$i],
+      $this->help[--$this->helpSz]
+    );
+    $this->current--;
+    return $x;
+    # }}}
   }
   # }}}
   function b2(# SWITCH {{{
-    string $name, int $i0, int $i1, int $n, ...$a
+    string $p, int $n, ?array $pn, int &$t,
+    int $i0, int $i1, int $in, ...$a
+  ):string
+  {
+    # prepare {{{
+    $E = $this->base;
+    $v = $this->get($p, $n, $pn, $t);
+    # check not found
+    if ($v === null) {
+      return $i0 ? $E->func[$i0]($this) : '';
+    }
+    # }}}
+    # handle lambda {{{
+    if ($t >= 7)
+    {
+      # invoke
+      $v = $v($E);
+      # clarify
+      if ($t > 7) {
+        $j = $t - 7;
+      }
+      else
+      {
+        $j = self::typeof($v);
+        $t = 7 + $j;
+      }
+    }
+    else {
+      $j = $t;
+    }
+    # }}}
+    # render falsy or simplified {{{
+    switch ($j) {
+    case 1:
+      # check empty
+      if ($v === '') {
+        return $i0 ? $E->func[$i0]($this) : '';
+      }
+      break;
+    case 2:
+      # cast to string
+      $v = strval($v);
+      break;
+    default:
+      # simplified selection
+      return $v
+        ? ($i1 ? $E->func[$i1]($this) : '')
+        : ($i0 ? $E->func[$i0]($this) : '');
+    }
+    # }}}
+    # render switch section {{{
+    # search for it
+    for ($i=0; $i < $in; $i+=2)
+    {
+      if ($a[$i] === $v) {
+        return $E->func[$a[$i+1]]($this);
+      }
+    }
+    # not found,
+    # render truthy or falsy
+    return ($j === 1 || $v)
+      ? ($i1 ? $E->func[$i1]($this) : '')
+      : ($i0 ? $E->func[$i0]($this) : '');
+    # }}}
+  }
+  # }}}
+  function v(# VARIABLE {{{
+    string $p, int $n, ?array $pn, int &$t,
+    int $escape
+  ):string
+  {
+    # prepare {{{
+    $E = $this->base;
+    $v = $this->get($p, $n, $pn, $t);
+    # check not found
+    if ($v === null) {
+      return '';
+    }
+    # }}}
+    # handle lambda {{{
+    if ($t >= 7)
+    {
+      # invoke
+      $v = $v($E);
+      # clarify
+      if ($t > 7) {
+        $j = $t - 7;
+      }
+      else
+      {
+        $j = self::typeof($v);
+        $t = 7 + $j;
+      }
+    }
+    else {
+      $j = $t;
+    }
+    # }}}
+    # render {{{
+    switch ($j) {
+    case 1:
+      return $escape ? ($E->escape)($v) : $v;
+    case 2:
+      return strval($v);
+    }
+    return '';
+    # }}}
+  }
+  # }}}
+  function a0(# ASSISTED FALSY OR {{{
+    string $p, int $i, int $i0, int $i1
   ):string
   {
     # prepare
-    $E = $this->base;
-    $t = -1;
-    $v = &$this->get($name, $t);
-    # handle lambda
-    if (($t > 3) ||
-        (($t < 0) &&
-         ($v instanceof Closure)))
+    if (($i = $this->helpSz - $i) < 0 ||
+        !isset($this->help[$i][$p]))
     {
-      # invoke and reassign
-      $r = $v($E);
-      $v = &$r;
+      return '';
     }
+    $v = $this->help[$i][$p];
+    $E = $this->base;
+    # complete
+    return $v
+      ? ($i1 ? $E->func[$i1]($this) : '')
+      : $E->func[$i0]($this);
+  }
+  # }}}
+  function a1(# ASSISTED TRUTHY OR {{{
+    string $p, int $i, int $i1, int $i0
+  ):string
+  {
+    # prepare
+    if (($i = $this->helpSz - $i) < 0 ||
+        !isset($this->help[$i][$p]))
+    {
+      return '';
+    }
+    $v = $this->help[$i][$p];
+    $E = $this->base;
+    # complete
+    return $v
+      ? $E->func[$i1]($this)
+      : ($i0 ? $E->func[$i0]($this) : '');
+  }
+  # }}}
+  function a2(# ASSISTED SWITCH {{{
+    string $p, int $i,
+    int $i0, int $i1, int $in, ...$a
+  ):string
+  {
+    # prepare
+    if (($i = $this->helpSz - $i) < 0 ||
+        !isset($this->help[$i][$p]))
+    {
+      return '';
+    }
+    $v = $this->help[$i][$p];
+    $E = $this->base;
     # check scalar not boolean
     if (is_scalar($v) && !is_bool($v))
     {
@@ -1154,7 +1520,7 @@ class MustacheCtx
       }
       # search for a switch section and
       # render one found
-      for ($i=0; $i < $n; $i+=2)
+      for ($i=0; $i < $in; $i+=2)
       {
         if ($a[$i] === $w) {
           return $E->func[$a[$i+1]]($this);
@@ -1171,49 +1537,25 @@ class MustacheCtx
       : ($i0 ? $E->func[$i0]($this) : '');
   }
   # }}}
-  function v(# VARIABLE {{{
-    string $name, int $escape
+  function av(# ASSISTED VARIABLE {{{
+    string $p, int $i
   ):string
   {
-    # prepare
-    $E = $this->base;
-    $t = -1;
-    $v = &$this->get($name, $t);
-    # clearify type
-    if ($t < 0)
+    if (($i = $this->helpSz - $i) < 0 ||
+        !isset($this->help[$i][$p]))
     {
-      $t = is_scalar($v)
-        ? 0
-        : (($v instanceof Closure)
-          ? 4
-          : 1);# assume 1/2/3
+      return '';
     }
-    # handle lambda
-    if ($t > 3)
-    {
-      # invoke and reassign
-      $r = $v($E, '');
-      $v = &$r;
-      # clarify type
-      if ($t > 4) {
-        $t -= 5;# from Mustachable
-      }
-      elseif (is_scalar($v)) {
-        $t = 0;
-      }
-      else {
-        $t = 1;# assume 1/2/3
-      }
+    if (is_string($v = $this->help[$i][$p])) {
+      return $v;
     }
-    # handle non-scalar or non-string
-    if ($t || !is_string($v)) {
-      return strval($v);
+    if (is_bool($v)) {
+      return '';
     }
-    # render string
-    return $escape
-      ? ($E->escape)($v)
-      : $v;
+    return strval($v);
   }
   # }}}
 }
+# }}}
+return Mustache::init();
 ###

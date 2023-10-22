@@ -10,6 +10,70 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
 require_once DIR_SM_UTILS.'functions.php';
 require_once DIR_SM_UTILS.'promise.php';
 # }}}
+echo "[]= VS [last]="; # {{{
+echo "\n\n";
+$n = 100000000;
+$a = [];
+$b = [1,2,3];
+###
+###
+echo "> []=: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  $a[] = $i;
+  if (++$j > 100)
+  {
+    $a = [];
+    $j = 0;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> [last]=: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  $a[$j] = $i;
+  if (++$j > 100)
+  {
+    $a = [];
+    $j = 0;
+  }
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+###
+exit(0);
+# }}}
+echo "null VS []"; # {{{
+echo "\n\n";
+$n = 100000000;
+$a = [[1,2,3],null];
+$b = [[1,2,3],[]];
+###
+###
+echo "> null: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if ($a[$j]) {$j++;}
+  else {$j--;}
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> []: ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  if ($b[$j]) {$j++;}
+  else {$j--;}
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+###
+exit(0);
+# }}}
 echo "empty(array) VS !array"; # {{{
 echo "\n\n";
 $n = 100000000;

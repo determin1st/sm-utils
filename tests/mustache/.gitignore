@@ -1,4 +1,5 @@
 spec/
 mustache.php/
 node_modules
+package*
 

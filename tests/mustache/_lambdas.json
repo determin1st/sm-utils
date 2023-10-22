@@ -36,7 +36,7 @@
       "name": "Interpolation - Multiple Calls",
       "desc": "Interpolated lambdas should not be cached.",
       "data": {
-        "lambda": "global $calls; return ++$calls;"
+        "lambda": "global $calls; return ((++$calls < 4) ? $calls : ($calls=1));"
       },
       "template": "{{lambda}} == {{lambda}} == {{lambda}}",
       "expected": "1 == 2 == 3"

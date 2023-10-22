@@ -185,7 +185,7 @@
       "name": "Implicit Iterator - String",
       "desc": "Implicit iterators should directly interpolate strings.",
       "data": {
-        "list": [
+        "list_str": [
           "a",
           "b",
           "c",
@@ -193,14 +193,14 @@
           "e"
         ]
       },
-      "template": "\"{{#list}}({{.}}){{/list}}\"",
+      "template": "\"{{#list_str}}({{.}}){{/list_str}}\"",
       "expected": "\"(a)(b)(c)(d)(e)\""
     },
     {
       "name": "Implicit Iterator - Integer",
       "desc": "Implicit iterators should cast integers to strings and interpolate.",
       "data": {
-        "list": [
+        "list_num": [
           1,
           2,
           3,
@@ -208,14 +208,14 @@
           5
         ]
       },
-      "template": "\"{{#list}}({{.}}){{/list}}\"",
+      "template": "\"{{#list_num}}({{.}}){{/list_num}}\"",
       "expected": "\"(1)(2)(3)(4)(5)\""
     },
     {
       "name": "Implicit Iterator - Decimal",
       "desc": "Implicit iterators should cast decimals to strings and interpolate.",
       "data": {
-        "list": [
+        "list_num": [
           1.1,
           2.2,
           3.3,
@@ -223,7 +223,7 @@
           5.5
         ]
       },
-      "template": "\"{{#list}}({{.}}){{/list}}\"",
+      "template": "\"{{#list_num}}({{.}}){{/list_num}}\"",
       "expected": "\"(1.1)(2.2)(3.3)(4.4)(5.5)\""
     },
     {

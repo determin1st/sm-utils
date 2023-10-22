@@ -735,8 +735,11 @@ class ErrorEx extends Error # {{{
       self::ERROR_LEVEL[$this->level] =>
       $this->message()
     ];
-    if ($this->hasBacktrace()) {
-      $a['trace'] = $this->value->getTrace();
+    if ($this->isFatal())
+    {
+      $a['trace'] = $this->value
+        ? $this->value->getTrace()
+        : $this->getTrace();
     }
     if ($this->next) {
       $a['next'] = $this->next;

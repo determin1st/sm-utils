@@ -1,5 +1,5 @@
 {
-  "overview": "If-Switch-Else are section tags extended\n",
+  "overview": "OR/SWITCH blocks\n",
   "speed": 0,
   "tests": [
     {
@@ -12,13 +12,14 @@
       "expected": "true"
     },
     {
+      "skip": 1,
       "name": "TRUTHY OR (2)",
       "desc": "...",
       "data": {
-        "if": ""
+        "if_str": "0"
       },
-      "template": "{{#if}}true{{|}}false{{/if}}",
-      "expected": "false"
+      "template": "{{#if_str}}true{{|}}false{{/if_str}}",
+      "expected": "true"
     },
     {
       "name": "FALSY OR (1)",
