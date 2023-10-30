@@ -1,20 +1,17 @@
 <?php declare(strict_types=1);
 # defs {{{
 namespace SM;
-use Countable,Closure;
+use Countable,Iterator,Exception,Closure;
 use function
   is_callable,is_scalar,is_object,is_array,
-  is_bool,is_string,method_exists,abs,hash,
+  is_bool,is_string,method_exists,hash,
   htmlspecialchars,ctype_alnum,ctype_space,
   preg_replace,str_replace,trim,ltrim,strval,
   strlen,strpos,substr,addcslashes,str_repeat,
-  count,explode,array_is_list;
-use const
-  DIRECTORY_SEPARATOR;
-###
-require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
+  count,explode,implode,array_is_list,
+  reset,key,next,gettype;
 # }}}
-interface Mustachable # {{{
+interface Mustachable # friendly objects {{{
 {
   # type:
   #  0=unknown,
@@ -27,22 +24,26 @@ interface Mustachable # {{{
 # }}}
 class Mustache # {{{
 {
+  # TODO: refactor iterator/assisted
+  # TODO: revert unescape modifier (option)
+  # TODO: preset types more
   # constructor {{{
   static string  $EMPTY='';# hash of an empty string
   public string  $s0='{{',$s1='}}';# default delimiters
   public int     $n0=2,$n1=2;# delimiter sizes
-  public bool    $pushed=false;# data pushed to stack
+  public int     $pushed=0,$dedent=0;
   public ?object $escape=null;# callable
-  public int     $index=0;# hash/text/code/func
-  public array   $hash=[],$text=[''];
-  public array   $code=[''],$func=[];
+  public int     $index=0;# current hash/text/code/func
+  public array   $hash=[''],$text=[''];
+  public array   $code=[''],$func=[null];
   public array   $cache=[];# hash=>index
+  public array   $wrap=["\033[41m","\033[49m"];# exceptions
   public object  $ctx;
   private function __construct()
   {
     $this->cache[self::$EMPTY] = 0;
-    $this->hash[] = self::$EMPTY;
-    $this->func[] = (
+    $this->hash[0] = self::$EMPTY;
+    $this->func[0] = (
       static function():string {return '';}
     );
     $this->ctx = new MustacheCtx($this);
@@ -64,6 +65,9 @@ class Mustache # {{{
     if (isset($o[$k = 'helper'])) {
       $I->helper($o[$k]);
     }
+    if (isset($o[$k = 'dedent'])) {
+      $I->dedent = $o[$k];
+    }
     return $I;
   }
   # }}}
@@ -83,19 +87,26 @@ class Mustache # {{{
     ];
   }
   # }}}
+  function _wrap(string $txt, int $i, int $j): string # {{{
+  {
+    return
+      substr($txt, 0, $i).
+      $this->wrap[0].substr($txt, $i, $j - $i).
+      $this->wrap[1].substr($txt, $j);
+  }
+  # }}}
   function _tokenize(# {{{
-    string $tpl, string $s0, string $s1,
-    int $n0, int $n1
+    string $tpl, string $s0, string $s1, int $n0, int $n1
   ):array
   {
     # prepare
-    $tokens = [];
-    $length = strlen($tpl);
+    $token = [];
+    $len = strlen($tpl);
     $i = $i0 = $i1 = $line = 0;
     # iterate
-    while ($i0 < $length)
+    while ($i0 < $len)
     {
-      # search both newline and tag opening
+      # search for a newline and an opening tag
       $a = strpos($tpl, "\n", $i0);
       $b = strpos($tpl, $s0, $i0);
       # check no more tags left
@@ -105,34 +116,41 @@ class Mustache # {{{
         # add next text chunk spearately
         if ($a !== false)
         {
-          $tokens[$i++] = ['',substr($tpl, $i0, $a - $i0 + 1),$line++];
+          $token[$i++] = [
+            20,substr($tpl, $i0, $a - $i0 + 1),
+            '',$line++
+          ];
           $i0 = $a + 1;# move to the char after newline
         }
-        # add last text chunk as a whole and complete
-        $tokens[$i++] = ['',substr($tpl, $i0),$line];
+        # add the last text chunk
+        $token[$i++] = [
+          20,substr($tpl, $i0),'',$line
+        ];
         break;
       }
-      # accumulate text tokens
+      # accumulate plaintext
       while ($a !== false && $a < $b)
       {
         $i1 = $a + 1;# move to the char after newline
-        $tokens[$i++] = [
-          '',substr($tpl, $i0, $i1 - $i0),
-          $line++
+        $token[$i++] = [
+          20,substr($tpl, $i0, $i1 - $i0),
+          '',$line++
         ];
         $a = strpos($tpl, "\n", $i0 = $i1);
       }
       # check something left before the opening
       if ($i0 < $b)
       {
-        # add last text token (at the same line)
+        # add final plaintext (at the same line)
         $c = substr($tpl, $i0, $b - $i0);
-        $tokens[$i++] = ['',$c,$line];
-        # determine indentation size
+        $token[$i++] = [
+          20,$c,'',$line
+        ];
+        # determine size of indentation
         $indent = (trim($c, " \t") ? -1 : strlen($c));
         $i0 = $b;
       }
-      else {# opening at newline
+      else {# opening is at newline
         $indent = 0;
       }
       # the tag must not be empty, oversized or unknown, so,
@@ -142,16 +160,16 @@ class Mustache # {{{
       if (!($a = strpos($tpl, $s1, $b)) ||
           !($c = trim(substr($tpl, $b, $a - $b))))
       {
-        # SKIP INCORRECT TAG..
+        # GOT AN INCORRECT TAG..
         # check newline
-        if ($i && !$tokens[$i - 1][0] &&
-            substr($tokens[$i - 1][1], -1) === "\n")
+        if ($i && !$token[$i - 1][0] &&
+            substr($token[$i - 1][1], -1) === "\n")
         {
           ++$line;
         }
-        # add false opening as a text token (at the same line)
-        $tokens[$i++] = ['',$s0,$line];
-        # continue after the false opening
+        # replace it with plaintext
+        $token[$i++] = [20,$s0,'',$line];
+        # continue after the tag
         $i0 = $b;
         continue;
       }
@@ -160,294 +178,405 @@ class Mustache # {{{
       $i1 = $a + $n1;
       # add syntax token
       switch ($c[0]) {
-      case '#':
-      case '^':
-      case '@':
-        # block start
-        $tokens[$i++] = [
-          $c[0],ltrim(substr($c, 1), ' '),
-          $line,$indent,$i1
+      case '^':# 0: FALSY BLOCK {{{
+        $c = ltrim(substr($c, 1));
+        if ($j = strpos($c, ' '))
+        {
+          $d = substr($c, $j + 1);
+          $c = substr($c, 0, $j);
+        }
+        else {
+          $d = '';
+        }
+        $token[$i++] = [
+          0,$c,$d,$line,$indent,$i0,$i1
         ];
         break;
-      case '|':
-        # block section
-        $tokens[$i++] = [
-          '|',ltrim(substr($c, 1), ' '),
+        # }}}
+      case '#':# 1: TRUTHY BLOCK {{{
+        $c = ltrim(substr($c, 1));
+        if ($j = strpos($c, ' '))
+        {
+          $d = substr($c, $j + 1);
+          $c = substr($c, 0, $j);
+        }
+        else {
+          $d = '';
+        }
+        $token[$i++] = [
+          1,$c,$d,$line,$indent,$i0,$i1
+        ];
+        break;
+        # }}}
+      case '@':# 2: ITERABLE BLOCK {{{
+        $c = ltrim(substr($c, 1));
+        if ($j = strpos($c, ' '))
+        {
+          $d = substr($c, $j + 1);
+          $c = substr($c, 0, $j);
+        }
+        else {
+          $d = '';
+        }
+        $token[$i++] = [
+          2,$c,$d,$line,$indent,$i0,$i1
+        ];
+        break;
+        # }}}
+      case '|':# 10: BLOCK SECTION {{{
+        $token[$i++] = [
+          10,ltrim(substr($c, 1)),'',
           $line,$indent,$i0,$i1
         ];
         break;
-      case '/':
-        # block end
-        $tokens[$i++] = [
-          '/',ltrim(substr($c, 1), ' '),
-          $line,$indent,$i0
+        # }}}
+      case '/':# 11: BLOCK TERMINATOR {{{
+        $token[$i++] = [
+          11,'','',$line,$indent,$i0,$i1
         ];
         break;
-      case '!':
-        # comment
-        $tokens[$i++] = [
-          '!','',$line,$indent
+        # }}}
+      case '!':# 12: COMMENTARY {{{
+        $token[$i++] = [
+          12,'','',$line,$indent,$i0,$i1
         ];
         break;
-      case '_':# assisted variable
-      case '&':# tagged variable
-        $c = $c[0].ltrim(substr($c, 1), ' ');
-        # fallthrough..
-      default:
-        # variable
-        $tokens[$i++] = [
-          '_',$c,$line,$indent
+        # }}}
+      case '_':# HELPER VARIABLE
+      case '&':# ESCAPABLE VARIABLE
+        $c = $c[0].ltrim(substr($c, 1));
+      default:# 21: VARIABLE {{{
+        #$c = ltrim(substr($c, 1));
+        if ($j = strpos($c, ' '))
+        {
+          $d = substr($c, $j + 1);
+          $c = substr($c, 0, $j);
+        }
+        else {
+          $d = '';
+        }
+        $token[$i++] = [
+          21,$c,$d,$line,$indent,$i0,$i1
         ];
         break;
+        # }}}
       }
       # continue
       $i0 = $i1;
     }
-    # tokens collected,
-    # clear standalone blocks
-    # {{{
-    # prepare
-    $line = $n0 = $n1 = 0;
-    $length = $i;
-    # iterate
-    for ($i = 0; $i <= $length; ++$i)
-    {
-      # check on the same line
-      if ($i < $length && $line === $tokens[$i][2]) {
-        ++$n0;# total tokens in a line
-      }
-      else
+    if ($this->dedent) {
+      # clear standalone blocks {{{
+      # prepare
+      $line = $n0 = $n1 = 0;
+      $len  = $i;
+      # iterate
+      for ($i = 0; $i <= $len; ++$i)
       {
-        # line changed,
-        # check line has any blocks that could be standalone
-        if ($n1 && ($c = $n0 - $n1) && $c <= 2)
+        # check on the same line
+        if ($i < $len && $line === $token[$i][3]) {
+          ++$n0;# total tokens in a line
+        }
+        else
         {
-          # get first and last token indexes
-          $a = $i - $n0;
-          $b = $i - 1;
-          # check count difference
-          if ($c === 1)
+          # line changed,
+          # check line has standalone blocks
+          if ($n1 && ($c = $n0 - $n1) && $c <= 2)
           {
-            # one token isn't a block,
-            # it must be the last (line terminator) or
-            # the first (identation whitespace) text token
-            if (!$tokens[$b][0] &&
-                ctype_space($tokens[$b][1]))
+            # get first and last token indexes
+            $a = $i - $n0;
+            $b = $i - 1;
+            # check count difference
+            if ($c === 1)
             {
-              $tokens[$b][1] = '';
+              # one token isn't a block,
+              # it must be the last (line terminator) or
+              # the first (identation whitespace) text token
+              if ($token[$b][0] === 20 &&
+                  ctype_space($token[$b][1]))
+              {
+                $token[$b][1] = '';
+              }
+              elseif ($i === $len &&
+                      $token[$a][0] === 20 &&
+                      ctype_space($token[$a][1]))
+              {
+                $token[$a][1] = '';
+                break;# final block(s)
+              }
             }
-            elseif ($i === $length && !$tokens[$a][0] &&
-                    ctype_space($tokens[$a][1]))
+            else
             {
-              $tokens[$a][1] = '';
-              break;# final block(s)
+              # two tokens are not blocks,
+              # check both first and last are whitespaces
+              if ($token[$a][0] === 20 &&
+                  $token[$b][0] === 20 &&
+                  ctype_space($token[$a][1]) &&
+                  ctype_space($token[$b][1]))
+              {
+                $token[$a][1] = $token[$b][1] = '';
+              }
             }
           }
-          else
-          {
-            # two tokens are not blocks,
-            # check both first and last are whitespaces
-            if (!$tokens[$a][0] && !$tokens[$b][0] &&
-                ctype_space($tokens[$a][1]) &&
-                ctype_space($tokens[$b][1]))
-            {
-              $tokens[$a][1] = $tokens[$b][1] = '';
-            }
+          # check the end
+          if ($i === $len) {
+            break;
           }
+          # change line and reset counters
+          $line = $token[$i][3];
+          $n0 = 1;
+          $n1 = 0;
         }
-        # check the end
-        if ($i === $length) {
-          break;
+        # count blocky
+        if ($token[$i][0] < 20) {
+          ++$n1;
         }
-        # change line and reset counters
-        $line = $tokens[$i][2];
-        $n0 = 1;
-        $n1 = 0;
       }
-      # count blocks
-      if (($a = $tokens[$i][0]) && strpos('#^@|/!', $a) !== false) {
-        ++$n1;
-      }
+      # }}}
     }
-    # }}}
     # complete
-    $tokens[] = null;
-    return $tokens;
+    return $token;
   }
   # }}}
   function _parse(# {{{
-    string $tpl,
-    array  $tokens,
-    int    &$i = 0,
-    ?array &$p = null
+    string $tpl, array $token
   ):array
   {
-    ###
-    # result/tree:
-    #  node1,node2,..
-    # node:
-    #  type,name,line/argument,indent,3*count,sections
-    # sections:
-    #  section1,section2,..
-    # section:
-    #  type/condition,text,tree
-    ###
-    # prepare
-    $tree = [];
-    $size = 0;
-    if ($p)
+    # create first area
+    $area = [[[], 0, count($token)]];
+    $idx  = 0;
+    $cnt  = 1;
+    while ($idx < $cnt)
     {
-      # first section's condition is the block condition
-      $p[5][] = ($p[0] === '^') ? 0 : 1;
-      $from = $p[4];
-    }
-    else {
-      $from = -1;
-    }
-    # iterate
-    while ($t = &$tokens[$i++])
-    {
-      switch ($t[0]) {
-      case '#':
-      case '^':
-      case '@':
-        # block opener
-        $t[5] = [];
-        $this->_parse($tpl, $tokens, $i, $t);
-        if ($t[4]) {# non-empty
-          $tree[$size++] = &$t;
-        }
-        break;
-      case '|':
-        # block section,
-        # check no parent token specified
-        if (!$p)
-        {
-          throw ErrorEx::fatal(
-            'unexpected |'.$t[1].' line #'.$t[2],
-            "\n".$tpl
+      # select area
+      $section = &$area[$idx][0];
+      $i = $area[$idx][1];
+      $j = $area[$idx][2];
+      $idx++;
+      # assemble section
+      while ($i < $j)
+      {
+        $a = $token[$i++];
+        switch ($a[0]) {
+        case 0:
+        case 1:
+        case 2:
+          # add block {{{
+          # create section storage and
+          # open first section
+          $offs = $a[6];
+          $a[7] = [$a[0]];
+          $a[8] = 3;
+          # search for closing tags
+          for ($k=$i,$n=0; $k < $j; ++$k)
+          {
+            $b = $token[$k];
+            switch ($b[0]) {
+            case 0:
+            case 1:
+            case 2:
+              # increment inner blocks count
+              $n++;
+              break;
+            case 10:
+              # subsection encountered!
+              # skip if it belongs to another block
+              if ($n) {
+                break;
+              }
+              # close previous section,
+              # add text
+              $a[7][] = substr(
+                $tpl, $offs, $b[5] - $offs
+              );
+              # add new area for parsing
+              $area[$cnt] = [[], $i, $k];
+              $a[7][] = &$area[$cnt][0];
+              $cnt++;
+              $i = $k + 1;
+              # open next subsection
+              $offs   = $b[6];
+              $a[7][] = ($b[1] === '')
+                ? ($a[0] ? 0 : 1)
+                : "'".$b[1]."'";
+              $a[8]  += 3;
+              break;
+            case 11:
+              # decrement inner blocks count and
+              # check current block's not closed
+              if (--$n >= 0) {
+                break;
+              }
+              # close previous section,
+              # add text and new area for parsing
+              $a[7][] = substr(
+                $tpl, $offs, $b[5] - $offs
+              );
+              $area[$cnt] = [[], $i, $k];
+              $a[7][] = &$area[$cnt][0];
+              $cnt++;
+              $i = $k + 1;
+              goto block_complete;
+            }
+          }
+          $c = ('^#@'[$a[0]]).$a[1];
+          throw new Exception(
+            'unclosed '.$c.' at '.$a[5].
+            "\n".$this->_wrap($tpl, $a[5], $a[6])
           );
-        }
-        # compose section [text,tree,condition] and
-        # add it to the parent block
-        $p[5][] = substr($tpl, $from, $t[4] - $from);
-        $p[5][] = $tree;
-        $p[5][] = ($t[1] === '')
-          ? abs($p[5][0] - 1)
-          : "'".$t[1]."'";
-        ###
-        $from = $t[5];
-        $tree = [];
-        $size = 0;
-        break;
-      case '/':
-        # block terminator
-        if ($p === null || $t[1] !== $p[1])
-        {
-          throw ErrorEx::fatal(
-            'unexpected /'.$t[1].' line #'.$t[2],
-            "\n".$tpl
+          ###
+          block_complete:
+          $section[] = $a;
+          # }}}
+          break;
+        case 10:
+          throw new Exception(
+            'unexpected |'.$a[1].' at '.$a[5].
+            "\n".$this->_wrap($tpl, $a[5], $a[6])
           );
-        }
-        if ($size)
-        {
-          $p[5][] = substr(
-            $tpl, $from, $t[4] - $from
+        case 11:
+          throw new Exception(
+            'unexpected /'.$a[1].' at '.$a[5].
+            "\n".$this->_wrap($tpl, $a[5], $a[6])
           );
-          $p[5][] = &$tree;
-          $p[4]   = count($p[5]);
+        default:
+          # add non-empty plaintext or variable
+          if ($a[1] !== '') {
+            $section[] = $a;
+          }
+          break;
         }
-        else {
-          $p[4] = 0;
-        }
-        return $p;
-      default:
-        # text/variable (non-empty)
-        $t[1] && ($tree[$size++] = &$t);
-        break;
       }
     }
-    # check
-    if ($p !== null)
-    {
-      throw ErrorEx::fatal(
-        'missing /'.$p[1].' line #'.$p[2],
-        "\n".$tpl
-      );
-    }
-    return $tree;
+    return $area[0][0];
   }
   # }}}
-  function _compose(# {{{
-    array $tree, int $depth=0
-  ):string
+  function _func(string $tpl, string $sep=''): int # {{{
   {
-    # prepare
-    if ($depth >= 0)
+    # get delimieters
+    if ($sep === '')
     {
-      $nextDepth = $depth + 1;
-      $index     = $this->index;
+      $n0 = $this->n0; $s0 = $this->s0;
+      $n1 = $this->n1; $s1 = $this->s1;
     }
     else
     {
-      $nextDepth = 1;
-      $index     = $depth;
+      # extract custom delimiters
+      $a  = explode(' ', $sep, 2);
+      $n0 = strlen($s0 = $a[0]);
+      $n1 = strlen($s1 = $a[1]);
+      # check necessity
+      if (strlen($tpl) <= $n0 + $n1 ||
+          strpos($tpl, $s0) === false)
+      {
+        return 0;
+      }
     }
-    $x = '';
-    $i = $t = 0;
-    $j = $k = count($tree);
-    # compose pieces of code
-    do
+    # create syntax tree
+    $tree = $this->_parse($tpl, $this->_tokenize(
+      $tpl, $s0, $s1, $n0, $n1
+    ));
+    if (!($n = count($tree))) {
+      return $tpl;
+    }
+    # create source code
+    $s = $this->_compose($tree, $n, 0);
+    $i = ++$this->index;
+    $s =
+    'return (static function($x) {'.
+      '$x->index='.$i.';'.
+      '$r='.$s.
+      '$x->index=0;'.
+      'return $r;'.
+    '});';
+    # compile and store
+    $this->code[$i] = $s;
+    $this->func[$i] = eval($s);
+    # complete
+    return $i;
+  }
+  # }}}
+  function _compose(# {{{
+    array $tree, int $size, int $depth
+  ):string
+  {
+    # prepare
+    $depth++;
+    $ctx = $this->ctx;
+    # compose pieces
+    for ($x='',$i=0,$j=$size; $i < $j; ++$i)
     {
-      $t0 = $tree[$i][0];
-      $t1 = $tree[$i][1];
-      switch ($t0) {
-      case '':
-        # plaintext
-        $x .= "'".addcslashes($t1, "'\\")."'";
+      switch ($c = $tree[$i][0]) {
+      case 20:# plaintext {{{
+        $a  = addcslashes($tree[$i][1], "'\\");
+        $x .= "'".$a."'";
         break;
-      case '_':
-        # variable {{{
-        if ($this->_path($t1, $t, true))
-        {
-          $t++;
-          $x .= '$x->v('.$t1.')';
-        }
-        else {
-          $x .= '$x->av('.$t1.')';
-        }
         # }}}
+      case 21:# variable {{{
+        $a = $tree[$i][1];
+        $k = $this->_path(
+          $a, $tree[$i][2], $ctx->typeSz, true
+        );
+        switch ($k) {
+        case 0:
+          $x .= '$x->av('.$a.')';
+          break;
+        case 1:
+          $ctx->typeMap[$ctx->typeSz++] = 0;
+          $x .= '$x->v('.$a.')';
+          break;
+        case 2:
+          $ctx->typeMap[$ctx->typeSz++] = 7;
+          $x .= '$x->fv('.$a.')';
+          break;
+        }
         break;
-      default:
-        # block {{{
+        # }}}
+      default:# block {{{
         # prepare
-        $t4 = $tree[$i][4];
-        $t5 = $tree[$i][5];
+        $lst = $tree[$i][7];
+        $cnt = $tree[$i][8];
         $s0 = 0;# FALSY section
         $s1 = 0;# TRUTHY section
         # collect sections
-        for ($a='',$n=0,$m=0; $m < $t4; $m+=3)
+        for ($a='',$n=0,$m=0; $m < $cnt; $m+=3)
         {
-          $b = $this->_index(
-            $t5[$m+1], $t5[$m+2], $nextDepth
+          $k = $this->_index(
+            $lst[$m+1], $lst[$m+2], $depth
           );
-          switch ($t5[$m]) {
-          case 0:
-            $s0 = $b;
-            break;
-          case 1:
-            $s1 = $b;
-            break;
-          default:
-            $a .= ','.$t5[$m].','.$b;
+          if (is_string($lst[$m]))
+          {
+            $a .= ','.$lst[$m].','.$k;
             $n += 2;
-            break;
+          }
+          elseif ($lst[$m]) {
+            $s1 = $k;
+          }
+          else {
+            $s0 = $k;
           }
         }
         # compose
-        if ($this->_path($t1, $t))
-        {
-          $t++;
+        $b = $tree[$i][1];
+        $k = $this->_path(
+          $b, $tree[$i][2], $ctx->typeSz, false
+        );
+        switch ($k) {
+        case 0:
+          # block that is based on assisted value
+          if ($n)
+          {
+            $a  = $b.','.$s0.','.$s1.','.$n.$a;
+            $x .= '$x->a23('.$a.')';
+          }
+          else
+          {
+            $a  = $b.','.$s0.','.$s1;
+            $x .= '$x->a01('.$a.')';
+          }
+          break;
+        case 1:
+          # standard block
+          $ctx->typeMap[$ctx->typeSz++] = 0;
           if ($n)
           {
             # SWITCH
@@ -459,178 +588,182 @@ class Mustache # {{{
             #  0-M: section condition (N-1)
             #  1-N: section index (M+1)
             ###
-            $a  = $t1.','.$s0.','.$s1.','.$n.$a;
-            $x .= '$x->b2('.$a.')';
+            $a  = $b.','.$s0.','.$s1.','.$n.$a;
+            $x .= $c
+              ? '$x->b3('.$a.')'
+              : '$x->b2('.$a.')';
           }
-          elseif ($t0 === '^')
+          elseif ($c === 0)
           {
             # FALSY OR
-            $a  = $t1.','.$s0.','.$s1;
+            $a  = $b.','.$s0.','.$s1;
             $x .= '$x->b0('.$a.')';
           }
-          elseif ($t0 === '@')
-          {
-            # ITERABLE
-            $a  = $t1.','.$s1.','.$s0;
-            $x .= '$x->b1a('.$a.')';
-          }
-          else
+          elseif ($c === 1)
           {
             # TRUTHY OR
-            $a  = $t1.','.$s1.','.$s0;
+            $a  = $b.','.$s0.','.$s1;
             $x .= '$x->b1('.$a.')';
-          }
-        }
-        else
-        {
-          if ($n)
-          {
-            $a  = $t1.','.$s0.','.$s1.','.$n.$a;
-            $x .= '$x->a2('.$a.')';
-          }
-          elseif ($t0 === '^')
-          {
-            $a  = $t1.','.$s0.','.$s1;
-            $x .= '$x->a0('.$a.')';
           }
           else
           {
-            $a  = $t1.','.$s1.','.$s0;
-            $x .= '$x->a1('.$a.')';
+            # ITERABLE
+            $a  = $b.','.$s0.','.$s1;
+            $x .= '$x->ba('.$a.')';
           }
+          break;
+        case 2:
+          # lambda block
+          $ctx->typeMap[$ctx->typeSz++] = 7;
+          if ($n)
+          {
+            $a  = $b.','.$s0.','.$s1.','.$n.$a;
+            $x .= $c
+              ? '$x->f3('.$a.')'
+              : '$x->f2('.$a.')';
+          }
+          elseif ($c === 0)
+          {
+            $a  = $b.','.$s0.','.$s1;
+            $x .= '$x->f0('.$a.')';
+          }
+          elseif ($c === 1)
+          {
+            $a  = $b.','.$s0.','.$s1;
+            $x .= '$x->f1('.$a.')';
+          }
+          else
+          {
+            $a  = $b.','.$s0.','.$s1;
+            $x .= '$x->fa('.$a.')';
+          }
+          break;
         }
-        # }}}
         break;
+        # }}}
       }
-      # add joiner
-      if (--$k) {
-        $x .= ".";
-      }
+      # add joiner or terminator
+      $x .= --$size ? '.' : ';';
     }
-    while (++$i < $j);
-    # compose types
-    if ($t)
-    {
-      $a = '0'.str_repeat(',0', $t - 1);
-      $a = "\n".'static $T=['.$a.'];';
-    }
-    else {
-      $a = '';
-    }
-    # compose depth dependency
-    if ($depth > 0) {
-      $a .= "\nreturn ".$x.";\n";
-    }
-    else
-    {
-      $a .= "\n".'$x->index='.$index.';';
-      $a .= "\n".'$r='.$x.';';
-      $a .= "\n".'$x->index=0;';
-      $a .= "\n".'return $r;'."\n";
-    }
-    # compose function
-    return
-      'return'.
-      ' (static function($x)'.
-      ' {'.$a.'});';
+    return $x;
   }
   # }}}
   function _index(# {{{
     string $tpl, array $tree, int $depth
   ):int
   {
-    if ($tpl === '') {
-      return 0;# empty function
+    # check empty
+    if (!($n = count($tree))) {
+      return 0;
     }
-    # arrays should be populated naturally,
-    # but the index may jump further in compose,
-    # so populate them beforhand
+    # create source code
+    $s =
+    'return (static function($x) {'.
+      'return '.$this->_compose($tree, $n, $depth).
+    '});';
+    # compile and store
     $i = ++$this->index;
     $this->hash[$i] = '';
     $this->text[$i] = $tpl;
-    $this->code[$i] = '';
-    $this->func[$i] = null;
-    $e = $this->_compose($tree, $depth);
-    $this->code[$i] = $e;
-    $this->func[$i] = eval($e);
+    $this->code[$i] = $s;
+    $this->func[$i] = eval($s);
+    # complete
     return $i;
   }
   # }}}
   function _path(# {{{
-    string &$s, int $typeIdx, bool $var=false
+    string &$name, string $args,
+    int $typeIdx, bool $isVar
   ):int
   {
-    # check assisted
-    if ($s[0] === '_')
+    # compose assisted name
+    while ($name[0] === '_')
     {
       # count backpedal
-      for ($p=1; $s[$p] === '_'; ++$p)
+      for ($i=1; $name[$i] === '_'; ++$i)
       {}
+      # check not assisted
+      $a = substr($name, $i);
+      if (!isset(MustacheCtx::HELPVAR[$a])) {
+        break;
+      }
       # complete
-      $s = "'".substr($s, $p)."',".$p;
+      $name = "'".$a."',".$i;
       return 0;
     }
-    # prepare typed access
-    $t = ',$T['.$typeIdx.']';
-    # check unescaped scalar
-    if ($var)
+    # compose standard name,
+    # check attached arguments
+    if ($args === '')
     {
-      if ($s[0] === '&')
+      # value access: type
+      $a = ','.$typeIdx;
+      $k = 1;
+    }
+    else
+    {
+      # lambda invokation: type + arg
+      $a = addcslashes($args, "'\\");
+      $a = ','.$typeIdx.",'".$a."'";
+      $k = 2;
+    }
+    # add unescape tag for a variable
+    if ($isVar)
+    {
+      if ($name[0] === '&')
       {
-        $s = substr($s, 1);
-        $e = ',0';
+        $name = substr($name, 1);
+        $a .= ',0';
       }
       elseif ($this->escape) {
-        $e = ',1';
+        $a .= ',1';
       }
       else {
-        $e = ',0';
+        $a .= ',0';
       }
-      $e = $t.$e;
-    }
-    else {
-      $e = $t;
     }
     # check implicit iterator
-    if ($s === '.')
+    if ($name === '.')
     {
-      $s = "'',0,null".$e;
-      return 1;
+      $name = "'',0,null".$a;
+      return $k;
     }
-    # dot notation
-    $a = explode('.', $s);
-    $s = "'".$a[0]."'";
-    # single name
-    if (!($j = count($a) - 1))
+    # dot notation,
+    # extract the first name
+    $c = explode('.', $name);
+    $b = "'".$c[0]."'";
+    # check no more names
+    if (!($j = count($c) - 1))
     {
-      $s = $s.',0,null'.$e;
-      return 2;
+      $name = $b.',0,null'.$a;
+      return $k;
     }
-    # multiple names
-    for ($b='',$i=1; $i < $j; ++$i) {
-      $b .= "'".$a[$i]."',";
+    # collect the rest names
+    for ($d='',$i=1; $i < $j; ++$i) {
+      $d .= "'".$c[$i]."',";
     }
-    $b = $b."'".$a[$j]."'";
-    $s = $s.','.$j.',['.$b.']'.$e;
-    return 2;
+    # complete
+    $d = '['.$d."'".$c[$j]."']";
+    $name = $b.','.$j.','.$d.$a;
+    return $k;
   }
   # }}}
   # }}}
-  function helper(array|object $h): void # {{{
+  function helper(array|object &$h): void # {{{
   {
-    $this->ctx->raise($h);
+    if (($x = $this->ctx)->index === 0)
+    {
+      if (is_array($h)) {
+        $x->pushArray($h);
+      }
+      else {
+        $x->pushObject($h);
+      }
+    }
   }
   # }}}
-  function trim(string $tpl, bool $all=false): string # {{{
+  function outdent(string $tpl): string # {{{
   {
-    return preg_replace('/\n[ \t]+/', '',
-      str_replace("\r", '', trim($tpl))
-    );
-  }
-  # }}}
-  function alltrim(string $tpl): string # {{{
-  {
-    return preg_replace('/\n[ \n\t]+/', '',
+    return preg_replace('/\n[ \n\t]*/', '',
       str_replace("\r", '', trim($tpl))
     );
   }
@@ -639,120 +772,72 @@ class Mustache # {{{
     string $tpl, $dta=null, string $sep=''
   ):string
   {
-    # check delimieters
-    if ($sep === '')
-    {
-      $n0 = $this->n0; $s0 = $this->s0;
-      $n1 = $this->n1; $s1 = $this->s1;
-    }
-    else
-    {
-      $a  = explode(' ', $sep, 2);
-      $n0 = strlen($s0 = $a[0]);
-      $n1 = strlen($s1 = $a[1]);
-    }
-    # check necessity
-    if (strlen($tpl) <= $n0 + $n1 ||
-        strpos($tpl, $s0) === false)
-    {
+    # get currents
+    $x = $this->ctx;
+    $i = $this->index;
+    $j = $x->typeSz;
+    # create renderer
+    if (!($k = $this->_func($tpl, $sep))) {
       return $tpl;
     }
-    # create renderer
-    $i = $this->index;
-    $f = eval($this->_compose(
-      $this->_parse($tpl,
-        $this->_tokenize(
-          $tpl, $s0, $s1, $n0, $n1
-        )
-      ), -1
-    ));
     # execute
-    $x = $this->ctx;
     if ($dta === null)
     {
       if ($this->pushed && !$x->index)
       {
-        $this->pushed = false;
+        $this->pushed = 0;
         $x->pop();
       }
-      $r = $f($x);
+      $r = $this->func[$k]($x);
     }
     else
     {
-      $r = $f($x->push($dta));
+      $r = $this->func[$k]($x->push($dta));
       $x->pop();
     }
-    # although the main template is not cached,
-    # its pieces are, so do the cleanup
-    $this->clear($i);
+    # restore currents
+    $this->index = $i;
+    $x->typeSz = $j;
+    # complete
     return $r;
   }
   # }}}
   function render(string $tpl, $dta=null): string # {{{
   {
-    # check lambda recursion
-    if (($x = $this->ctx)->index)
-    {
-      # render without caching as with preparation
-      $i = $this->index;
-      $f = eval($this->_compose(
-        $this->_parse($tpl,
-          $this->_tokenize(
-            $tpl, $this->s0, $this->s1,
-            $this->n0, $this->n1
-          )
-        ), -1
-      ));
-      if ($dta === null) {
-        $r = $f($x);
-      }
-      else
-      {
-        $r = $f($x->push($dta));
-        $x->pop();
-      }
-      $this->clear($i);
-      return $r;
-    }
     # compute template hash
     $k = hash('xxh3', $tpl, true);
     # checkout cache
     if (isset($this->cache[$k])) {
-      $f = $this->func[$this->cache[$k]];
+      $i = $this->cache[$k];
     }
     else
     {
       # create new renderer
-      $i = ++$this->index;
+      $i = $this->_func($tpl);
       $this->cache[$k] = $i;
       $this->hash[$i]  = $k;
       $this->text[$i]  = $tpl;
-      $this->code[$i]  = '';
-      $this->func[$i]  = null;
-      $e = $this->_compose($this->_parse(
-        $tpl, $this->_tokenize(
-          $tpl, $this->s0, $this->s1,
-          $this->n0, $this->n1
-        )
-      ));
-      $this->code[$i]  = $e;
-      $this->func[$i]  = $f = eval($e);
     }
     # execute
     if ($dta === null)
     {
       if ($this->pushed)
       {
-        $this->pushed = false;
-        $x->pop();
+        $this->pushed = 0;
+        $this->ctx->pop();
       }
-      return $f($x);
+      return $this->func[$i]($this->ctx);
     }
-    if ($this->pushed) {
-      return $f($x->set($dta));
+    if ($this->pushed)
+    {
+      return $this->func[$i](
+        $this->ctx->set($dta)
+      );
     }
-    $this->pushed = true;
-    return $f($x->push($dta));
+    $this->pushed = 1;
+    return $this->func[$i](
+      $this->ctx->push($dta)
+    );
   }
   # }}}
   function set(string $tpl): int # {{{
@@ -764,55 +849,22 @@ class Mustache # {{{
       return $this->cache[$k];
     }
     # create new renderer
-    $i = ++$this->index;
+    $i = $this->_func($tpl);
     $this->cache[$k] = $i;
     $this->hash[$i]  = $k;
     $this->text[$i]  = $tpl;
-    $this->code[$i]  = '';
-    $this->func[$i]  = null;
-    $e = $this->_compose($this->_parse(
-      $tpl, $this->_tokenize(
-        $tpl, $this->s0, $this->s1,
-        $this->n0, $this->n1
-      )
-    ));
-    $this->code[$i]  = $e;
-    $this->func[$i]  = eval($e);
     return $i;
-  }
-  # }}}
-  function clear(int $to=0): void # {{{
-  {
-    for ($i=$this->index; $i > $to; --$i)
-    {
-      if (($k = $this->hash[$i]) !== '') {
-        unset($this->cache[$k]);
-      }
-      unset(
-        $this->hash[$i], $this->text[$i],
-        $this->code[$i], $this->func[$i]
-      );
-    }
-    $this->index = $to;
   }
   # }}}
   function get(int $i, $dta=null): string # {{{
   {
     $f = $this->func[$i];
-    if (($x = $this->ctx)->index)
-    {
-      if ($dta === null) {
-        return $f($x);
-      }
-      $r = $f($x->push($dta));
-      $x->pop();
-      return $r;
-    }
+    $x = $this->ctx;
     if ($dta === null)
     {
       if ($this->pushed)
       {
-        $this->pushed = false;
+        $this->pushed = 0;
         $x->pop();
       }
       return $f($x);
@@ -820,20 +872,41 @@ class Mustache # {{{
     if ($this->pushed) {
       return $f($x->set($dta));
     }
-    $this->pushed = true;
+    $this->pushed = 1;
     return $f($x->push($dta));
   }
   # }}}
 }
 # }}}
-class MustacheCtx # {{{
+class MustacheCtx # data stack {{{
 {
   # constructor {{{
-  public array  $stack=[null],$type=[0],$help=[];
-  public int    $current=0,$helpSz=0,$index=0;
-  public object $base;
-  function __construct(object $mustache) {
-    $this->base = $mustache;
+  const HELPVAR=[# name=>type
+    'first' => 3,
+    'last'  => 3,
+    'index' => 2,
+    'count' => 2,
+    'key'   => 1,
+    'value' => 0,
+  ];
+  public int   $helpSz=1;
+  public array $help=[[# initial values
+    'first' => true,
+    'last'  => false,
+    'index' => 0,
+    'count' => 0,
+    'key'   => '',
+    'value' => '',
+  ]];
+  public array  $stack=[null],$stackType=[0];
+  public int    $stackIdx=0,$index=0;
+  public array  $typeMap=[],$typeGrp=[0];
+  public int    $typeSz=0;
+  public object $base,$magic;
+  function __construct(object $mustache)
+  {
+    $this->base  = $mustache;
+    $this->magic = new MustacheMagic($mustache);
   }
   # }}}
   # hlp {{{
@@ -865,173 +938,211 @@ class MustacheCtx # {{{
         : 0);
   }
   # }}}
-  function raise(array|object $x): void # {{{
+  static function dotname(# {{{
+    string $p, ?array $pn
+  ):string
   {
-    $i = ++$this->current;
-    $this->stack[$i] = $x;
-    $this->type[$i]  = self::type_456($x);
+    return $pn ? $p.'.'.implode('.', $pn) : $p;
   }
   # }}}
   function pop(): void # {{{
   {
-    $i = $this->current--;
+    $i = $this->stackIdx--;
     unset($this->stack[$i]);
   }
   # }}}
   function push($x): self # {{{
   {
-    $i = ++$this->current;
+    $i = ++$this->stackIdx;
     $this->stack[$i] = $x;
-    $this->type[$i]  = self::typeof($x);
+    $this->stackType[$i] = self::typeof($x);
     return $this;
+  }
+  # }}}
+  function pushArray(array &$x): void # {{{
+  {
+    $i = ++$this->stackIdx;
+    $this->stack[$i] = &$x;
+    $this->stackType[$i] = 4;
+  }
+  # }}}
+  function pushObject(object $x): void # {{{
+  {
+    $i = ++$this->stackIdx;
+    $t = ($v instanceof Mustachable) ? 6 : 5;
+    $this->stack[$i] = $x;
+    $this->stackType[$i] = $t;
   }
   # }}}
   function set($x): self # {{{
   {
-    $i = $this->current;
+    $i = $this->stackIdx;
     $this->stack[$i] = $x;
-    $this->type[$i]  = self::typeof($x);
+    $this->stackType[$i] = self::typeof($x);
     return $this;
   }
   # }}}
+  function clear(int $to=-1): void # {{{
+  {
+    $i = count($this->stack);
+    $j = $this->stackIdx;
+    if ($to < 0 || ($to < $j && $this->index)) {
+      $to = $j;
+    }
+    while (--$i > $to)
+    {
+      unset(
+        $this->stack[$i],
+        $this->stackType[$i]
+      );
+    }
+    $i = count($this->help);
+    $j = $this->helpSz;
+    while (--$i > $j) {
+      unset($this->help[$i]);
+    }
+    $i = count($this->typeMap);
+    $j = $this->typeSz;
+    while (--$i > $j) {
+      unset($this->typeMap[$i]);
+    }
+  }
+  # }}}
   function get(# {{{
-    string $p, int $n, ?array $pn, int &$t
+    string $p, int $n, ?array $pn, int $ti
   ):mixed
   {
-    static $NOT_FOUND=null;
     # resolve first name {{{
-    $i = $this->current;
+    $t = $this->typeMap[$ti];
+    $i = $this->stackIdx;
     if ($p === '')
     {
       # take current value
       $v = $this->stack[$i];
-      if ($n) {
-        $j = $this->type[$i] ?: self::type_456($v);
-      }
-      else
+      $j = $this->stackType[$i];
+      if ($n)
       {
-        # single dot - implicit iterator
-        if ($t) {
-          return $v;
+        if ($j) {
+          goto seek_next;
         }
-        $t = $this->type[$i] ?: self::typeof($v);
+        $j = self::type_456($v);
+        goto seek_next;
+      }
+      # single dot - implicit iterator
+      if ($t && $t === $j) {
         return $v;
       }
+      $this->typeMap[$ti] = self::typeof($v);
+      return $v;
     }
-    else
-    {
-      search:
-        $v = $this->stack[$i];
-        switch ($this->type[$i]) {
-        case 4:
-          if (isset($v[$p]))
-          {
-            if ($n)
-            {
-              $v = $v[$p];
-              $j = self::type_456($v);
-              goto found;
-            }
-            if ($t) {
-              return $v[$p];
-            }
-            $v = $v[$p];
-            $t = self::typeof($v);
-            return $v;
-          }
-          break;
-        case 5:
-          if (isset($v->$p))
-          {
-            if ($n)
-            {
-              $v = $v->$p;
-              $j = self::type_456($v);
-              goto found;
-            }
-            if ($t) {
-              return $v->$p;
-            }
-            $v = $v->$p;
-            $t = self::typeof($v);
-            return $v;
-          }
-          break;
-        case 6:
-          if (isset($v::STASH[$p]))
-          {
-            if ($n)
-            {
-              if (($j = $v::STASH[$p]) < 7) {
-                $v = $v->$p;
-              }
-              else {
-                $v = $v->$p();
-              }
-              goto found;
-            }
-            if ($t)
-            {
-              if ($v::STASH[$p] < 7) {
-                return $v->$p;
-              }
-              return $v->$p(...);
-            }
-            if (($t = $v::STASH[$p]) < 7) {
-              return $v->$p;
-            }
-            return $v->$p(...);
-          }
-          break;
-        }
-        # continue?
-        if ($i < 2) {
-          return $NOT_FOUND;
-        }
-        $i--;
-        goto search;
-      found:
-    }
-    # }}}
-    # resolve in-between {{{
-    for ($i=0,--$n; $i < $n; ++$i)
-    {
-      $p = $pn[$i];
-      switch ($j) {
+    seek_first:
+      $v = $this->stack[$i];
+      switch ($this->stackType[$i]) {
       case 4:
         if (isset($v[$p]))
         {
+          if ($n)
+          {
+            $v = $v[$p];
+            $j = self::type_456($v);
+            goto seek_next;
+          }
+          if ($t) {
+            return $v[$p];
+          }
           $v = $v[$p];
-          $j = self::type_456($v);
-          break;
+          $this->typeMap[$ti] = self::typeof($v);
+          return $v;
         }
-        return $NOT_FOUND;
+        break;
       case 5:
         if (isset($v->$p))
         {
+          if ($n)
+          {
+            $v = $v->$p;
+            $j = self::type_456($v);
+            goto seek_next;
+          }
+          if ($t) {
+            return $v->$p;
+          }
           $v = $v->$p;
-          $j = self::type_456($v);
-          break;
+          $this->typeMap[$ti] = self::typeof($v);
+          return $v;
         }
-        return $NOT_FOUND;
+        break;
       case 6:
         if (isset($v::STASH[$p]))
         {
-          if (($j = $v::STASH[$p]) < 7) {
-            $v = $v->$p;
-          }
-          else
+          if ($n)
           {
-            $v = $v->$p();
-            $j = $j - 7;
+            if (($j = $v::STASH[$p]) < 7) {
+              $v = $v->$p;
+            }
+            else {
+              $v = $v->$p();
+            }
+            goto seek_next;
           }
-          break;
+          if ($t === 0) {
+            $this->typeMap[$ti] = $t = $v::STASH[$p];
+          }
+          return ($t < 7)
+            ? $v->$p
+            : $v->$p(...);
         }
-        # fallthrough..
-      default:
-        return $NOT_FOUND;
+        break;
       }
-    }
+      # continue?
+      if ($i < 2) {
+        return null;
+      }
+      $i--;
+      goto seek_first;
+    ###
+    # }}}
+    # resolve in-between {{{
+    seek_next:
+      for ($i=0,--$n; $i < $n; ++$i)
+      {
+        $p = $pn[$i];
+        switch ($j) {
+        case 4:
+          if (isset($v[$p]))
+          {
+            $v = $v[$p];
+            $j = self::type_456($v);
+            break;
+          }
+          return null;
+        case 5:
+          if (isset($v->$p))
+          {
+            $v = $v->$p;
+            $j = self::type_456($v);
+            break;
+          }
+          return null;
+        case 6:
+          if (isset($v::STASH[$p]))
+          {
+            if (($j = $v::STASH[$p]) < 7) {
+              $v = $v->$p;
+            }
+            else
+            {
+              $v = $v->$p();
+              $j = $j - 7;
+            }
+            break;
+          }
+          # fallthrough..
+        default:
+          return null;
+        }
+      }
+    ###
     # }}}
     # resolve last name {{{
     switch ($j) {
@@ -1043,7 +1154,7 @@ class MustacheCtx # {{{
           return $v[$p];
         }
         $v = $v[$p];
-        $t = self::typeof($v);
+        $this->typeMap[$ti] = self::typeof($v);
         return $v;
       }
       break;
@@ -1058,12 +1169,12 @@ class MustacheCtx # {{{
       if (isset($v->$p))
       {
         $v = $v->$p;
-        $t = self::typeof($v);
+        $this->typeMap[$ti] = self::typeof($v);
         return $v;
       }
       if (method_exists($v, $p))
       {
-        $t = 7;
+        $this->typeMap[$ti] = 7;
         return $v->$p(...);
       }
       break;
@@ -1077,50 +1188,196 @@ class MustacheCtx # {{{
       }
       if (isset($v::STASH[$p]))
       {
-        return (($t = $v::STASH[$p]) < 7)
+        $this->typeMap[$ti] = $t = $v::STASH[$p];
+        return ($t < 7)
           ? $v->$p
           : $v->$p(...);
       }
       break;
     }
-    return $NOT_FOUND;
+    return null;
     # }}}
   }
   # }}}
+  function iterate(# {{{
+    array|object $a, int $cnt, object $f
+  ):string
+  {
+    # assisted iteration
+    # prepare
+    $i = ++$this->stackIdx;
+    $v = &$this->stack[$i];
+    $h = &$this->help[$this->helpSz++];
+    $h = $this->help[0];
+    $h['count'] = $cnt;
+    $v = $a[0];
+    $this->stackType[$i] = 0;
+    # start
+    if (--$cnt)
+    {
+      # do first
+      $x = $f($this);
+      # do next
+      $h['first'] = false;
+      for ($j=1; $j < $cnt; ++$j)
+      {
+        $h['index'] = $j;
+        $v  = $a[$j];
+        $x .= $f($this);
+      }
+      # do last
+      $h['index'] = $j;
+      $h['last'] = true;
+      $v  = $a[$j];
+      $x .= $f($this);
+    }
+    else
+    {
+      # first is last
+      $h['last'] = true;
+      $x = $f($this);
+    }
+    # complete
+    $this->helpSz--;
+    $this->stackIdx--;
+    return $x;
+  }
   # }}}
+  function traverseA(# {{{
+    array $a, int $cnt, object $f
+  ):string
+  {
+    # assisted traversal
+    # prepare
+    $i = ++$this->stackIdx;
+    $v = &$this->stack[$i];
+    $h = &$this->help[$this->helpSz++];
+    $h = $this->help[0];
+    $h['count'] = $cnt;
+    $h['value'] = &$v;
+    $v = reset($a);
+    $this->stackType[$i] = 0;# flexy
+    $h['key'] = key($a);
+    # start
+    if (--$cnt)
+    {
+      # do first
+      $x = $f($this);
+      $v = next($a);
+      # do next
+      $h['first'] = false;
+      for ($j=1; $j < $cnt; ++$j)
+      {
+        $h['index'] = $j;
+        $h['key']   = key($a);
+        $x .= $f($this);
+        $v  = next($a);
+      }
+      # do last
+      $h['last']  = true;
+      $h['index'] = $j;
+      $h['key']   = key($a);
+      $x .= $f($this);
+    }
+    else
+    {
+      # first is last
+      $h['last'] = true;
+      $x = $f($this);
+    }
+    # complete
+    $this->helpSz--;
+    $this->stackIdx--;
+    return $x;
+  }
+  # }}}
+  function traverseO(# {{{
+    object $o, int $cnt, object $f
+  ):string
+  {
+    # assisted traversal
+    # prepare
+    $i = ++$this->stackIdx;
+    $v = &$this->stack[$i];
+    $h = &$this->help[$this->helpSz++];
+    $h = $this->help[0];
+    $h['count'] = $cnt;
+    $h['value'] = &$v;
+    $o->rewind();
+    $v = $o->current();
+    $this->stackType[$i] = 0;# flexy
+    $h['key'] = $o->key();
+    # start
+    if (--$cnt)
+    {
+      # do first
+      $x = $f($this);
+      $o->next();
+      # do next
+      $h['first'] = false;
+      for ($j=1; $j < $cnt; ++$j)
+      {
+        $h['index'] = $j;
+        $h['key']   = $o->key();
+        $v  = $o->current();
+        $x .= $f($this);
+        $o->next();
+      }
+      # do last
+      $h['last']  = true;
+      $h['index'] = $j;
+      $h['key']   = $o->key();
+      $v  = $o->current();
+      $x .= $f($this);
+    }
+    else
+    {
+      # first is last
+      $h['last'] = true;
+      $x = $f($this);
+    }
+    # complete
+    $this->helpSz--;
+    $this->stackIdx--;
+    return $x;
+  }
+  # }}}
+  function invoke(object $f, string $a, int $i): mixed # {{{
+  {
+    $m = $this->magic;
+    $m->index = $i;
+    $i = $this->stackIdx;
+    $v = $f($m, $a);
+    $this->stackIdx = $i;
+    return $v;
+  }
+  # }}}
+  # }}}
+  # standard {{{
   function b0(# FALSY OR {{{
-    string $p, int $n, ?array $pn, int &$t,
+    string $p, int $n, ?array $pn, int $t,
     int $i0, int $i1
   ):string
   {
-    # prepare {{{
+    # prepare
     $E = $this->base;
-    $v = $this->get($p, $n, $pn, $t);
-    # check not found
-    if ($v === null) {
+    if (($v = $this->get($p, $n, $pn, $t)) === null) {
       return $E->func[$i0]($this);
     }
-    # }}}
-    # handle lambda {{{
-    if ($t >= 7)
+    # handle lambda
+    if (($j = $this->typeMap[$t]) >= 7)
     {
-      # invoke
-      $v = $v($E);
-      # clarify
-      if ($t > 7) {
-        $j = $t - 7;
+      $v = $this->invoke($v, '', 0);
+      if ($j > 7) {
+        $j -= 7;
       }
       else
       {
         $j = self::typeof($v);
-        $t = 7 + $j;
+        $this->typeMap[$t] = 7 + $j;
       }
     }
-    else {
-      $j = $t;
-    }
-    # }}}
-    # render {{{
+    # render
     switch ($j) {
     case 1:
       return ($v === '')
@@ -1134,320 +1391,274 @@ class MustacheCtx # {{{
         : $E->func[$i0]($this);
     }
     return $i1 ? $E->func[$i1]($this) : '';
-    # }}}
   }
   # }}}
   function b1(# TRUTHY OR {{{
-    string $p, int $n, ?array $pn, int &$t,
-    int $i1, int $i0
+    string $p, int $n, ?array $pn, int $t,
+    int $i0, int $i1
   ):string
   {
-    # prepare {{{
+    # prepare
     $E = $this->base;
-    $v = $this->get($p, $n, $pn, $t);
-    # check not found
-    if ($v === null) {
+    if (($v = $this->get($p, $n, $pn, $t)) === null) {
       return $i0 ? $E->func[$i0]($this) : '';
     }
-    # }}}
-    # handle lambda {{{
-    if ($t >= 7)
+    # handle lambda
+    if (($j = $this->typeMap[$t]) >= 7)
     {
-      # invoke with section content
-      $v = $v($E, $E->text[$i1]);
-      # clarify
-      if ($t > 7) {
-        $j = $t - 7;
+      $v = $this->invoke($v, '', $i1);
+      if ($j > 7) {
+        $j -= 7;
       }
       else
       {
         $j = self::typeof($v);
-        $t = 7 + $j;
+        $this->typeMap[$t] = 7 + $j;
       }
-      # perform content substitution
-      switch ($j) {
-      case 1:
+      # content substitution?
+      if ($j === 1)
+      {
         return ($v === '')
           ? ($i0 ? $E->func[$i0]($this) : '')
           : $v;
-      case 2:
-        return strval($v);
       }
     }
-    else {
-      $j = $t;
-    }
-    # }}}
-    # render falsy or helper {{{
+    # render falsy/simplified
     switch ($j) {
     case 1:
-      # check empty
       if ($v === '') {
         return $i0 ? $E->func[$i0]($this) : '';
       }
-      # string helper
-      $i = ++$this->current;
-      $this->stack[$i] = &$v;
-      $this->type[$i]  = 1;
-      $x = $E->func[$i1]($this);
-      $this->current--;
-      return $x;
     case 2:
-      # numeric helper
-      $i = ++$this->current;
-      $this->stack[$i] = &$v;
-      $this->type[$i]  = 2;
-      $x = $E->func[$i1]($this);
-      $this->current--;
-      return $x;
+      break;
     case 4:
-      # check empty
-      if (!($k = count($v))) {
-        return $i0 ? $E->func[$i0]($this) : '';
-      }
-      # check iterable
-      if (array_is_list($v)) {
-        break;
-      }
-      # array helper
-      $i = ++$this->current;
-      $this->stack[$i] = &$v;
-      $this->type[$i]  = 4;
-      $x = $E->func[$i1]($this);
-      $this->current--;
-      return $x;
-    case 5:
-    case 6:
-      # check iterable
-      if ($v instanceof Countable)
+      if ($k = count($v))
       {
-        # check empty
-        if (!($k = count($v))) {
-          return $i0 ? $E->func[$i0]($this) : '';
+        if (array_is_list($v)) {
+          goto render_iterable;
         }
         break;
       }
-      # object helper
-      $i = ++$this->current;
-      $this->stack[$i] = &$v;
-      $this->type[$i]  = $j;
-      $x = $E->func[$i1]($this);
-      $this->current--;
-      return $x;
+      return $i0 ? $E->func[$i0]($this) : '';
+    case 5:
+    case 6:
+      if ($v instanceof Countable)
+      {
+        if ($k = count($v)) {
+          goto render_iterable;
+        }
+        return $i0 ? $E->func[$i0]($this) : '';
+      }
+      break;
     default:
-      # simplified selection
       return $v
         ? $E->func[$i1]($this)
         : ($i0 ? $E->func[$i0]($this) : '');
     }
-    # }}}
-    # render iterable {{{
-    # array/object iteration
-    $i = ++$this->current;
-    $w = $v[0];
-    $this->stack[$i] = &$w;
-    $this->type[$i]  = self::type_456($w);
-    $f = $E->func[$i1];
-    $x = $f($this);
-    $j = 0;
-    while (++$j < $k)
-    {
-      $w  = $v[$j];
-      $x .= $f($this);
-    }
-    unset($this->stack[$i]);
-    $this->current--;
-    return $x;
-    # }}}
-  }
-  # }}}
-  function b1a(# ITERABLE OR {{{
-    string $p, int $n, ?array $pn, int &$t,
-    int $i1, int $i0
-  ):string
-  {
-    # prepare {{{
-    $E = $this->base;
-    $v = $this->get($p, $n, $pn, $t);
-    # check not found
-    if ($v === null) {
-      return $i0 ? $E->func[$i0]($this) : '';
-    }
-    # }}}
-    # handle lambda {{{
-    if ($t >= 7)
-    {
-      # invoke
-      $v = $v($E, $E->text[$i1]);
-      # clarify
-      if ($t > 7) {
-        $j = $t - 7;
-      }
-      else
-      {
-        $j = self::typeof($v);
-        $t = 7 + $j;
-      }
-    }
-    else {
-      $j = $t;
-    }
-    # }}}
-    # render {{{
-    # check empty
-    if (!($k = count($v))) {
-      return $i0 ? $E->func[$i0]($this) : '';
-    }
-    # array/object iteration with helper!
-    # prepare
-    $i = ++$this->current;
-    $w = $v[0];
-    $this->stack[$i] = &$w;
-    $this->type[$i]  = 0;
-    $f = $E->func[$i1];
-    # add iteration helper
-    $h = [
-      'first' => true,
-      'last'  => false,
-      'index' => 0,
-      'count' => $k,
-    ];
-    $this->help[$this->helpSz++] = &$h;
-    # start
-    if (--$k)
-    {
-      # do first
+    render_helper:# single value
+      $i = ++$this->stackIdx;
+      $this->stack[$i] = $v;
+      $this->stackType[$i] = $j;
+      $x = $E->func[$i1]($this);
+      $this->stackIdx--;
+      return $x;
+    ###
+    render_iterable:# multiple values
+      $i = ++$this->stackIdx;
+      $w = &$this->stack[$i];
+      $w = $v[0];
+      $this->stackType[$i] = self::type_456($w);
+      $f = $E->func[$i1];
       $x = $f($this);
-      # do next
-      $h['first'] = false;
-      for ($j=1; $j < $k; ++$j)
+      $j = 0;
+      while (++$j < $k)
       {
-        $h['index'] = $j;
         $w  = $v[$j];
         $x .= $f($this);
       }
-      # do last
-      $h['index'] = $j;
-      $h['last'] = true;
-      $w  = $v[$j];
-      $x .= $f($this);
-    }
-    else
-    {
-      # first is last
-      $h['last'] = true;
-      $x = $f($this);
-    }
-    # cleanup and complete
-    unset(
-      $this->stack[$i],
-      $this->help[--$this->helpSz]
-    );
-    $this->current--;
-    return $x;
-    # }}}
+      $this->stackIdx--;
+      return $x;
+    ###
   }
   # }}}
-  function b2(# SWITCH {{{
-    string $p, int $n, ?array $pn, int &$t,
-    int $i0, int $i1, int $in, ...$a
+  function ba(# ITERABLE OR {{{
+    string $p, int $n, ?array $pn, int $t,
+    int $i0, int $i1
   ):string
   {
-    # prepare {{{
+    # prepare
     $E = $this->base;
-    $v = $this->get($p, $n, $pn, $t);
-    # check not found
-    if ($v === null) {
+    if (($v = $this->get($p, $n, $pn, $t)) === null) {
       return $i0 ? $E->func[$i0]($this) : '';
     }
-    # }}}
-    # handle lambda {{{
-    if ($t >= 7)
+    # handle lambda
+    if (($j = $this->typeMap[$t]) >= 7)
     {
-      # invoke
-      $v = $v($E);
-      # clarify
-      if ($t > 7) {
-        $j = $t - 7;
+      $v = $this->invoke($v, '', $i1);
+      if ($j > 7) {
+        $j -= 7;
       }
       else
       {
         $j = self::typeof($v);
-        $t = 7 + $j;
+        $this->typeMap[$t] = 7 + $j;
       }
     }
-    else {
-      $j = $t;
-    }
-    # }}}
-    # render falsy or simplified {{{
+    # render
     switch ($j) {
-    case 1:
-      # check empty
-      if ($v === '') {
+    case 4:
+      if (!($k = count($v))) {
         return $i0 ? $E->func[$i0]($this) : '';
       }
+      return array_is_list($v)
+        ? $this->iterate($v, $k, $E->func[$i1])
+        : $this->traverseA($v, $k, $E->func[$i1]);
+    case 5:
+    case 6:
+      if (!($k = count($v))) {
+        return $i0 ? $E->func[$i0]($this) : '';
+      }
+      return ($v instanceof Iterator)
+        ? $this->traverseO($v, $k, $E->func[$i1])
+        : $this->iterate($v, $k, $E->func[$i1]);
+    }
+    throw new Exception(
+      'block @'.self::dotname($p, $pn).
+      ' has recieved a non-iterable type'.
+      ' ('.gettype($v).')'
+    );
+  }
+  # }}}
+  function b2(# SWITCH {{{
+    string $p, int $n, ?array $pn, int $t,
+    int $i0, int $i1, int $in, ...$a
+  ):string
+  {
+    # prepare
+    $E = $this->base;
+    if (($v = $this->get($p, $n, $pn, $t)) === null) {
+      return $E->func[$i0]($this);
+    }
+    # handle lambda
+    if (($j = $this->typeMap[$t]) >= 7)
+    {
+      $v = $this->invoke($v, '', $i0);
+      if ($j > 7) {
+        $j -= 7;
+      }
+      else
+      {
+        $j = self::typeof($v);
+        $this->typeMap[$t] = 7 + $j;
+      }
+    }
+    # render falsy or simplified
+    switch ($j) {
+    case 1:
+      if ($v === '') {
+        return $E->func[$i0]($this);
+      }
+      $w = true;
       break;
     case 2:
-      # cast to string
-      $v = strval($v);
+      $w = $v !== 0;
+      $v = strval($v);# cast to string
       break;
     default:
-      # simplified selection
       return $v
         ? ($i1 ? $E->func[$i1]($this) : '')
-        : ($i0 ? $E->func[$i0]($this) : '');
+        : $E->func[$i0]($this);
     }
-    # }}}
-    # render switch section {{{
-    # search for it
+    # render switch section
     for ($i=0; $i < $in; $i+=2)
     {
       if ($a[$i] === $v) {
         return $E->func[$a[$i+1]]($this);
       }
     }
-    # not found,
-    # render truthy or falsy
-    return ($j === 1 || $v)
+    # render default section (truthy/falsy)
+    return $w
       ? ($i1 ? $E->func[$i1]($this) : '')
-      : ($i0 ? $E->func[$i0]($this) : '');
-    # }}}
+      : $E->func[$i0]($this);
   }
   # }}}
-  function v(# VARIABLE {{{
-    string $p, int $n, ?array $pn, int &$t,
-    int $escape
+  function b3(# TRUTHY SWITCH {{{
+    string $p, int $n, ?array $pn, int $t,
+    int $i0, int $i1, int $in, ...$a
   ):string
   {
-    # prepare {{{
+    # prepare
     $E = $this->base;
-    $v = $this->get($p, $n, $pn, $t);
-    # check not found
-    if ($v === null) {
-      return '';
+    if (($v = $this->get($p, $n, $pn, $t)) === null) {
+      return $i0 ? $E->func[$i0]($this) : '';
     }
-    # }}}
-    # handle lambda {{{
-    if ($t >= 7)
+    # handle lambda
+    if (($j = $this->typeMap[$t]) >= 7)
     {
-      # invoke
-      $v = $v($E);
-      # clarify
-      if ($t > 7) {
-        $j = $t - 7;
+      $v = $this->invoke($v, '', $i1);
+      if ($j > 7) {
+        $j -= 7;
       }
       else
       {
         $j = self::typeof($v);
-        $t = 7 + $j;
+        $this->typeMap[$t] = 7 + $j;
       }
     }
-    else {
-      $j = $t;
+    # render falsy or simplified
+    switch ($j) {
+    case 1:
+      if ($v === '') {
+        return $i0 ? $E->func[$i0]($this) : '';
+      }
+      $w = true;
+      break;
+    case 2:
+      $w = $v !== 0;
+      $v = strval($v);# cast to string
+      break;
+    default:
+      return $v
+        ? $E->func[$i1]($this)
+        : ($i0 ? $E->func[$i0]($this) : '');
     }
-    # }}}
-    # render {{{
+    # render switch section
+    for ($i=0; $i < $in; $i+=2)
+    {
+      if ($a[$i] === $v) {
+        return $E->func[$a[$i+1]]($this);
+      }
+    }
+    # render default section (truthy/falsy)
+    return $w
+      ? $E->func[$i1]($this)
+      : ($i0 ? $E->func[$i0]($this) : '');
+  }
+  # }}}
+  function v(# VARIABLE {{{
+    string $p, int $n, ?array $pn, int $t,
+    int $escape
+  ):string
+  {
+    # prepare
+    $E = $this->base;
+    if (($v = $this->get($p, $n, $pn, $t)) === null) {
+      return '';
+    }
+    # handle lambda
+    if (($j = $this->typeMap[$t]) >= 7)
+    {
+      $v = $this->invoke($v, '', -1);
+      if ($j > 7) {
+        $j -= 7;
+      }
+      else
+      {
+        $j = self::typeof($v);
+        $this->typeMap[$t] = 7 + $j;
+      }
+    }
+    # render
     switch ($j) {
     case 1:
       return $escape ? ($E->escape)($v) : $v;
@@ -1455,46 +1666,328 @@ class MustacheCtx # {{{
       return strval($v);
     }
     return '';
-    # }}}
   }
   # }}}
-  function a0(# ASSISTED FALSY OR {{{
-    string $p, int $i, int $i0, int $i1
+  # }}}
+  # lambda {{{
+  function f0(# FALSY LAMBDA OR {{{
+    string $p, int $n, ?array $pn, int $t,
+    string $arg, int $i0, int $i1
   ):string
   {
     # prepare
-    if (($i = $this->helpSz - $i) < 0 ||
-        !isset($this->help[$i][$p]))
-    {
-      return '';
-    }
-    $v = $this->help[$i][$p];
     $E = $this->base;
-    # complete
-    return $v
+    if (($v = $this->get($p, $n, $pn, $t)) === null) {
+      return $E->func[$i0]($this);
+    }
+    # handle lambda
+    $v = $this->invoke($v, $arg, 0);
+    if (($j = $this->typeMap[$t]) > 7) {
+      $j -= 7;
+    }
+    else
+    {
+      $j = self::typeof($v);
+      $this->typeMap[$t] = 7 + $j;
+    }
+    # render
+    switch ($j) {
+    case 1:
+      return ($v === '')
+        ? $E->func[$i0]($this)
+        : ($i1 ? $E->func[$i1]($this) : '');
+    case 2:
+    case 3:
+    case 4:
+      return $v
+        ? ($i1 ? $E->func[$i1]($this) : '')
+        : $E->func[$i0]($this);
+    }
+    return $i1 ? $E->func[$i1]($this) : '';
+  }
+  # }}}
+  function f1(# TRUTHY LAMBDA OR {{{
+    string $p, int $n, ?array $pn, int $t,
+    string $arg, int $i0, int $i1
+  ):string
+  {
+    # prepare
+    $E = $this->base;
+    if (($v = $this->get($p, $n, $pn, $t)) === null) {
+      return $i0 ? $E->func[$i0]($this) : '';
+    }
+    # handle lambda
+    $v = $this->invoke($v, $arg, $i1);
+    if (($j = $this->typeMap[$t]) > 7) {
+      $j -= 7;
+    }
+    else
+    {
+      $j = self::typeof($v);
+      $this->typeMap[$t] = 7 + $j;
+    }
+    # render falsy/simplified
+    switch ($j) {
+    case 1:# content substitution
+      return ($v === '')
+        ? ($i0 ? $E->func[$i0]($this) : '')
+        : $v;
+    case 2:
+      break;
+    case 4:
+      if ($k = count($v))
+      {
+        if (array_is_list($v)) {
+          goto render_iterable;
+        }
+        break;
+      }
+      return $i0 ? $E->func[$i0]($this) : '';
+    case 5:
+    case 6:
+      if ($v instanceof Countable)
+      {
+        if ($k = count($v)) {
+          goto render_iterable;
+        }
+        return $i0 ? $E->func[$i0]($this) : '';
+      }
+      break;
+    default:# selection
+      return $v
+        ? $E->func[$i1]($this)
+        : ($i0 ? $E->func[$i0]($this) : '');
+    }
+    render_helper:# single value
+      $i = ++$this->stackIdx;
+      $this->stack[$i] = $v;
+      $this->stackType[$i] = $j;
+      $x = $E->func[$i1]($this);
+      $this->stackIdx--;
+      return $x;
+    ###
+    render_iterable:# multiple values
+      $i = ++$this->stackIdx;
+      $w = &$this->stack[$i];
+      $w = $v[0];
+      $this->stackType[$i] = self::type_456($w);
+      $f = $E->func[$i1];
+      $x = $f($this);
+      $j = 0;
+      while (++$j < $k)
+      {
+        $w  = $v[$j];
+        $x .= $f($this);
+      }
+      $this->stackIdx--;
+      return $x;
+    ###
+  }
+  # }}}
+  function fa(# ITERABLE LAMBDA OR {{{
+    string $p, int $n, ?array $pn, int $t,
+    string $arg, int $i0, int $i1
+  ):string
+  {
+    # prepare
+    $E = $this->base;
+    if (($v = $this->get($p, $n, $pn, $t)) === null) {
+      return $i0 ? $E->func[$i0]($this) : '';
+    }
+    # handle lambda
+    $v = $this->invoke($v, $arg, $i1);
+    if (($j = $this->typeMap[$t]) > 7) {
+      $j -= 7;
+    }
+    else
+    {
+      $j = self::typeof($v);
+      $this->typeMap[$t] = 7 + $j;
+    }
+    # render
+    switch ($j) {
+    case 4:
+      if (!($k = count($v))) {
+        return $i0 ? $E->func[$i0]($this) : '';
+      }
+      return array_is_list($v)
+        ? $this->iterate($v, $k, $E->func[$i1])
+        : $this->traverseA($v, $k, $E->func[$i1]);
+    case 5:
+    case 6:
+      if (!($k = count($v))) {
+        return $i0 ? $E->func[$i0]($this) : '';
+      }
+      return ($v instanceof Iterator)
+        ? $this->traverseO($v, $k, $E->func[$i1])
+        : $this->iterate($v, $k, $E->func[$i1]);
+    }
+    throw new Exception(
+      'lambda block @'.self::dotname($p, $pn).
+      ' has recieved a non-iterable type'.
+      ' ('.gettype($v).')'
+    );
+  }
+  # }}}
+  function f2(# FALSY LAMBDA SWITCH {{{
+    string $p, int $n, ?array $pn, int $t,
+    string $arg, int $i0, int $i1,
+    int $in, ...$a
+  ):string
+  {
+    # prepare
+    $E = $this->base;
+    if (($v = $this->get($p, $n, $pn, $t)) === null) {
+      return $E->func[$i0]($this);
+    }
+    # handle lambda
+    $v = $this->invoke($v, $arg, $i0);
+    if (($j = $this->typeMap[$t]) > 7) {
+      $j -= 7;
+    }
+    else
+    {
+      $j = self::typeof($v);
+      $this->typeMap[$t] = 7 + $j;
+    }
+    # render falsy/simplified
+    switch ($j) {
+    case 1:
+      if ($v === '') {
+        return $E->func[$i0]($this);
+      }
+      $w = true;
+      break;
+    case 2:
+      $w = $v !== 0;
+      $v = strval($v);
+      break;
+    default:
+      return $v
+        ? ($i1 ? $E->func[$i1]($this) : '')
+        : $E->func[$i0]($this);
+    }
+    # render switch section
+    for ($i=0; $i < $in; $i+=2)
+    {
+      if ($a[$i] === $v) {
+        return $E->func[$a[$i+1]]($this);
+      }
+    }
+    # render default (truthy/falsy) section
+    return $w
       ? ($i1 ? $E->func[$i1]($this) : '')
       : $E->func[$i0]($this);
   }
   # }}}
-  function a1(# ASSISTED TRUTHY OR {{{
-    string $p, int $i, int $i1, int $i0
+  function f3(# TRUTHY LAMBDA SWITCH {{{
+    string $p, int $n, ?array $pn, int $t,
+    string $arg, int $i0, int $i1,
+    int $in, ...$a
   ):string
   {
     # prepare
+    $E = $this->base;
+    if (($v = $this->get($p, $n, $pn, $t)) === null) {
+      return $i0 ? $E->func[$i0]($this) : '';
+    }
+    # handle lambda
+    $v = $this->invoke($v, $arg, $i1);
+    if (($j = $this->typeMap[$t]) > 7) {
+      $j -= 7;
+    }
+    else
+    {
+      $j = self::typeof($v);
+      $this->typeMap[$t] = 7 + $j;
+    }
+    # render falsy/simplified
+    switch ($j) {
+    case 1:
+      if ($v === '') {
+        return $i0 ? $E->func[$i0]($this) : '';
+      }
+      $w = true;
+      break;
+    case 2:
+      $w = $v !== 0;
+      $v = strval($v);
+      break;
+    default:
+      return $v
+        ? $E->func[$i1]($this)
+        : ($i0 ? $E->func[$i0]($this) : '');
+    }
+    # render switch section
+    for ($i=0; $i < $in; $i+=2)
+    {
+      if ($a[$i] === $v) {
+        return $E->func[$a[$i+1]]($this);
+      }
+    }
+    # render default (truthy/falsy) section
+    return $w
+      ? $E->func[$i1]($this)
+      : ($i0 ? $E->func[$i0]($this) : '');
+  }
+  # }}}
+  function fv(# LAMBDA VARIABLE {{{
+    string $p, int $n, ?array $pn, int $t,
+    string $arg, int $escape
+  ):string
+  {
+    # prepare
+    $E = $this->base;
+    if (($v = $this->get($p, $n, $pn, $t)) === null) {
+      return '';
+    }
+    # handle lambda
+    $v = $this->invoke($v, $arg, -1);
+    if (($j = $this->typeMap[$t]) > 7) {
+      $j -= 7;
+    }
+    else
+    {
+      $j = self::typeof($v);
+      $this->typeMap[$t] = 7 + $j;
+    }
+    # render
+    switch ($j) {
+    case 1:
+      return $escape ? ($E->escape)($v) : $v;
+    case 2:
+      return strval($v);
+    }
+    return '';
+  }
+  # }}}
+  # }}}
+  # assisted {{{
+  function a01(# FALSY/TRUTHY OR {{{
+    string $p, int $i, int $i0, int $i1
+  ):string
+  {
     if (($i = $this->helpSz - $i) < 0 ||
         !isset($this->help[$i][$p]))
     {
       return '';
     }
-    $v = $this->help[$i][$p];
     $E = $this->base;
-    # complete
-    return $v
-      ? $E->func[$i1]($this)
-      : ($i0 ? $E->func[$i0]($this) : '');
+    $v = $this->help[$i][$p];
+    $j = self::HELPVAR[$p] ?: self::typeof($v);
+    switch ($j) {
+    case 1:
+      return ($v === '')
+        ? ($i0 ? $E->func[$i0]($this) : '')
+        : ($i1 ? $E->func[$i1]($this) : '');
+    default:
+      return $v
+        ? ($i1 ? $E->func[$i1]($this) : '')
+        : ($i0 ? $E->func[$i0]($this) : '');
+    }
   }
   # }}}
-  function a2(# ASSISTED SWITCH {{{
+  function a23(# FALSY/TRUTHY SWITCH {{{
     string $p, int $i,
     int $i0, int $i1, int $in, ...$a
   ):string
@@ -1505,39 +1998,40 @@ class MustacheCtx # {{{
     {
       return '';
     }
-    $v = $this->help[$i][$p];
     $E = $this->base;
-    # check scalar not boolean
-    if (is_scalar($v) && !is_bool($v))
+    $v = $this->help[$i][$p];
+    $j = self::HELPVAR[$p] ?: self::typeof($v);
+    # render falsy or simplified
+    switch ($j) {
+    case 1:
+      if ($v === '') {
+        return $i0 ? $E->func[$i0]($this) : '';
+      }
+      $w = true;
+      break;
+    case 2:
+      $w = $v !== 0;
+      $v = strval($v);
+      break;
+    default:
+      return $v
+        ? ($i1 ? $E->func[$i1]($this) : '')
+        : ($i0 ? $E->func[$i0]($this) : '');
+    }
+    # render switch section
+    for ($i=0; $i < $in; $i+=2)
     {
-      # convert into string and
-      # render falsy when it's empty
-      if (($w = strval($v)) === '')
-      {
-        return $i0
-          ? $E->func[$i0]($this)
-          : '';
-      }
-      # search for a switch section and
-      # render one found
-      for ($i=0; $i < $in; $i+=2)
-      {
-        if ($a[$i] === $w) {
-          return $E->func[$a[$i+1]]($this);
-        }
-      }
-      # fix special character
-      if ($w === '0') {
-        $v = true;
+      if ($a[$i] === $v) {
+        return $E->func[$a[$i+1]]($this);
       }
     }
-    # render truthy or falsy
-    return $v
+    # render default (truthy/falsy) section
+    return $w
       ? ($i1 ? $E->func[$i1]($this) : '')
       : ($i0 ? $E->func[$i0]($this) : '');
   }
   # }}}
-  function av(# ASSISTED VARIABLE {{{
+  function av(# VARIABLE {{{
     string $p, int $i
   ):string
   {
@@ -1546,13 +2040,72 @@ class MustacheCtx # {{{
     {
       return '';
     }
-    if (is_string($v = $this->help[$i][$p])) {
+    $v = $this->help[$i][$p];
+    $j = self::HELPVAR[$p] ?: self::typeof($v);
+    switch ($j) {
+    case 1:
       return $v;
+    case 2:
+      return strval($v);
     }
-    if (is_bool($v)) {
+    return '';
+  }
+  # }}}
+  # }}}
+}
+# }}}
+class MustacheMagic # facade for lambdas {{{
+{
+  # constructor {{{
+  public object $base;
+  public int    $index=0;
+  function __construct(object $mustache) {
+    $this->base = $mustache;
+  }
+  # }}}
+  function text(): string # {{{
+  {
+    return (($i = $this->index) > 0)
+      ? $this->base->text[$i]
+      : '';
+  }
+  # }}}
+  function helper(array|object &$h): void # {{{
+  {
+    $x = $this->base->ctx;
+    if (is_array($h)) {
+      $x->pushArray($h);
+    }
+    else {
+      $x->pushObject($h);
+    }
+  }
+  # }}}
+  function outdent(string $tpl): string # {{{
+  {
+    return $this->base->outdent($tpl);
+  }
+  # }}}
+  function prepare(# {{{
+    string $tpl, $dta=null, string $sep=''
+  ):string
+  {
+    return $this->base->prepare($tpl, $dta, $sep);
+  }
+  # }}}
+  function render($dta=null): string # {{{
+  {
+    if (($i = $this->index) <= 0) {
       return '';
     }
-    return strval($v);
+    $m = $this->base;
+    $x = $m->ctx;
+    if ($dta === null) {
+      return $m->func[$i]($x);
+    }
+    $r = $m->func[$i]($x->push($dta));
+    $x->pop();
+    return $r;
   }
   # }}}
 }

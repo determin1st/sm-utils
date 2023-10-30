@@ -16,7 +16,7 @@
       "desc": "A lambda's return value should be parsed.",
       "data": {
         "planet": "world",
-        "lambda": "return $m->render(\"{{planet}}\");"
+        "lambda": "return $m->prepare(\"{{planet}}\");"
       },
       "template": "Hello, {{lambda}}!",
       "expected": "Hello, world!"
@@ -27,7 +27,7 @@
       "desc": "A lambda's return value should parse with the default delimiters.",
       "data": {
         "planet": "world",
-        "lambda": "return \"|planet| => {{planet}}\";"
+        "lambda": "return $m->prepare(\"|planet| => {{planet}}\");"
       },
       "template": "{{= | | =}}\nHello, (|&lambda|)!",
       "expected": "Hello, (|planet| => world)!"
@@ -55,7 +55,7 @@
       "desc": "Lambdas used for sections should receive the raw section string.",
       "data": {
         "x": "Error!",
-        "lambda": "return ($text == \"{{x}}\") ? \"yes\" : \"no\";"
+        "lambda": "return ($m->text() === \"{{x}}\") ? \"yes\" : \"no\";"
       },
       "template": "<{{#lambda}}{{x}}{{/lambda}}>",
       "expected": "<yes>"
@@ -65,18 +65,18 @@
       "desc": "Lambdas used for sections should have their results parsed.",
       "data": {
         "planet": "Earth",
-        "lambda": "return $text . $m->render(\"{{planet}}\") . $text;"
+        "lambda": "return $m->text().$m->prepare(\"{{planet}}\").$m->text();"
       },
       "template": "<{{#lambda}}-{{/lambda}}>",
       "expected": "<-Earth->"
     },
     {
       "skip":1,
-      "name": "Section - Alternate Delimiters",
+      "name": "Section - Alternate Delimiters (??)",
       "desc": "Lambdas used for sections should parse with the current delimiters.",
       "data": {
         "planet": "Earth",
-        "lambda": "return $text . \"{{planet}} => |planet|\" . $text;"
+        "lambda": "return $m->text().\"{{planet}} => |planet|\".$m->text();"
       },
       "template": "{{= | | =}}<|#lambda|-|/lambda|>",
       "expected": "<-{{planet}} => Earth->"
@@ -85,7 +85,7 @@
       "name": "Section - Multiple Calls",
       "desc": "Lambdas used for sections should not be cached.",
       "data": {
-        "lambda": "return \"__\" . $text . \"__\";"
+        "lambda": "return \"__\" . $m->text() . \"__\";"
       },
       "template": "{{#lambda}}FILE{{/lambda}} != {{#lambda}}LINE{{/lambda}}",
       "expected": "__FILE__ != __LINE__"

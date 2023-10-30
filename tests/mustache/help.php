@@ -25,11 +25,9 @@ function get_testfiles(): ?array # {{{
       foreach ($a['tests'] as &$t)
       {
         $e = $t['data']['lambda'];
-        $f = eval(
-          'return (function($m,$text=""){'.$e.'});'
-        );
+        $f = 'return (function($m,$a){'.$e.'});';
         $t['data']['lambda_code'] = $e;
-        $t['data']['lambda'] = $f;
+        $t['data']['lambda'] = eval($f);
       }
     }
     $json[$b] = $a;

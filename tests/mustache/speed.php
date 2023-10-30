@@ -14,33 +14,59 @@ if (!($json = get_testfiles()))
   exit(1);
 }
 # }}}
-# load script {{{
+# load script
 $pad = "\t\t\t";
-$fun = 'render()';
 $t = hrtime(true);
 switch ($test) {
-case 1:
-case 2:
+case 1:# {{{
   require_once(
     __DIR__.DIRECTORY_SEPARATOR.
     '..'.DIRECTORY_SEPARATOR.
     '..'.DIRECTORY_SEPARATOR.
     'mustache.php'
   );
-  $m = \SM\Mustache::new(['escape'=>true]);
+  $m = \SM\Mustache::new([
+    'escape'=>true,
+    'dedent'=>1,
+  ]);
   $i = 'sm-mustache';
-  if ($test === 2)
-  {
-    $fun = 'set()+get()';
-    if ($count > 9) {
-      $pad = "\t\t";
-    }
-  }
-  elseif ($count > 9999) {
-    $pad = "\t\t";
-  }
+  $fun = 'prepare()';
+  if ($count > 999) {$pad = "\t\t";}
   break;
-case 3:
+  # }}}
+case 2:# {{{
+  require_once(
+    __DIR__.DIRECTORY_SEPARATOR.
+    '..'.DIRECTORY_SEPARATOR.
+    '..'.DIRECTORY_SEPARATOR.
+    'mustache.php'
+  );
+  $m = \SM\Mustache::new([
+    'escape'=>true,
+    'dedent'=>1,
+  ]);
+  $i = 'sm-mustache';
+  $fun = 'render()';
+  if ($count > 9999) {$pad = "\t\t";}
+  break;
+  # }}}
+case 3:# {{{
+  require_once(
+    __DIR__.DIRECTORY_SEPARATOR.
+    '..'.DIRECTORY_SEPARATOR.
+    '..'.DIRECTORY_SEPARATOR.
+    'mustache.php'
+  );
+  $m = \SM\Mustache::new([
+    'escape'=>true,
+    'dedent'=>1,
+  ]);
+  $i = 'sm-mustache';
+  $fun = 'set()+get()';
+  if ($count > 9) {$pad = "\t\t";}
+  break;
+  # }}}
+case 4:# old {{{
   require_once(
     __DIR__.DIRECTORY_SEPARATOR.
     '..'.DIRECTORY_SEPARATOR.
@@ -48,13 +74,16 @@ case 3:
     '__junk'.DIRECTORY_SEPARATOR.
     'mustache.php'
   );
-  $m = \SM\Mustache::construct([
-    'escaper' => true
-  ]);
+  $m = \SM\Mustache::new(['escape'=>true]);
+  #$m = \SM\Mustache::construct([
+  #  'escaper' => true
+  #]);
   $i = 'sm-mustache-old';
+  $fun = 'render()';
   $pad = "\t\t";
   break;
-default:
+  # }}}
+default:# {{{
   require_once(
     __DIR__.
     DIRECTORY_SEPARATOR.
@@ -64,7 +93,9 @@ default:
   );
   $m = new Mustache_Engine();
   $i = 'mustache';
+  $fun = 'render()';
   break;
+  # }}}
 }
 $t = (int)((hrtime(true) - $t)/1e+6);
 echo(
@@ -72,9 +103,35 @@ echo(
   ': loaded in '.$t.'ms, '.$fun.'*'.$count.
   $pad
 );
-# }}}
 switch ($test) {
-case 2:# {{{
+case 1:# prepare() {{{
+  $t = hrtime(true);
+  while ($count--)
+  {
+    foreach ($json as $k => $j)
+    {
+      if (isset($j['speed']) && !$j['speed']) {
+        continue;
+      }
+      $i = 0;
+      foreach ($j['tests'] as $test)
+      {
+        if (isset($test['skip']) &&
+            $test['skip'])
+        {
+          continue;
+        }
+        if ($m->prepare($test['template'], $test['data']) !== $test['expected'])
+        {
+          echo(color('fail', 'red', 1)."\n");
+          break 2;
+        }
+      }
+    }
+  }
+  break;
+  # }}}
+case 3:# set()+get() {{{
   $t = hrtime(true);
   foreach ($json as $k => &$j)
   {
@@ -117,7 +174,7 @@ case 2:# {{{
   }
   break;
   # }}}
-default:# {{{
+default:# render() {{{
   $t = hrtime(true);
   while ($count--)
   {

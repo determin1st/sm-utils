@@ -37,7 +37,10 @@ else
   echo('selected: '.implode('/', array_keys($json))."\n");
 }
 # }}}
-$m = \SM\Mustache::new(['escape'=>true]);
+$m = \SM\Mustache::new([
+  'escape'=>true,
+  'dedent'=>1,
+]);
 if (~$test)
 {
   # single
@@ -48,8 +51,14 @@ if (~$test)
   echo('       data: '.var_export($a['data'], true)."\n");
   echo("   expected: [".bg_color($a['expected'], 'magenta')."]\n");
   echo("------------\n\n");
+  /***
+  $b  = $m->outdent($a['template']);
+  $r0 = $m->prepare($b, $a['data']);
+  $r1 = $m->render($b, $a['data']);
+  /***/
   $r0 = $m->prepare($a['template'], $a['data']);
   $r1 = $m->render($a['template'], $a['data']);
+  /***/
   echo("prepare(): [".bg_color($r0, 'magenta')."]\n");
   echo(" render(): [".bg_color($r1, 'magenta')."]\n");
   if ($r0 === $a['expected'] &&
@@ -79,8 +88,14 @@ else
         echo color('skip', 'blue', 0)."\n";
         continue;
       }
+      /***
+      $b  = $m->outdent($a['template']);
+      $r0 = $m->prepare($b, $a['data']);
+      $r1 = $m->render($b, $a['data']);
+      /***/
       $r0 = $m->prepare($a['template'], $a['data']);
       $r1 = $m->render($a['template'], $a['data']);
+      /***/
       $b0 = $r0 === $a['expected'];
       $b1 = $r1 === $a['expected'];
       if ($b0 && $b1)

@@ -31,16 +31,13 @@
     m.render = (function(template, data) {
       return m.compile(template)(data);
     });
+    if (count > 9999) {pad = "\t\t";}
     break;
   case 2:
     m = require(name = 'handlebars');
     fun = "compile()+render()";
-    if (count < 100) {
-      pad = "\t\t";
-    }
-    else {
-      pad = "\t";
-    }
+    if (count < 100) {pad = "\t\t";}
+    else {pad = "\t";}
     break;
   case 3:
     m = require(name = 'hogan.js');
@@ -49,10 +46,19 @@
     });
     break;
   case 4:
-    // hoogan.js
     m = require(name = 'hogan.js');
     fun = "compile()+render()";
     pad = "\t\t";
+    break;
+  case 5:
+    m = require(name = 'wontache');
+    fun = "()*()";
+    if (count < 10) {pad = "\t\t\t\t";}
+    break;
+  case 6:
+    m = require(name = 'wontache');
+    fun = "()+()";
+    if (count < 10) {pad = "\t\t\t\t";}
     break;
   default:
     m = require(name = 'mustache');
@@ -141,7 +147,74 @@
           if (t['skip']) {
             continue;
           }
-          if (t['tpl'].render(t['data']) !== t['expected'])
+          if (t['tpl'].render(t['data']) !== t['expected']) {
+            fails++;
+          }
+        }
+      }
+    }
+    break;
+    // }}}
+  case 5:// {{{
+    time = process.hrtime.bigint();
+    while (count--)
+    {
+      for (let k in json)
+      {
+        let j = json[k];
+        if (j.hasOwnProperty('speed') && !j.speed) {
+          continue;
+        }
+        let i=0,t;
+        for (t in j['tests'])
+        {
+          t = j['tests'][t];
+          if (t['skip']) {
+            continue;
+          }
+          if (m(t['template'])(t['data']) !== t['expected'])
+          {
+            fails++;
+          }
+        }
+      }
+    }
+    break;
+    // }}}
+  case 6:// {{{
+    time = process.hrtime.bigint();
+    for (let k in json)
+    {
+      let j = json[k];
+      if (j.hasOwnProperty('speed') && !j.speed) {
+        continue;
+      }
+      let i=0,t;
+      for (t in j['tests'])
+      {
+        t = j['tests'][t];
+        if (t['skip']) {
+          continue;
+        }
+        t['tpl'] = m(t['template']);
+      }
+    }
+    while (count--)
+    {
+      for (let k in json)
+      {
+        let j = json[k];
+        if (j.hasOwnProperty('speed') && !j.speed) {
+          continue;
+        }
+        let i=0,t;
+        for (t in j['tests'])
+        {
+          t = j['tests'][t];
+          if (t['skip']) {
+            continue;
+          }
+          if (t['tpl'](t['data']) !== t['expected'])
           {
             fails++;
           }
