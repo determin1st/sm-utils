@@ -27,6 +27,7 @@ case 1:# {{{
   );
   $m = \SM\Mustache::new([
     'escape'=>true,
+    'unescape'=>true,
     'dedent'=>1,
   ]);
   $i = 'sm-mustache';
@@ -43,6 +44,7 @@ case 2:# {{{
   );
   $m = \SM\Mustache::new([
     'escape'=>true,
+    'unescape'=>true,
     'dedent'=>1,
   ]);
   $i = 'sm-mustache';
@@ -59,6 +61,7 @@ case 3:# {{{
   );
   $m = \SM\Mustache::new([
     'escape'=>true,
+    'unescape'=>true,
     'dedent'=>1,
   ]);
   $i = 'sm-mustache';

@@ -25,19 +25,20 @@ interface Mustachable # friendly objects {{{
 class Mustache # {{{
 {
   # TODO: refactor iterator/assisted
-  # TODO: revert unescape modifier (option)
   # TODO: preset types more
   # constructor {{{
   static string  $EMPTY='';# hash of an empty string
   public string  $s0='{{',$s1='}}';# default delimiters
   public int     $n0=2,$n1=2;# delimiter sizes
-  public int     $pushed=0,$dedent=0;
+  public int     $pushed=0;# indicates stack has a value
   public ?object $escape=null;# callable
+  public bool    $unescape=false;# "&" unescapes/escapes
+  public int     $dedent=0;# re-indent?
+  public array   $wraps=["\033[41m","\033[49m"];# red bg
   public int     $index=0;# current hash/text/code/func
   public array   $hash=[''],$text=[''];
   public array   $code=[''],$func=[null];
   public array   $cache=[];# hash=>index
-  public array   $wrap=["\033[41m","\033[49m"];# exceptions
   public object  $ctx;
   private function __construct()
   {
@@ -62,11 +63,17 @@ class Mustache # {{{
       $I->escape = is_callable($o[$k])
         ? $o[$k] : htmlspecialchars(...);
     }
+    if (isset($o[$k = 'unescape'])) {
+      $I->unescape = !!$o[$k];
+    }
     if (isset($o[$k = 'helper'])) {
       $I->helper($o[$k]);
     }
     if (isset($o[$k = 'dedent'])) {
       $I->dedent = $o[$k];
+    }
+    if (isset($o[$k = 'wraps'])) {
+      $I->wraps = $o[$k];
     }
     return $I;
   }
@@ -91,8 +98,8 @@ class Mustache # {{{
   {
     return
       substr($txt, 0, $i).
-      $this->wrap[0].substr($txt, $i, $j - $i).
-      $this->wrap[1].substr($txt, $j);
+      $this->wraps[0].substr($txt, $i, $j - $i).
+      $this->wraps[1].substr($txt, $j);
   }
   # }}}
   function _tokenize(# {{{
@@ -706,20 +713,22 @@ class Mustache # {{{
       $a = ','.$typeIdx.",'".$a."'";
       $k = 2;
     }
-    # add unescape tag for a variable
+    # check for variable
     if ($isVar)
     {
+      # check for special modifier
       if ($name[0] === '&')
       {
         $name = substr($name, 1);
-        $a .= ',0';
-      }
-      elseif ($this->escape) {
-        $a .= ',1';
+        $b = $this->escape
+          ? ($this->unescape ? '0' : '1')
+          : '0';
       }
       else {
-        $a .= ',0';
+        $b = $this->escape ? '1' : '0';
       }
+      # add escape flag
+      $a .= ','.$b;
     }
     # check implicit iterator
     if ($name === '.')

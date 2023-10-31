@@ -39,6 +39,7 @@ else
 # }}}
 $m = \SM\Mustache::new([
   'escape'=>true,
+  'unescape'=>true,
   'dedent'=>1,
 ]);
 if (~$test)
