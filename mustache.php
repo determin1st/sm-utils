@@ -24,8 +24,7 @@ interface Mustachable # friendly objects {{{
 # }}}
 class Mustache # {{{
 {
-  # TODO: refactor iterator/assisted
-  # TODO: preset types more
+  # TODO: more type predictions
   # constructor {{{
   static string  $EMPTY='';# hash of an empty string
   public string  $s0='{{',$s1='}}';# default delimiters
@@ -125,13 +124,13 @@ class Mustache # {{{
         {
           $token[$i++] = [
             20,substr($tpl, $i0, $a - $i0 + 1),
-            '',$line++
+            $line++
           ];
           $i0 = $a + 1;# move to the char after newline
         }
         # add the last text chunk
         $token[$i++] = [
-          20,substr($tpl, $i0),'',$line
+          20,substr($tpl, $i0),$line
         ];
         break;
       }
@@ -141,7 +140,7 @@ class Mustache # {{{
         $i1 = $a + 1;# move to the char after newline
         $token[$i++] = [
           20,substr($tpl, $i0, $i1 - $i0),
-          '',$line++
+          $line++
         ];
         $a = strpos($tpl, "\n", $i0 = $i1);
       }
@@ -150,9 +149,7 @@ class Mustache # {{{
       {
         # add final plaintext (at the same line)
         $c = substr($tpl, $i0, $b - $i0);
-        $token[$i++] = [
-          20,$c,'',$line
-        ];
+        $token[$i++] = [20,$c,$line];
         # determine size of indentation
         $indent = (trim($c, " \t") ? -1 : strlen($c));
         $i0 = $b;
@@ -175,7 +172,7 @@ class Mustache # {{{
           ++$line;
         }
         # replace it with plaintext
-        $token[$i++] = [20,$s0,'',$line];
+        $token[$i++] = [20,$s0,$line];
         # continue after the tag
         $i0 = $b;
         continue;
@@ -185,88 +182,45 @@ class Mustache # {{{
       $i1 = $a + $n1;
       # add syntax token
       switch ($c[0]) {
-      case '^':# 0: FALSY BLOCK {{{
-        $c = ltrim(substr($c, 1));
-        if ($j = strpos($c, ' '))
-        {
-          $d = substr($c, $j + 1);
-          $c = substr($c, 0, $j);
-        }
-        else {
-          $d = '';
-        }
+      case '^':# FALSY BLOCK
         $token[$i++] = [
-          0,$c,$d,$line,$indent,$i0,$i1
-        ];
-        break;
-        # }}}
-      case '#':# 1: TRUTHY BLOCK {{{
-        $c = ltrim(substr($c, 1));
-        if ($j = strpos($c, ' '))
-        {
-          $d = substr($c, $j + 1);
-          $c = substr($c, 0, $j);
-        }
-        else {
-          $d = '';
-        }
-        $token[$i++] = [
-          1,$c,$d,$line,$indent,$i0,$i1
-        ];
-        break;
-        # }}}
-      case '@':# 2: ITERABLE BLOCK {{{
-        $c = ltrim(substr($c, 1));
-        if ($j = strpos($c, ' '))
-        {
-          $d = substr($c, $j + 1);
-          $c = substr($c, 0, $j);
-        }
-        else {
-          $d = '';
-        }
-        $token[$i++] = [
-          2,$c,$d,$line,$indent,$i0,$i1
-        ];
-        break;
-        # }}}
-      case '|':# 10: BLOCK SECTION {{{
-        $token[$i++] = [
-          10,ltrim(substr($c, 1)),'',
+          0,ltrim(substr($c, 1)),
           $line,$indent,$i0,$i1
         ];
         break;
-        # }}}
-      case '/':# 11: BLOCK TERMINATOR {{{
+      case '#':# TRUTHY BLOCK
         $token[$i++] = [
-          11,'','',$line,$indent,$i0,$i1
+          1,ltrim(substr($c, 1)),
+          $line,$indent,$i0,$i1
         ];
         break;
-        # }}}
-      case '!':# 12: COMMENTARY {{{
+      case '@':# ITERABLE BLOCK
         $token[$i++] = [
-          12,'','',$line,$indent,$i0,$i1
+          2,ltrim(substr($c, 1)),
+          $line,$indent,$i0,$i1
         ];
         break;
-        # }}}
-      case '_':# HELPER VARIABLE
-      case '&':# ESCAPABLE VARIABLE
-        $c = $c[0].ltrim(substr($c, 1));
-      default:# 21: VARIABLE {{{
-        #$c = ltrim(substr($c, 1));
-        if ($j = strpos($c, ' '))
-        {
-          $d = substr($c, $j + 1);
-          $c = substr($c, 0, $j);
-        }
-        else {
-          $d = '';
-        }
+      case '|':# BLOCK SECTION
         $token[$i++] = [
-          21,$c,$d,$line,$indent,$i0,$i1
+          10,ltrim(substr($c, 1)),
+          $line,$indent,$i0,$i1
         ];
         break;
-        # }}}
+      case '/':# BLOCK TERMINATOR
+        $token[$i++] = [
+          11,'',$line,$indent,$i0,$i1
+        ];
+        break;
+      case '!':# COMMENTARY
+        $token[$i++] = [
+          12,'',$line,$indent,$i0,$i1
+        ];
+        break;
+      default:# VARIABLE
+        $token[$i++] = [
+          21,$c,$line,$indent,$i0,$i1
+        ];
+        break;
       }
       # continue
       $i0 = $i1;
@@ -280,7 +234,7 @@ class Mustache # {{{
       for ($i = 0; $i <= $len; ++$i)
       {
         # check on the same line
-        if ($i < $len && $line === $token[$i][3]) {
+        if ($i < $len && $line === $token[$i][2]) {
           ++$n0;# total tokens in a line
         }
         else
@@ -329,7 +283,7 @@ class Mustache # {{{
             break;
           }
           # change line and reset counters
-          $line = $token[$i][3];
+          $line = $token[$i][2];
           $n0 = 1;
           $n1 = 0;
         }
@@ -344,9 +298,7 @@ class Mustache # {{{
     return $token;
   }
   # }}}
-  function _parse(# {{{
-    string $tpl, array $token
-  ):array
+  function _parse(string $tpl, array $token): array # {{{
   {
     # create first area
     $area = [[[], 0, count($token)]];
@@ -359,7 +311,7 @@ class Mustache # {{{
       $i = $area[$idx][1];
       $j = $area[$idx][2];
       $idx++;
-      # assemble section
+      # assemble contents
       while ($i < $j)
       {
         $a = $token[$i++];
@@ -367,13 +319,14 @@ class Mustache # {{{
         case 0:
         case 1:
         case 2:
-          # add block {{{
+          # THE BLOCK {{{
+          # construct block node
+          $node = $this->_node($tpl, $a);
+          $offs = $a[5];
           # create section storage and
           # open first section
-          $offs = $a[6];
-          $a[7] = [$a[0]];
-          $a[8] = 3;
-          # search for closing tags
+          $node[6] = [$a[0]];
+          # search for terminator
           for ($k=$i,$n=0; $k < $j; ++$k)
           {
             $b = $token[$k];
@@ -392,20 +345,17 @@ class Mustache # {{{
               }
               # close previous section,
               # add text
-              $a[7][] = substr(
-                $tpl, $offs, $b[5] - $offs
+              $node[6][] = substr(
+                $tpl, $offs, $b[4] - $offs
               );
               # add new area for parsing
               $area[$cnt] = [[], $i, $k];
-              $a[7][] = &$area[$cnt][0];
+              $node[6][] = &$area[$cnt][0];
               $cnt++;
               $i = $k + 1;
-              # open next subsection
-              $offs   = $b[6];
-              $a[7][] = ($b[1] === '')
-                ? ($a[0] ? 0 : 1)
-                : "'".$b[1]."'";
-              $a[8]  += 3;
+              # open next section
+              $offs = $b[5];
+              $node[6][] = $b[1];
               break;
             case 11:
               # decrement inner blocks count and
@@ -415,11 +365,11 @@ class Mustache # {{{
               }
               # close previous section,
               # add text and new area for parsing
-              $a[7][] = substr(
-                $tpl, $offs, $b[5] - $offs
+              $node[6][] = substr(
+                $tpl, $offs, $b[4] - $offs
               );
               $area[$cnt] = [[], $i, $k];
-              $a[7][] = &$area[$cnt][0];
+              $node[6][] = &$area[$cnt][0];
               $cnt++;
               $i = $k + 1;
               goto block_complete;
@@ -427,34 +377,157 @@ class Mustache # {{{
           }
           $c = ('^#@'[$a[0]]).$a[1];
           throw new Exception(
-            'unclosed '.$c.' at '.$a[5].
-            "\n".$this->_wrap($tpl, $a[5], $a[6])
+            'unclosed '.$c.' at '.$a[4].
+            "\n".$this->_wrap($tpl, $a[4], $a[5])
           );
-          ###
-          block_complete:
-          $section[] = $a;
           # }}}
+        block_complete:
+          if (($a[0] === 2) &&
+              (($n = count($node[6])) > 6 ||
+               ($n > 3 && $node[6][3] !== '')))
+          {
+            throw new Exception(
+              'iterable block '.
+              'cannot have switch sections '.
+              "\n".$this->_wrap($tpl, $a[4], $a[5])
+            );
+          }
+          $section[] = $node;
           break;
         case 10:
           throw new Exception(
-            'unexpected |'.$a[1].' at '.$a[5].
-            "\n".$this->_wrap($tpl, $a[5], $a[6])
+            'unexpected |'.$a[1].' at '.$a[4].
+            "\n".$this->_wrap($tpl, $a[4], $a[5])
           );
         case 11:
           throw new Exception(
-            'unexpected /'.$a[1].' at '.$a[5].
-            "\n".$this->_wrap($tpl, $a[5], $a[6])
+            'unexpected /'.$a[1].' at '.$a[4].
+            "\n".$this->_wrap($tpl, $a[4], $a[5])
           );
-        default:
-          # add non-empty plaintext or variable
-          if ($a[1] !== '') {
+        case 20:# plaintext
+          if ($a[1] !== '')
+          {
+            $a[1] = "'".addcslashes($a[1], "'\\")."'";
             $section[] = $a;
           }
+          break;
+        case 21:# variable
+          $section[] = $this->_node($tpl, $a);
           break;
         }
       }
     }
     return $area[0][0];
+  }
+  # }}}
+  function _node(string $tpl, array $t): array # {{{
+  {
+    static $ASSISTED=[# name=>type
+      'first' => 3,
+      'last'  => 3,
+      'index' => 2,
+      'count' => 2,
+      'key'   => 1,
+      'value' => 0,
+    ];
+    # prepare
+    $isVar = $t[0] === 21;
+    $name  = $t[1];
+    $esc   = 0;
+    # check escape modifier
+    if ($name[0] === '&')
+    {
+      if (!$isVar)
+      {
+        throw new Exception(
+          'variable modifier "&" '.
+          'does not apply to blocks'.
+          "\n".$this->_wrap($tpl, $t[5], $t[6])
+        );
+      }
+      $name = ltrim(substr($name, 1));
+      $esc = $this->escape
+        ? ($this->unescape ? 0 : 1)
+        : 0;
+    }
+    elseif ($isVar && $this->escape) {
+      $esc = 1;
+    }
+    # check assisted
+    if ($name[0] === '_')
+    {
+      # count backpedal
+      for ($i=1; $name[$i] === '_'; ++$i)
+      {}
+      $a = substr($name, $i);
+      # validate
+      if (($j = strpos($a, '.')) !== false)
+      {
+        $a = substr($a, 0, $j);
+        if (isset($ASSISTED[$a]))
+        {
+          throw new Exception(
+            'dot notation does not apply '.
+            'for assisted value "'.$name.'"'.
+            "\n".$this->_wrap($tpl, $t[5], $t[6])
+          );
+        }
+      }
+      elseif (($j = strpos($a, ' ')) !== false)
+      {
+        $a = substr($a, 0, $j);
+        if (isset($ASSISTED[$a]))
+        {
+          throw new Exception(
+            'lambda does not apply '.
+            'for assisted value "'.$name.'"'.
+            "\n".$this->_wrap($tpl, $t[5], $t[6])
+          );
+        }
+      }
+      elseif (isset($ASSISTED[$a]))
+      {
+        $a = "'".$a."',".$i.','.$ASSISTED[$a];
+        return [100 + $t[0],$a,$t[4],$t[5],'',$esc];
+      }
+    }
+    # check arguments
+    if ($i = strpos($name, ' '))
+    {
+      $arg  = substr($name, $i + 1);
+      $arg  = "'".addcslashes($arg, "'\\")."'";
+      $name = substr($name, 0, $i);
+    }
+    else {
+      $arg  = '';
+    }
+    # check implicit iterator
+    if ($name === '.')
+    {
+      return [
+        $t[0],"'',0,null",
+        $t[4],$t[5],$arg,$esc
+      ];
+    }
+    # dot notation,
+    # extract first name
+    $b = explode('.', $name);
+    $a = $b[0];
+    # check single name
+    if (!($i = count($b) - 1))
+    {
+      return [
+        $t[0],"'".$a."',0,null",
+        $t[4],$t[5],$arg,$esc
+      ];
+    }
+    # multiple names
+    $b = array_slice($b, 1);
+    $c = "['".implode("','", $b)."']";
+    return [
+      $t[0],"'".$a."',".$i.','.$c,
+      $t[4],$t[5],$arg,$esc
+    ];
   }
   # }}}
   function _func(string $tpl, string $sep=''): int # {{{
@@ -512,138 +585,127 @@ class Mustache # {{{
     # compose pieces
     for ($x='',$i=0,$j=$size; $i < $j; ++$i)
     {
-      switch ($c = $tree[$i][0]) {
+      $node = $tree[$i];
+      switch ($node[0]) {
       case 20:# plaintext {{{
-        $a  = addcslashes($tree[$i][1], "'\\");
-        $x .= "'".$a."'";
+        $x .= $node[1];
         break;
         # }}}
       case 21:# variable {{{
-        $a = $tree[$i][1];
-        $k = $this->_path(
-          $a, $tree[$i][2], $ctx->typeSz, true
-        );
-        switch ($k) {
-        case 0:
-          $x .= '$x->av('.$a.')';
-          break;
-        case 1:
-          $ctx->typeMap[$ctx->typeSz++] = 0;
+        $a = $node[1].','.$ctx->typeSz.',';
+        if ($node[4] === '')
+        {
+          $a .= $node[5];
           $x .= '$x->v('.$a.')';
-          break;
-        case 2:
-          $ctx->typeMap[$ctx->typeSz++] = 7;
-          $x .= '$x->fv('.$a.')';
-          break;
         }
+        else
+        {
+          $a .= $node[4].','.$node[5];
+          $x .= '$x->fv('.$a.')';
+        }
+        $ctx->typeMap[$ctx->typeSz++] = 0;
         break;
         # }}}
-      default:# block {{{
+      case 121:# assisted variable {{{
+        $a  = $node[1].','.$node[5];
+        $x .= '$x->av('.$a.')';
+        break;
+        # }}}
+      default:# blocks {{{
         # prepare
-        $lst = $tree[$i][7];
-        $cnt = $tree[$i][8];
-        $s0 = 0;# FALSY section
-        $s1 = 0;# TRUTHY section
-        # collect sections
-        for ($a='',$n=0,$m=0; $m < $cnt; $m+=3)
+        $b = $node[6];
+        $c = count($b);
+        # construct primary section
+        $k = $this->_index($b[1], $b[2], $depth);
+        if ($b[0])
+        {
+          $i0 = 0;
+          $i1 = $k;
+        }
+        else
+        {
+          $i0 = $k;
+          $i1 = 0;
+        }
+        # construct secondary sections
+        for ($a='',$n=0,$m=3; $m < $c; $m+=3)
         {
           $k = $this->_index(
-            $lst[$m+1], $lst[$m+2], $depth
+            $b[$m+1], $b[$m+2], $depth
           );
-          if (is_string($lst[$m]))
+          if ($b[$m] !== '')
           {
-            $a .= ','.$lst[$m].','.$k;
+            $a .= ",'".addcslashes($b[$m], "'\\");
+            $a .= "',".$k;
             $n += 2;
           }
-          elseif ($lst[$m]) {
-            $s1 = $k;
+          elseif ($b[0]) {
+            $i0 = $k;
           }
           else {
-            $s0 = $k;
+            $i1 = $k;
           }
         }
-        # compose
-        $b = $tree[$i][1];
-        $k = $this->_path(
-          $b, $tree[$i][2], $ctx->typeSz, false
-        );
-        switch ($k) {
-        case 0:
-          # block that is based on assisted value
+        # compose assisted block
+        if ($node[0] >= 100)
+        {
           if ($n)
           {
-            $a  = $b.','.$s0.','.$s1.','.$n.$a;
+            $a  = $node[1].','.$i0.','.$i1.','.$n.$a;
             $x .= '$x->a23('.$a.')';
           }
           else
           {
-            $a  = $b.','.$s0.','.$s1;
+            $a  = $node[1].','.$i0.','.$i1;
             $x .= '$x->a01('.$a.')';
           }
           break;
-        case 1:
-          # standard block
+        }
+        # compose generic block
+        if ($node[4] === '')
+        {
+          $d =
+            $node[1].','.
+            $ctx->typeSz.','.
+            $i0.','.$i1;
+          ###
           $ctx->typeMap[$ctx->typeSz++] = 0;
-          if ($n)
-          {
-            # SWITCH
-            # static arguments:
-            #  0-4: name group
-            #  5-6: FALSY/TRUTHY sections
-            #  7: count of variadics (N)
-            # variadic arguments:
-            #  0-M: section condition (N-1)
-            #  1-N: section index (M+1)
-            ###
-            $a  = $b.','.$s0.','.$s1.','.$n.$a;
-            $x .= $c
-              ? '$x->b3('.$a.')'
-              : '$x->b2('.$a.')';
-          }
-          elseif ($c === 0)
-          {
-            # FALSY OR
-            $a  = $b.','.$s0.','.$s1;
-            $x .= '$x->b0('.$a.')';
-          }
-          elseif ($c === 1)
-          {
-            # TRUTHY OR
-            $a  = $b.','.$s0.','.$s1;
-            $x .= '$x->b1('.$a.')';
-          }
-          else
-          {
-            # ITERABLE
-            $a  = $b.','.$s0.','.$s1;
-            $x .= '$x->ba('.$a.')';
+          switch ($b[0]) {
+          case 0:# FALSY OR/SWITCH
+            $x .= $n
+              ? '$x->b2('.$d.','.$n.$a.')'
+              : '$x->b0('.$d.')';
+            break;
+          case 1:# TRUTHY OR/SWITCH
+            $x .= $n
+              ? '$x->b3('.$d.','.$n.$a.')'
+              : '$x->b1('.$d.')';
+            break;
+          case 2:# ITERABLE
+            $x .= '$x->ba('.$d.')';
+            break;
           }
           break;
-        case 2:
-          # lambda block
-          $ctx->typeMap[$ctx->typeSz++] = 7;
-          if ($n)
-          {
-            $a  = $b.','.$s0.','.$s1.','.$n.$a;
-            $x .= $c
-              ? '$x->f3('.$a.')'
-              : '$x->f2('.$a.')';
-          }
-          elseif ($c === 0)
-          {
-            $a  = $b.','.$s0.','.$s1;
-            $x .= '$x->f0('.$a.')';
-          }
-          elseif ($c === 1)
-          {
-            $a  = $b.','.$s0.','.$s1;
-            $x .= '$x->f1('.$a.')';
-          }
-          else
-          {
-            $a  = $b.','.$s0.','.$s1;
-            $x .= '$x->fa('.$a.')';
-          }
+        }
+        # compose lambda block
+        $d =
+          $node[1].','.$ctx->typeSz.','.
+          $node[4].','.$i0.','.$i1;
+        ###
+        $ctx->typeMap[$ctx->typeSz++] = 7;
+        switch ($b[0]) {
+        case 0:# FALSY LAMBDA OR/SWITCH
+          $x .= $n
+            ? '$x->f2('.$d.','.$n.$a.')'
+            : '$x->f0('.$d.')';
+          break;
+        case 1:# TRUTHY LAMBDA OR/SWITCH
+          $x .= $n
+            ? '$x->f3('.$d.','.$n.$a.')'
+            : '$x->f1('.$d.')';
+          break;
+        case 2:# ITERABLE LAMBDA
+          $x .= '$x->fa('.$d.')';
           break;
         }
         break;
@@ -676,84 +738,6 @@ class Mustache # {{{
     $this->func[$i] = eval($s);
     # complete
     return $i;
-  }
-  # }}}
-  function _path(# {{{
-    string &$name, string $args,
-    int $typeIdx, bool $isVar
-  ):int
-  {
-    # compose assisted name
-    while ($name[0] === '_')
-    {
-      # count backpedal
-      for ($i=1; $name[$i] === '_'; ++$i)
-      {}
-      # check not assisted
-      $a = substr($name, $i);
-      if (!isset(MustacheCtx::HELPVAR[$a])) {
-        break;
-      }
-      # complete
-      $name = "'".$a."',".$i;
-      return 0;
-    }
-    # compose standard name,
-    # check attached arguments
-    if ($args === '')
-    {
-      # value access: type
-      $a = ','.$typeIdx;
-      $k = 1;
-    }
-    else
-    {
-      # lambda invokation: type + arg
-      $a = addcslashes($args, "'\\");
-      $a = ','.$typeIdx.",'".$a."'";
-      $k = 2;
-    }
-    # check for variable
-    if ($isVar)
-    {
-      # check for special modifier
-      if ($name[0] === '&')
-      {
-        $name = substr($name, 1);
-        $b = $this->escape
-          ? ($this->unescape ? '0' : '1')
-          : '0';
-      }
-      else {
-        $b = $this->escape ? '1' : '0';
-      }
-      # add escape flag
-      $a .= ','.$b;
-    }
-    # check implicit iterator
-    if ($name === '.')
-    {
-      $name = "'',0,null".$a;
-      return $k;
-    }
-    # dot notation,
-    # extract the first name
-    $c = explode('.', $name);
-    $b = "'".$c[0]."'";
-    # check no more names
-    if (!($j = count($c) - 1))
-    {
-      $name = $b.',0,null'.$a;
-      return $k;
-    }
-    # collect the rest names
-    for ($d='',$i=1; $i < $j; ++$i) {
-      $d .= "'".$c[$i]."',";
-    }
-    # complete
-    $d = '['.$d."'".$c[$j]."']";
-    $name = $b.','.$j.','.$d.$a;
-    return $k;
   }
   # }}}
   # }}}
@@ -1973,18 +1957,16 @@ class MustacheCtx # data stack {{{
   # }}}
   # assisted {{{
   function a01(# FALSY/TRUTHY OR {{{
-    string $p, int $i, int $i0, int $i1
+    string $p, int $i, int $t,
+    int $i0, int $i1
   ):string
   {
-    if (($i = $this->helpSz - $i) < 0 ||
-        !isset($this->help[$i][$p]))
-    {
+    if (($i = $this->helpSz - $i) < 0) {
       return '';
     }
     $E = $this->base;
     $v = $this->help[$i][$p];
-    $j = self::HELPVAR[$p] ?: self::typeof($v);
-    switch ($j) {
+    switch ($t ?: self::typeof($v)) {
     case 1:
       return ($v === '')
         ? ($i0 ? $E->func[$i0]($this) : '')
@@ -1997,21 +1979,18 @@ class MustacheCtx # data stack {{{
   }
   # }}}
   function a23(# FALSY/TRUTHY SWITCH {{{
-    string $p, int $i,
+    string $p, int $i, int $t,
     int $i0, int $i1, int $in, ...$a
   ):string
   {
     # prepare
-    if (($i = $this->helpSz - $i) < 0 ||
-        !isset($this->help[$i][$p]))
-    {
+    if (($i = $this->helpSz - $i) < 0) {
       return '';
     }
     $E = $this->base;
     $v = $this->help[$i][$p];
-    $j = self::HELPVAR[$p] ?: self::typeof($v);
-    # render falsy or simplified
-    switch ($j) {
+    # render falsy/simplified
+    switch ($t ?: self::typeof($v)) {
     case 1:
       if ($v === '') {
         return $i0 ? $E->func[$i0]($this) : '';
@@ -2041,18 +2020,18 @@ class MustacheCtx # data stack {{{
   }
   # }}}
   function av(# VARIABLE {{{
-    string $p, int $i
+    string $p, int $i, int $t, int $escape
   ):string
   {
-    if (($i = $this->helpSz - $i) < 0 ||
-        !isset($this->help[$i][$p]))
-    {
+    if (($i = $this->helpSz - $i) < 0) {
       return '';
     }
     $v = $this->help[$i][$p];
-    $j = self::HELPVAR[$p] ?: self::typeof($v);
-    switch ($j) {
+    switch ($t ?: self::typeof($v)) {
     case 1:
+      if ($escape && !$t) {
+        return ($this->base->escape)($v);
+      }
       return $v;
     case 2:
       return strval($v);

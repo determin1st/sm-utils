@@ -442,6 +442,22 @@ $b = [
   }),
 ];
 # }}}
+# render! {{{
+try
+{
+  $c = $m->prepare($a, $b);
+  #$c = $m->render($a, $b);
+  echo "===============================\n";
+  #var_dump($a);
+  #var_dump($b);
+  echo $c;
+  #var_dump($m->code);
+}
+catch (Throwable $e) {
+  var_dump($e);
+}
+exit;
+# }}}
 # lambda iterator {{{
 $a = $m->outdent('
 
@@ -502,22 +518,6 @@ $b['iterate'] = (function ($m,$a) use ($b) {
   return $x;
 });
 /***/
-# }}}
-# render! {{{
-try
-{
-  $c = $m->prepare($a, $b);
-  #$c = $m->render($a, $b);
-  echo "===============================\n";
-  #var_dump($a);
-  #var_dump($b);
-  echo $c;
-  #var_dump($m->code);
-}
-catch (Throwable $e) {
-  var_dump($e);
-}
-exit;
 # }}}
 ### JUNKYARD
 # ? {{{
