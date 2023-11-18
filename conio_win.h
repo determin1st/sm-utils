@@ -61,6 +61,8 @@ scope already handles thread isolation.
 
 //char *_cgets(char *buffer);
 //wchar_t *_cgetws(wchar_t *buffer);
+//char *_cgets(char*);
+//char *_cgetws(char*);
 /*
 Return value
 _cgets and _cgetws return a pointer to the start
@@ -91,6 +93,34 @@ repeats the last entered entry.
 By default, this function's global state is scoped to the application.
 To change this behavior, see Global state in the CRT.
 */
+
+
+//int _cputs(const char *str);
+//int _cputws(const wchar_t *str);
+int _cputs(char*);
+int _cputws(char*);
+/*
+Return value
+If successful, _cputs returns 0.
+If the function fails, it returns a nonzero value.
+
+Remarks
+The _cputs function writes the null-terminated
+string that's pointed to by str directly to the console.
+A carriage return-line feed (CR-LF) combination
+isn't automatically appended to the string.
+
+This function validates its parameter.
+If str is NULL, the invalid parameter handler
+is invoked, as described in Parameter validation.
+If execution is allowed to continue,
+errno is set to EINVAL, and -1 is returned.
+
+By default, this function's global state
+is scoped to the application.
+To change this behavior, see Global state in the CRT.
+*/
+
 
 //define _IOFBF 0 /* Fully buffered  */
 //define _IOLBF 1 /* Line buffered   */

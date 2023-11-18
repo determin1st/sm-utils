@@ -1,11 +1,11 @@
 @echo off
 set FILE="speed.php"
 ::goto ALL
-goto ONLY
+::goto ONLY
 
 :TOP
-php -f %FILE% 4 %1
-php -f %FILE% 1 %1
+php -f %FILE% 2 %1
+php -f %FILE% 3 %1
 node speed.js 0 %1
 node speed.js 3 %1
 goto END

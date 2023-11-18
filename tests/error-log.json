@@ -1,0 +1,218 @@
+[
+    {
+        "level": 0,
+        "msg": [
+            "A major change was made by the first Emperor,\nAugustus (27 BC — 14 AD), who reformed revenue\ncollection, bringing large parts of Rome’s empire\nunder consistent direct taxation instead of asking\nfor intermittent tributes. Taxation was determined\nby population census and private tax farming\nwas abolished in favor for civil service tax collectors.\nThis made provincial administration far more tolerable,\ndecreased corruption and oppression and\nincreased revenues."
+        ],
+        "span": 123456,
+        "time": 1700073135,
+        "logs": []
+    },
+    {
+        "level": 2,
+        "msg": [
+            "Slavery burden",
+            "\nWhile it is true that the Roman Empire wasn’t as heavily\nbureaucratized as the Han Dynasty of Imperial China,\nthe Roman Empire did have a bureaucracy even in this early\nimperial period that tends to be underestimated; the officials,\nas stated above, had a large number of slaves who worked\ninformally in administrative jobs."
+        ],
+        "span": 123456,
+        "time": 1700073135,
+        "logs": []
+    },
+    {
+        "level": 0,
+        "msg": [
+            "history",
+            "city-states",
+            "confederation\nRome has been called by some historians a confederation\nof city-states and that is true as the Roman state\npreferred on a local level to delegate tasks to city-states\nand in provinces that did not have such traditions,\nRome brought them into being as far as it could.\nCity authorities had to maintain order and extract revenue\nnot only for the city itself but also from the countryside\nthat was allocated to that city and where\nthe majority of the population lived."
+        ],
+        "span": 123456,
+        "time": 1700073135,
+        "logs": []
+    },
+    {
+        "level": 2,
+        "msg": [
+            "Empire",
+            "problems",
+            "Tax burden",
+            "\nUnder Diocletian and Constantine in the late third and\nearly fourth centuries, the Roman Empire underwent an even\ngreater bureaucratization in order to deal with the threat\nof external enemies and internal instability.\nThe Empire was to be ruled by two Emperors, one in the West\nand one in the East, who could respond faster to internal\nand external threats. In order to maintain a large army\nto defend the Empire from the ‘barbarian’ threat,\nmore taxes were needed."
+        ],
+        "span": 123456,
+        "time": 1700073135,
+        "logs": []
+    },
+    {
+        "level": 0,
+        "msg": [
+            "one"
+        ],
+        "span": 123456,
+        "time": 1700073135,
+        "logs": []
+    },
+    {
+        "level": 0,
+        "msg": [
+            "one",
+            "two"
+        ],
+        "span": 123456,
+        "time": 1700073135,
+        "logs": []
+    },
+    {
+        "level": 0,
+        "msg": [
+            "one",
+            "two",
+            "three"
+        ],
+        "span": 123456,
+        "time": 1700073135,
+        "logs": []
+    },
+    {
+        "level": 2,
+        "msg": [
+            "go",
+            "deeper"
+        ],
+        "span": 123456,
+        "time": 1700073135,
+        "logs": [
+            {
+                "level": 2,
+                "msg": [
+                    "one"
+                ]
+            },
+            {
+                "level": 0,
+                "msg": [
+                    "one",
+                    "two"
+                ]
+            },
+            {
+                "level": 0,
+                "msg": [
+                    "one",
+                    "two",
+                    "three"
+                ]
+            },
+            {
+                "level": 0,
+                "msg": [
+                    "one",
+                    "two",
+                    "three",
+                    "four"
+                ]
+            },
+            {
+                "level": 0,
+                "msg": [
+                    "one",
+                    "two",
+                    "three",
+                    "four",
+                    "five"
+                ]
+            },
+            {
+                "level": 0,
+                "msg": [
+                    "one two three"
+                ],
+                "logs": [
+                    {
+                        "level": 1,
+                        "msg": [
+                            "one",
+                            "two",
+                            "three",
+                            "four",
+                            "five\nthe bunny went for a walk\nsuddenly, the hunter runs out and.."
+                        ],
+                        "logs": [
+                            {
+                                "level": 1,
+                                "msg": [
+                                    "..shots stright away!\noh my, oh my"
+                                ],
+                                "logs": [
+                                    {
+                                        "level": 1,
+                                        "msg": [
+                                            "message 1\nmessage 2\nmessage 3"
+                                        ]
+                                    },
+                                    {
+                                        "level": 1,
+                                        "msg": [
+                                            "bunny is dead"
+                                        ]
+                                    },
+                                    {
+                                        "level": 1,
+                                        "msg": [
+                                            "bunny\nis dead"
+                                        ]
+                                    },
+                                    {
+                                        "level": 1,
+                                        "msg": [
+                                            "bunny",
+                                            "is\ndead"
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "level": 0,
+                                "msg": [
+                                    "everything is fine"
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "level": 0,
+                        "msg": [
+                            "one",
+                            "two",
+                            "three",
+                            "four",
+                            "five"
+                        ]
+                    },
+                    {
+                        "level": 0,
+                        "msg": [
+                            "one",
+                            "two",
+                            "three",
+                            "four"
+                        ]
+                    },
+                    {
+                        "level": 0,
+                        "msg": [
+                            "one",
+                            "two",
+                            "three"
+                        ]
+                    },
+                    {
+                        "level": 0,
+                        "msg": [
+                            "one",
+                            "two"
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+]

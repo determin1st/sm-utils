@@ -95,22 +95,23 @@ while (1)
       ->failFuse(function($f) {
         $r = $f->result;
         $r->warn('something bad happened but im going to fix it all!');
-        $r->info(
-          "today we'll discuss a new concept of mankurtism,\n".
-          "it is very common in asian countries which were\n".
-          "influenced by the soviet union."
-        );
         $r->info('yes','yes','well done!!!');
-        $r->confirm('this','title','is','fixed');
+        $r->info(# 1
+          'this','title','is','oneliner'
+        );
+        $r->confirm('the test of promise result','complete');
       })
       ->okay(function($f) {
         $f->result->info('this message never appears');
       })
     );
-    #var_dump($r);
-    #var_dump($r->log());
-    echo "\n".ErrorLog::from($r);
+    /***/
     echo "\n";
+    #echo "\n================\n";
+    $r = $r->log();
+    #var_dump($r);
+    echo ErrorLog::render($r, true);
+    #echo "================\n";
     break;
   # }}}
   default:# {{{

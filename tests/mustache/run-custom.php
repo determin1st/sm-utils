@@ -94,9 +94,9 @@ $a = $m->outdent('
 
     #5: integer zero{{TAB}}
     {{#integer 0}}
-      ok (first section + helper={{.}})
-    {{|}}
       fail
+    {{|}}
+      ok (second section, not a helper!)
     {{/integer}}
     {{BR}}
 
@@ -508,7 +508,7 @@ $b['iterate'] = (function ($m,$a) use ($b) {
   $last = count($list) - 1;
   $help = ['last' => ($last === 0)];
   # add helper
-  $m->helper($help);
+  $m->push($help);
   # compose
   for ($x='',$i=0; $i <= $last; ++$i)
   {
@@ -519,11 +519,44 @@ $b['iterate'] = (function ($m,$a) use ($b) {
 });
 /***/
 # }}}
+# path: dot selector {{{
+$a = $m->outdent('
+
+  [0]: {{fruit}}{{BR}}
+  [1]: {{.fruit}}{{BR}}
+  [2]: {{..fruit}}{{BR}}
+  [3]: {{...fruit.name}}{{BR}}
+  [4]: {{....fruit}}{{BR}}
+  [5]: {{get fruit}}{{BR}}
+  [6]: {{get .fruit}}{{BR}}
+  [7]: {{get ..fruit}}{{BR}}
+  [8]: {{get ...fruit.name}}{{BR}}
+
+');
+$h1 = ['fruit' => ['name' => 'banana']];
+$h2 = ['fruit' => 'orange'];
+$b  = [
+  'fruit' => 'apple',
+  'get'   => (function($m,$a) {
+    return $m->value($a);
+  }),
+];
+$m->push($h1)->push($h2);
+/***/
+# }}}
 ### JUNKYARD
 # ? {{{
 $a = $m->outdent('
 
-
+  {{^lambda}}
+    primary
+  {{|}}
+    secondary
+  {{|1}}
+    one
+  {{|2}}
+    two
+  {{/}}
 
 ');
 /***
@@ -534,12 +567,14 @@ $b = $m->_parse($a, $b);
 exit;
 /***/
 $b = [
+  'num'=>3,
   'people' => [
     ['name'=>'Joe','age'=>80],
     ['name'=>'Bill','age'=>67],
     ['name'=>'Donald','age'=>77],
   ],
   'lambda' => (static function($m,$a) {
+    var_dump($m->text());
     return 123;
     return true;
     #return $m->prepare($m->text());

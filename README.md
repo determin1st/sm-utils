@@ -1,38 +1,43 @@
-# sm-utils
+# state machine utilities
 
 <details>
 <summary>mustache</summary>
 
-### about
-mustache is an **eval**uator of [mustache templates](https://mustache.github.io/)
-(which was reduced from this [prototype](https://github.com/bobthecow/mustache.php))
+## about
+`SM\Mustache` is an **eval**uator of
+[mustache templates](https://mustache.github.io/)
+written in [PHP](https://www.php.net/)
+and compatible with
+[mustache specification](https://github.com/mustache/spec)
+in reasonable parts.
+it is reduced from [initial prototype](https://github.com/bobthecow/mustache.php)
+to meet personal preferences of its glourious author.
+
+### history origins
+https://writing.jan.io/2013/11/01/the-parable-of-mustache-js.html
+https://writing.jan.io/mustache-2.0.html
+
 ### performance
-this implementation (running in JIT mode) is comparable to JS implementation of
-[mustache.js](https://github.com/janl/mustache.js)
-(later has one [issue](https://github.com/janl/mustache.js/issues/65))
-### spec
-<https://github.com/mustache/spec>
-deviations are:
-- no `<` template parent (inheritance)
-- no `>` template partials (inheritance)
-- no `=` delimiter alternation, rendering with custom delimiters is possible
-  but rendered template will not be cached, assuming preparation steps.
-- no escaping by default, escape function or flag must be specified explicitly.
-- no `{{{tripple stashes}}}`, this mode is set explicitly with `&` variable tag.
-- template recursions are disabled by default.
-### syntax
-<details>
-<summary>delimiters</summary>
+this implementation, running in JIT mode,
+is comparable to various JS implementations
+![perf](https://raw.githack.com/determin1st/sm-utils/main/mm/mustache-perf.jpg)
 
-A pair of markers around text, for example `{{` and `}}`
-are common (and default) in mustache templates, they also look like mustaches.
+## syntax
+### delimiters
 
-There is the left and the right delimiter, they should differ from each other
-and be at least 2 characters long.
+A pair of markers, like `{{` and `}}` (the default),
+used to point mustache syntax in the template.
 
-The choice of base delimiter depends on context, for example, in HTML
-it may be reasonable to use `<!--` and `-->` which constitute a comment.
-</details>
+Left and right delimiter **must** differ.
+They dont have to mirror each other or be of equal size.
+
+examples:
+- `{:` and `:}`
+- `[` and `]`
+- `<!--` and `-->`
+- `(((` and `)))`
+- `<?` and `?>`
+
 <details>
 <summary>variables</summary>
 

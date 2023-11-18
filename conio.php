@@ -4,21 +4,19 @@ namespace SM;
 use FFI,Throwable;
 use function
   class_exists,function_exists,file_exists,
-  class_alias,chr,ord,mb_chr,mb_ord,strlen,strval;
+  class_alias,chr,ord,mb_chr,mb_ord,
+  strlen,strval,substr,strpos;
 use const
   PHP_OS_FAMILY,DIRECTORY_SEPARATOR;
 ###
 require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
-###
-return (PHP_OS_FAMILY === 'Windows')
-  ? (ConioWin::init() && class_alias('\SM\ConioWin', '\SM\Conio', false))
-  : false;
 # }}}
 abstract class ConioBase
 {
   # common {{{
   static ?object $ERROR=null;
   static string  $LAST_CHAR='';
+  static int     $IS_ANSI=-1;
   protected static $con,$ready=false;
   protected function __construct() {}
   abstract static function check(): bool;
@@ -27,6 +25,7 @@ abstract class ConioBase
   abstract static function getch(): string;
   abstract static function getch_wait(): string;
   abstract static function putch(string $c): bool;
+  abstract static function is_ansi(): bool;
   # }}}
   # hlp {{{
   static function is_keycode(string $c): bool # {{{
@@ -111,7 +110,10 @@ class ConioWin extends ConioBase
       self::$ERROR = ErrorEx::from($e);
       self::$con   = null;
     }
-    return !!self::$con;
+    return self::$con && class_alias(
+      '\SM\ConioWin',
+      '\SM\Conio', false
+    );
   }
   # }}}
   static function kbhit(): bool # {{{
@@ -159,5 +161,65 @@ class ConioWin extends ConioBase
     }
   }
   # }}}
+  static function is_ansi(): bool # {{{
+  {
+    try
+    {
+      # check cache
+      switch (self::$IS_ANSI) {
+      case 0:
+        return false;
+      case 1:
+        return true;
+      }
+      # detect ANSI console
+      # https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+      ###
+      # flush current input
+      while (self::getch() !== '')
+      {}
+      # request cursor position
+      if (self::$con->_cputs("\033[6n"))
+      {
+        # TODO: set ERROR
+        return false;
+      }
+      # check no reply
+      usleep(1);
+      if (!self::$con->_kbhit())
+      {
+        self::$con->_cputs("\r\t\r");# erase garbage
+        self::$IS_ANSI = 0;
+        return false;
+      }
+      # read the reply
+      $r = '';
+      do {
+        $r .= self::getch_wait();
+      }
+      while (self::$con->_kbhit());
+      # match the reply as ESC[#;#R
+      if (($i = strlen($r)) < 6 ||
+          substr($r, 0, 2) !== "\033[" ||
+          ($i = strpos($r, ';', 2)) === false ||
+          strpos($r, 'R', $i) === false)
+      {
+        self::$con->_cputs("\r\t\r");# erase garbage
+        self::$IS_ANSI = 0;
+        return false;
+      }
+      self::$IS_ANSI = 1;
+      return true;
+    }
+    catch (Throwable $e)
+    {
+      self::$ERROR = ErrorEx::from($e);
+      return false;
+    }
+  }
+  # }}}
 }
-
+return (PHP_OS_FAMILY === 'Windows')
+  ? ConioWin::init()
+  : false;
+###
