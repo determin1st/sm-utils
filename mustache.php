@@ -393,7 +393,7 @@ class Mustache # {{{
         block_complete:
           if (($a[0] === 2) &&
               (($n = count($node[6])) > 6 ||
-               ($n > 3 && $node[6][3] !== '')))
+               ($n > 3 && $node[6][3] !== '|')))
           {
             throw new Exception(
               'iterable block '.

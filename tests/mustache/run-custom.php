@@ -536,6 +536,7 @@ $a = $m->outdent('
 $h1 = ['fruit' => ['name' => 'banana']];
 $h2 = ['fruit' => 'orange'];
 $b  = [
+  '#test' => 'ok',
   'fruit' => 'apple',
   'get'   => (function($m,$a) {
     return $m->value($a);

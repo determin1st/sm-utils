@@ -4,7 +4,10 @@
 <summary>mustache</summary>
 
 ## about
-`SM\Mustache` is an **eval**uator of
+`SM\Mustache` is
+a [template processor](https://en.wikipedia.org/wiki/Template_processor)
+and **eval**uator (it uses `eval` function
+to generate executable code) of
 [mustache templates](https://mustache.github.io/)
 written in [PHP](https://www.php.net/)
 and compatible with
@@ -13,30 +16,80 @@ in reasonable parts.
 it is reduced from [initial prototype](https://github.com/bobthecow/mustache.php)
 to meet personal preferences of its glourious author.
 
-### history origins
-https://writing.jan.io/2013/11/01/the-parable-of-mustache-js.html
-https://writing.jan.io/mustache-2.0.html
+### history
+- [the-parable-of-mustache-js](https://writing.jan.io/2013/11/01/the-parable-of-mustache-js.html)
+- [mustache-2.0](https://writing.jan.io/mustache-2.0.html)
 
 ### performance
-this implementation, running in JIT mode,
+this implementation, running in
+[JIT mode](https://php.watch/versions/8.0/JIT),
 is comparable to various JS implementations
 ![perf](https://raw.githack.com/determin1st/sm-utils/main/mm/mustache-perf.jpg)
 
 ## syntax
 ### delimiters
+a pair of markers - `{{` and `}}` (the default, which look like
+[moustache](https://en.wikipedia.org/wiki/Moustache)) are
+used to point a
+[clause](https://en.wikipedia.org/wiki/Clause)
+in the
+[template](https://en.wikipedia.org/wiki/Template_(word_processing)).
+delimiters **must** differ, but they dont have to
+mirror each other or be of equal length.
+Single letter delimiter is also valid.
 
-A pair of markers, like `{{` and `}}` (the default),
-used to point mustache syntax in the template.
+delimiters are set once for the
+[instance](https://en.wikipedia.org/wiki/Instance_(computer_science)):
+```php
+$m = SM\Mustache::new(['delims' => '<% %>']);
+```
+or, arbitrarily, with preparational methods:
+```php
+$txt = $m->prepare($template, $data, '[[ ]]');
+$id  = $m->prep($template, '{: :}');;
+```
 
-Left and right delimiter **must** differ.
-They dont have to mirror each other or be of equal size.
+### clauses
+![clause](https://raw.githack.com/determin1st/sm-utils/main/mm/mustache-clause.jpg)
+there are two major kinds of clauses in mustache -
+a **variable** (independent) and a **block** (dependent).
+both are to be associated with particular
+[value](https://en.wikipedia.org/wiki/Value_(computer_science))
+in **the context stack** using **the path**
 
-examples:
-- `{:` and `:}`
-- `[` and `]`
-- `<!--` and `-->`
-- `(((` and `)))`
-- `<?` and `?>`
+### the context stack
+a place inside the mustache instance where all the data sits.
+internally it represents a
+[stack](https://en.wikipedia.org/wiki/Stack_(abstract_data_type)).
+any [composite data](https://en.wikipedia.org/wiki/Composite_data_type)
+(an [array](https://www.php.net/manual/en/language.types.array.php)
+or an [object](https://www.php.net/manual/en/language.oop5.php)
+) pushed to the context stack prior to template processing
+is called **a helper** or a helper data or
+a data that helps in rendering.
+
+helpers may be set at instantiation:
+```php
+$m = SM\Mustache::new([# push one
+  'helper' => $helper1
+]);
+$m = SM\Mustache::new([# push many
+  'helpers' => [$helper1, $helper2, $helper3]
+]);
+```
+or afterwards:
+```php
+$m->push($helper1);
+$m->push($helper2)->push($helper3);
+```
+they can be removed with:
+```php
+$m->pull();# removes $helper3
+$m->pull(true);# removes all
+```
+
+### the path
+
 
 <details>
 <summary>variables</summary>
