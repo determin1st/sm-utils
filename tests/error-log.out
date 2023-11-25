@@ -1,0 +1,89 @@
+þ2023/11/15 23:32:15 PASS
+³Ö
+À¶ A major change was made by the first Emperor,
+ º Augustus (27 BC ? 14 AD), who reformed revenue
+ º collection, bringing large parts of Rome?s empire
+ º under consistent direct taxation instead of asking
+ º for intermittent tributes. Taxation was determined
+ º by population census and private tax farming
+ º was abolished in favor for civil service tax collectors.
+ º This made provincial administration far more tolerable,
+ º decreased corruption and oppression and
+ º increased revenues.
+ Ó ~123úus
+þ2023/11/15 23:32:15 FAIL
+³Ö
+À¶ Slavery burden
+ º While it is true that the Roman Empire wasn?t as heavily
+ º bureaucratized as the Han Dynasty of Imperial China,
+ º the Roman Empire did have a bureaucracy even in this early
+ º imperial period that tends to be underestimated; the officials,
+ º as stated above, had a large number of slaves who worked
+ º informally in administrative jobs.
+ Ó ~123úus
+þ2023/11/15 23:32:15 PASS: history > city-states > confederation ~123úus
+³Ö
+À¶ Rome has been called by some historians a confederation
+ º of city-states and that is true as the Roman state
+ º preferred on a local level to delegate tasks to city-states
+ º and in provinces that did not have such traditions,
+ º Rome brought them into being as far as it could.
+ º City authorities had to maintain order and extract revenue
+ º not only for the city itself but also from the countryside
+ º that was allocated to that city and where
+ º the majority of the population lived.
+ Ó
+þ2023/11/15 23:32:15 FAIL: Empire > problems ~123úus
+³Ö
+À¶ Tax burden
+ º Under Diocletian and Constantine in the late third and
+ º early fourth centuries, the Roman Empire underwent an even
+ º greater bureaucratization in order to deal with the threat
+ º of external enemies and internal instability.
+ º The Empire was to be ruled by two Emperors, one in the West
+ º and one in the East, who could respond faster to internal
+ º and external threats. In order to maintain a large army
+ º to defend the Empire from the ?barbarian? threat,
+ º more taxes were needed.
+ Ó
+þ2023/11/15 23:32:15 PASS: one ~123úus
+þ2023/11/15 23:32:15 PASS: one > two ~123úus
+þ2023/11/15 23:32:15 PASS: one > two > three ~123úus
+þ2023/11/15 23:32:15 FAIL: go > deeper ~123úus
+Ã>ERROR: one
+Ã>INFO: one > two
+Ã>INFO: oneútwo > three
+Ã>INFO: oneútwoúthree > four
+Ã>INFO: oneútwoúthreeúfour > five
+À>INFO: one two three
+ Ã>WARNING: oneútwoúthreeúfour > five
+ ³³Ö
+ ³Ã¶ the bunny went for a walk
+ ³³º suddenly, the hunter runs out and..
+ ³³Ó
+ ³Ã>WARNING
+ ³³³Ö
+ ³³Ã¶ ..shots stright away!
+ ³³³º oh my, oh my
+ ³³³Ó
+ ³³Ã>WARNING
+ ³³³³Ö
+ ³³³À¶ message 1
+ ³³³ º message 2
+ ³³³ º message 3
+ ³³³ Ó
+ ³³Ã>WARNING: bunny is dead
+ ³³Ã>WARNING
+ ³³³³Ö
+ ³³³À¶ bunny
+ ³³³ º is dead
+ ³³³ Ó
+ ³³À>WARNING: bunny > is
+ ³³ ³Ö
+ ³³ À¶ dead
+ ³³  Ó
+ ³À>INFO: everything is fine
+ Ã>INFO: oneútwoúthreeúfour > five
+ Ã>INFO: oneútwoúthree > four
+ Ã>INFO: oneútwo > three
+ À>INFO: one > two

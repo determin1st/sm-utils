@@ -5,12 +5,14 @@ use
   Error,Throwable;
 use function
   class_alias,set_error_handler,func_num_args,
-  implode,count,array_reverse,array_pop,array_is_list,
-  array_slice,is_string,strval,strpos,strrpos,substr;
+  implode,count,array_reverse,array_pop,
+  array_is_list,array_slice,intval,strval,
+  is_string,str_repeat,strpos,strrpos,substr;
 use const
   DIRECTORY_SEPARATOR;
 ###
-require_once __DIR__.DIRECTORY_SEPARATOR.'mustache.php';
+require_once
+  __DIR__.DIRECTORY_SEPARATOR.'mustache.php';
 # }}}
 interface Loggable # {{{
 {
@@ -22,763 +24,6 @@ interface Loggable # {{{
   # logs  => [..]
   ###
   function log(): array;
-}
-# }}}
-class ErrorLog implements Mustachable # {{{
-{
-  const TEXT_TEMPLATE=[# {{{
-    'root' => # {{{
-    '
-
-      {{#assign level-color}}
-        {{^level}}PASS
-        {{|     }}FAIL
-        {{/}}
-      {{/}}
-      {{#assign spacer-1}}
-        {{^type}} ► {{|}} ◄ {{/}}
-      {{/}}
-      {{#assign spacer-2}}
-        {{spacer-1}}
-      {{/}}
-
-      ♦{{level-color}}:{:SP:}
-      {{^logs-cnt}}
-        {{insert message-only}}
-      {{|}}
-        {{insert message}}{:BR:}
-        {{insert logs}}
-      {{/}}
-      {:BR:}
-
-    ',
-    # }}}
-    'message-only' => # {{{
-    '
-
-      {{^msg-type}}
-      {{|1}}
-        {{insert msg-path}}
-        {{insert span}}
-      {{|2|3}}
-        {:!
-          *...
-          │╓
-          └╢
-           ║
-           ╙
-        :}
-        {{insert msg-path}}
-        {{insert span}}
-        {:BR:}
-        │╓{:BR:}
-        └╢
-        {{#msg-title}}
-          {:SP:}{{.}}{:BR:}
-          {:SP:}║
-        {{/}}
-        {{@msg-block}}
-          {{^_first}}
-            {:SP:}║
-          {{/}}
-          {:SP:}{{.}}{:BR:}
-        {{/}}
-        {:SP:}╙
-      {{/}}
-
-    ',
-    # }}}
-    'message' => # {{{
-    '
-
-      {{^msg-type}}
-      {{|1}}
-        {{insert msg-path}}
-        {{insert span}}
-      {{|2|3}}
-        {:!
-          *...
-          │╓
-          ├╢
-          │║
-          │╙
-        :}
-        {{insert msg-path}}
-        {{insert span}}{:BR:}
-        │╓{:BR:}
-        ├╢
-        {{#msg-title}}
-          {:SP:}{{.}}{:BR:}
-          │║
-        {{/}}
-        {{@msg-block}}
-          {{^_first}}
-            │║
-          {{/}}
-          {:SP:}{{.}}{:BR:}
-        {{/}}
-        │╙
-      {{/}}
-
-    ',
-    # }}}
-    'msg-path' => # {{{
-    '
-
-      {{@msg-path}}
-        {{^_first}}
-          {{^_last}}
-            {{spacer-1}}
-          {{|}}
-            {{spacer-2}}
-          {{/}}
-        {{/}}
-        {{.}}
-      {{/}}
-
-    ',
-    # }}}
-    'span' => # {{{
-    '
-
-      {:SP:}{:SP:}
-      ~{{time}}·{{unit}}
-
-    ',
-    # }}}
-    'logs' => # {{{
-    '
-
-      {{#assign spacer-1}}
-        ·
-      {{/}}
-      {{@logs}}
-        {{^_last}}
-          {{@slice item}}
-            {{#_first}}├{{|}}│{{/}}
-            {{.}}{:BR:}
-          {{/}}
-        {{|}}
-          {{@slice item}}
-            {{#_first}}
-              └
-            {{|}}
-              {:SP:}
-            {{/}}
-            {{.}}
-            {{^_last}}{:BR:}{{/}}
-          {{/}}
-        {{/}}
-      {{/}}
-
-    ',
-    # }}}
-    'item' => # {{{
-    '
-
-      {{#assign level-color}}
-        {{^level}}INFO
-        {{|1    }}WARNING
-        {{|2    }}ERROR
-        {{/}}
-      {{/}}
-      {{#assign spacer-2}}
-        {{^type}} ► {{|}} ◄ {{/}}
-      {{/}}
-
-      {{^msg-type}}
-        ●{{level-color}}
-        {{^logs-cnt}}{{|}}
-          {{insert logs}}
-        {{/}}
-      {{|}}
-        ▪{{level-color}}{:SP:}
-        {{^logs-cnt}}
-          {{insert message-only}}
-        {{|}}
-          {{insert message}}{:BR:}
-          {{insert logs}}
-        {{/}}
-      {{/}}
-
-    ',
-    # }}}
-  ];
-  # }}}
-  const TEXT_CHARS=[# {{{
-    'BR'   => "\n",
-    'NBSP' => "\xC2\xA0",
-    'SP'   => ' ',
-  ];
-  # }}}
-  const ANSI_TEMPLATE=[# {{{
-    'root' => # {{{
-    '
-
-      {{#assign level-color}}
-        {{^level}}{:green:}
-        {{|     }}{:red:}
-        {{/}}
-      {{/}}
-      {{#assign level-bright-color}}
-        {{^level}}{:green-bright:}
-        {{|     }}{:red-bright:}
-        {{/}}
-      {{/}}
-      {{#assign spacer-1}}
-        {{^type}} ► {{|}} ◄ {{/}}
-      {{/}}
-      {{#assign spacer-2}}
-        {{spacer-1}}
-      {{/}}
-
-      {:! ♦◆ :}
-      {{level-bright-color}}♦{:end-color:}
-      {{^logs-cnt}}
-        {{insert message-only}}
-      {{|}}
-        {{insert message}}{:BR:}
-        {{insert logs}}
-      {{/}}
-      {:BR:}
-
-    ',
-    # }}}
-    'message-only' => # {{{
-    '
-
-      {{^msg-type}}
-      {{|1}}
-        {{insert msg-path}}
-        {{insert span}}
-      {{|2}}
-        {:!
-          *╓
-          └╢
-           ║
-           ╙
-        :}
-        {{level-color}}╓{:end-color:}
-        {:BR:}
-        {{level-bright-color}}└{:end-color:}
-        {{level-color}}╢{:end-color:}
-        {{#msg-title}}
-          {:SP:}
-          {:underline:}{{.}}{:end-underline:}
-          {:BR:}{:SP:}
-          {{level-color}}║{:end-color:}
-        {{/}}
-        {{@msg-block}}
-          {{^_first}}
-            {:SP:}
-            {{level-color}}║{:end-color:}
-          {{/}}
-          {:SP:}{{.}}{:BR:}
-        {{/}}
-        {:SP:}
-        {{level-color}}╙{:end-color:}
-        {{insert span}}
-      {{|3}}
-        {:!
-          *...
-          │╓
-          └╢
-           ║
-           ╙
-        :}
-        {{insert msg-path}}
-        {{insert span}}
-        {:BR:}
-        {{level-bright-color}}│{:end-color:}
-        {{level-color}}╓{:end-color:}
-        {:BR:}
-        {{level-bright-color}}└{:end-color:}
-        {{level-color}}╢{:end-color:}
-        {{#msg-title}}
-          {:SP:}
-          {:underline:}{{.}}{:end-underline:}
-          {:BR:}{:SP:}
-          {{level-color}}║{:end-color:}
-        {{/}}
-        {{@msg-block}}
-          {{^_first}}
-            {:SP:}
-            {{level-color}}║{:end-color:}
-          {{/}}
-          {:SP:}{{.}}{:BR:}
-        {{/}}
-        {:SP:}
-        {{level-color}}╙{:end-color:}
-      {{/}}
-
-    ',
-    # }}}
-    'message' => # {{{
-    '
-
-      {{^msg-type}}
-      {{|1}}
-        {{insert msg-path}}
-        {{insert span}}
-      {{|2}}
-        {:!
-          *╓
-          ├╢
-          │║
-          │╙
-          ╰
-        :}
-        {{level-color}}╓{:end-color:}
-        {:BR:}
-        {{level-bright-color}}├{:end-color:}
-        {{level-color}}╢{:end-color:}
-        {{#msg-title}}
-          {:SP:}
-          {:underline:}{{.}}{:end-underline:}
-          {:BR:}
-          {{level-bright-color}}│{:end-color:}
-          {{level-color}}║{:end-color:}
-        {{/}}
-        {{@msg-block}}
-          {{^_first}}
-            {{level-bright-color}}│{:end-color:}
-            {{level-color}}║{:end-color:}
-          {{/}}
-          {:SP:}{{.}}
-          {:BR:}
-        {{/}}
-        {{level-bright-color}}│{:end-color:}
-        {{level-color}}╙{:end-color:}
-        {{insert span}}
-      {{|3}}
-        {:!
-          *...
-          │╓
-          ├╢
-          │║
-          │╙
-        :}
-        {{insert msg-path}}
-        {{insert span}}
-        {:BR:}
-        {{level-bright-color}}│{:end-color:}
-        {{level-color}}╓{:end-color:}
-        {:BR:}
-        {{level-bright-color}}├{:end-color:}
-        {{level-color}}╢{:end-color:}
-        {{#msg-title}}
-          {:SP:}
-          {:underline:}{{.}}{:end-underline:}
-          {:BR:}
-          {{level-bright-color}}│{:end-color:}
-          {{level-color}}║{:end-color:}
-        {{/}}
-        {{@msg-block}}
-          {{^_first}}
-            {{level-bright-color}}│{:end-color:}
-            {{level-color}}║{:end-color:}
-          {{/}}
-          {:SP:}{{.}}{:BR:}
-        {{/}}
-        {{level-bright-color}}│{:end-color:}
-        {{level-color}}╙{:end-color:}
-      {{/}}
-
-    ',
-    # }}}
-    'msg-path' => # {{{
-    '
-
-      {{@msg-path}}
-        {{^_first}}
-          {{level-color}}
-          {{^_last}}
-            {{spacer-1}}
-          {{|}}
-            {{spacer-2}}
-          {{/}}
-          {:end-color:}
-        {{/}}
-        {{.}}
-      {{/}}
-
-    ',
-    # }}}
-    'span' => # {{{
-    '
-
-      {:! ･ ㎱ ㎲ ㎳ :}
-      {:SP:}{:black-bright:}
-      ~{{time}}
-      {{#unit}}
-      {{|ns}}
-        ㎱
-      {{|us}}
-        ㎲
-      {{|ms}}
-        ㎳
-      {{/}}
-      {:end-color:}
-
-    ',
-    # }}}
-    'logs' => # {{{
-    '
-
-      {:! ･· :}
-      {{#assign spacer-1}}
-        ·
-      {{/}}
-      {{@logs}}
-        {{^_last}}
-          {{@slice item}}
-            {{.....level-bright-color}}
-            {{#_first}}├{{|}}│{{/}}
-            {:end-color:}
-            {{.}}
-            {:BR:}
-          {{/}}
-        {{|}}
-          {{@slice item}}
-            {{#_first}}
-              {{.....level-bright-color}}
-              └
-              {:end-color:}
-            {{|}}
-              {:SP:}
-            {{/}}
-            {{.}}
-            {{^_last}}{:BR:}{{/}}
-          {{/}}
-        {{/}}
-      {{/}}
-
-    ',
-    # }}}
-    'item' => # {{{
-    '
-
-      {{#assign level-color}}
-        {{^level}}{:green:}
-        {{|1    }}{:yellow:}
-        {{|2    }}{:red:}
-        {{/}}
-      {{/}}
-      {{#assign level-bright-color}}
-        {{^level}}{:green-bright:}
-        {{|1    }}{:yellow-bright:}
-        {{|2    }}{:red-bright:}
-        {{/}}
-      {{/}}
-      {{#assign spacer-2}}
-        {{^type}} ► {{|}} ◄ {{/}}
-      {{/}}
-
-      {{^msg-type}}
-        {{level-bright-color}}●{:end-color:}
-        {{^logs-cnt}}{{|}}
-          {{insert logs}}
-        {{/}}
-      {{|}}
-        {:! ▪●■◯ :}
-        {{level-bright-color}}▪{:end-color:}
-        {{^logs-cnt}}
-          {{insert message-only}}
-        {{|}}
-          {{insert message}}{:BR:}
-          {{insert logs}}
-        {{/}}
-      {{/}}
-
-    ',
-    # }}}
-  ];
-  # }}}
-  const ANSI_CHARS=[# {{{
-    # styles
-    'reset'         => "\033[0m",
-    'bold'          => "\033[1m",
-    'faint'         => "\033[2m",
-    'italic'        => "\033[3m",
-    'underline'     => "\033[4m",
-    'blink'         => "\033[5m",
-    'inverse'       => "\033[7m",
-    'hide'          => "\033[8m",
-    'strike'        => "\033[9m",# strikethrough
-    'end-bold'      => "\033[21m",
-    'end-faint'     => "\033[22m",
-    'end-italic'    => "\033[23m",
-    'end-underline' => "\033[24m",
-    'end-blink'     => "\033[25m",
-    'end-inverse'   => "\033[27m",
-    'end-hide'      => "\033[28m",
-    'end-strike'    => "\033[29m",
-    # foreground colors
-    'black'          => "\033[30m",
-    'red'            => "\033[31m",
-    'green'          => "\033[32m",
-    'yellow'         => "\033[33m",
-    'blue'           => "\033[34m",
-    'magenta'        => "\033[35m",
-    'cyan'           => "\033[36m",
-    'white'          => "\033[37m",
-    'black-bright'   => "\033[90m",
-    'red-bright'     => "\033[91m",
-    'green-bright'   => "\033[92m",
-    'yellow-bright'  => "\033[93m",
-    'blue-bright'    => "\033[94m",
-    'magenta-bright' => "\033[95m",
-    'cyan-bright'    => "\033[96m",
-    'white-bright'   => "\033[97m",
-    # background colors
-    'bg-black'          => "\033[40m",
-    'bg-red'            => "\033[41m",
-    'bg-green'          => "\033[42m",
-    'bg-yellow'         => "\033[43m",
-    'bg-blue'           => "\033[44m",
-    'bg-magenta'        => "\033[45m",
-    'bg-cyan'           => "\033[46m",
-    'bg-white'          => "\033[47m",
-    'bg-black-bright'   => "\033[100m",
-    'bg-red-bright'     => "\033[101m",
-    'bg-green-bright'   => "\033[102m",
-    'bg-yellow-bright'  => "\033[103m",
-    'bg-blue-bright'    => "\033[104m",
-    'bg-magenta-bright' => "\033[105m",
-    'bg-cyan-bright'    => "\033[106m",
-    'bg-white-bright'   => "\033[107m",
-    # color resets
-    'end-color'    => "\033[39m",
-    'end-bg-color' => "\033[49m",
-    'end-colors'   => "\033[39;49m",
-  ];
-  # }}}
-  const ITEM_HELPER=[# {{{
-    'level-color' => '',
-    'level-bright-color' => '',
-    'spacer-1'  => '',
-    'spacer-2'  => '',
-    'msg-type'  => 0,
-    'msg-path'  => [],
-    'msg-title' => '',
-    'msg-block' => [],
-    'logs-cnt'  => 0,
-  ];
-  # }}}
-  # singleton constructor {{{
-  static self   $I;
-  public array  $template=[];
-  public int    $index=0;
-  public object $mustache;
-  private function __construct()
-  {
-    $this->mustache = $m = Mustache::new([
-      'helpers' => [
-        $this, self::TEXT_CHARS,
-        self::ITEM_HELPER, self::ANSI_CHARS
-      ]
-    ]);
-    $a = [];
-    foreach (self::TEXT_TEMPLATE as $k => $t) {
-      $a[$k] = $m->prep($t, '{: :}');
-    }
-    $this->template[] = $a;
-    $a = [];
-    foreach (self::ANSI_TEMPLATE as $k => $t) {
-      $a[$k] = $m->prep($t, '{: :}');
-    }
-    $this->template[] = $a;
-    $m->pull();# eject ANSI chars
-  }
-  static function init(): void {
-    self::$I = new self();
-  }
-  function __debugInfo(): array
-  {
-    return [
-      'object is '.
-      (isset(self::$I)?'':'not ').'initialized.'
-    ];
-  }
-  # }}}
-  # lambdas {{{
-  const STASH = [
-    'assign' => 7+1,
-    'insert' => 7+1,
-    'slice'  => 7+4
-  ];
-  function assign(object $m, string $a): string
-  {
-    # render primary section and
-    # assign result to the value in the stack
-    $m->value($a, $m->render());
-    return '';
-  }
-  function insert(object $m, string $a): string
-  {
-    $t = $this->template[$this->index][$a];
-    switch ($a) {
-    case 'span':
-      return ($n = $m->value('.span'))
-        ? $m->get($t, self::h_span($n))
-        : '';
-    case 'logs':
-      return $m->get($t, $m->value('..'));
-    }
-    return $m->get($t);
-  }
-  function slice(object $m, string $a): array
-  {
-    switch ($a) {
-    case 'item':
-      self::h_item(
-        $m->value('..'),
-        $m->value('.')
-      );
-      break;
-    }
-    return explode("\n",
-      $m->get($this->template[$this->index][$a])
-    );
-  }
-  # }}}
-  # helpers {{{
-  static function h_item(array &$h, array $item): array # {{{
-  {
-    # prepare
-    $n = isset($item['msg'])
-      ? count($item['msg']) : 0;
-    ###
-    while ($n)
-    {
-      # seek caret
-      $s = $item['msg'][$n - 1];
-      $i = strpos($s, "\n");
-      # path only? (oneliner)
-      if ($i === false)
-      {
-        $n = 1;
-        $h['msg-path'] = $item['msg'];
-        break;
-      }
-      # has multiple lines
-      # inside?
-      if ($i)
-      {
-        # no path?
-        if ($n < 2)
-        {
-          $h['msg-path']  = [];
-          $h['msg-title'] = '';
-          $h['msg-block'] = explode("\n", $s);
-          $n = 2;
-          break;
-        }
-        # compose path
-        $a = array_slice($item['msg'], 0, $n - 1);
-        $a[] = substr($s, 0, $i);
-        # set path + multiline
-        $h['msg-path']  = $a;
-        $h['msg-title'] = '';
-        $h['msg-block'] = explode(
-          "\n", substr($s, $i + 1)
-        );
-        $n = 3;
-        break;
-      }
-      # set multiline block
-      $h['msg-block'] = explode("\n", ltrim($s));
-      # no title?
-      if ($n < 2)
-      {
-        $h['msg-path']  = [];
-        $h['msg-title'] = '';
-        $n = 2;
-        break;
-      }
-      # set title
-      $h['msg-title'] = $item['msg'][$n - 2];
-      # no path?
-      if ($n < 3)
-      {
-        $h['msg-path'] = [];
-        $n = 2;
-        break;
-      }
-      # set path
-      $h['msg-path'] = array_slice(
-        $item['msg'], 0, $n - 2
-      );
-      $n = 3;
-      break;
-    }
-    # complete
-    $h['msg-type'] = $n;
-    $h['logs-cnt'] = isset($item['logs'])
-      ? count($item['logs'])
-      : 0;
-    return $item;
-  }
-  # }}}
-  static function h_span(int $n): array # {{{
-  {
-    if ($n > 1000000)# nano => milli
-    {
-      $n = (int)($n / 1000000);
-      $s = 'ms';
-    }
-    elseif ($n > 1000)# nano => micro
-    {
-      $n = (int)($n / 1000);
-      $s = 'us';
-    }
-    else {
-      $s = 'ns';
-    }
-    return [
-      'time' => $n,
-      'unit' => $s,
-    ];
-  }
-  # }}}
-  # }}}
-  static function render(# {{{
-    array $a, bool $ansi=false
-  ):string
-  {
-    return array_is_list($a)
-      ? self::all($a, $ansi)
-      : self::one($a, $ansi);
-  }
-  # }}}
-  static function all(# {{{
-    array $a, bool $ansi=false
-  ):string
-  {
-    $I = self::$I;
-    $I->index = $i = $ansi ? 1 : 0;
-    $t = $I->template[$i]['root'];
-    $m = $I->mustache;
-    $h = &$m->value('.');
-    for ($x='',$i=0,$j=count($a); $i < $j; ++$i) {
-      $x .= $m->get($t, self::h_item($h, $a[$i]));
-    }
-    return $x;
-  }
-  # }}}
-  static function one(# {{{
-    array $a, bool $ansi=false
-  ):string
-  {
-    $I = self::$I;
-    $I->index = $i = $ansi ? 1 : 0;
-    $m = $I->mustache;
-    return $m->get(
-      $I->template[$i]['root'],
-      self::h_item($m->value('.'), $a)
-    );
-  }
-  # }}}
 }
 # }}}
 class ErrorEx extends Error # {{{
@@ -1069,16 +314,17 @@ class ErrorEx extends Error # {{{
   # loggable {{{
   function log(): array # {{{
   {
+    # compose one
     $a = $this->logSelf();
     if (!($e = $this->next)) {
       return $a;
     }
+    # compose group
     $a = [$a];
     do {
       $a[] = $e->logSelf();
     }
     while ($e = $e->next);
-    ###
     return [
       'level' => $this->errorlevel(2),
       'logs'  => $a,
@@ -1087,65 +333,1006 @@ class ErrorEx extends Error # {{{
   # }}}
   function logSelf(): array # {{{
   {
-    $msg = $this->msg;
-    if (($lvl = $this->level) > 2)
+    # compose standard
+    if ($this->level < 3)
     {
-      # compose a message with debug backtrace
-      $lvl = 2;
-      if ($e = $this->value)
+      return [
+        'level' => $this->level,
+        'msg'   => $this->msg,
+        'trace' => self::get_trace($this)
+      ];
+    }
+    # compose exceptional
+    if ($e = $this->value)
+    {
+      # exception is set as value,
+      # extract the message and disposition
+      $m = [$e->getMessage()];
+      $t = self::get_trace($this);
+      $a = $e->getFile();
+      if ($b = strrpos($a, DIRECTORY_SEPARATOR))
       {
-        $msg[0] = $e::class;
-        $msg[1] = $e->getMessage()."\n".
-          $e->getFile().'('.$e->getLine().")\n".
-          self::trace($e);
-      }
-      elseif ($i = count($msg)) {
-        $msg[$i - 1] .= "\n".self::trace($this);
+        $c = substr($a, 0, $b + 1);
+        $a = substr($a, $b + 1);
       }
       else {
-        $msg[0] = self::trace($this);
+        $c = '';
       }
+      array_unshift($t, [
+        'case' => 0,# file only
+        'file' => $a,
+        'dir'  => $c,
+        'line' => $e->getLine()
+      ]);
+    }
+    else
+    {
+      $m = $this->msg;
+      $t = self::get_trace($this);
     }
     return [
-      'level' => $lvl,
-      'msg'   => $msg,
+      'level' => 2,
+      'msg'   => $m,
+      'trace' => $t
     ];
   }
   # }}}
-  static function trace(object $e, int $i=0): string # {{{
+  static function get_trace(object $e): array # {{{
   {
-    $a = '';
-    $b = $e->getTrace();
-    for ($j=count($b)-1; $i < $j; ++$i) {
-      $a .= self::trace_item($b[$i])."\n";
-    }
-    return $a.self::trace_item($b[$j]);
-  }
-  # }}}
-  static function trace_item(array $a): string # {{{
-  {
-    if (isset($a['file']))
+    $a = [];
+    foreach ($e->getTrace() as $b)
     {
-      $s = $a['file'];
-      if ($i = strrpos($s, \DIRECTORY_SEPARATOR)) {
-        $s = substr($s, $i + 1);
+      if (empty($b['file'])) {
+        $b['case'] = 1;# function only
       }
-      #$s = $a['line'].':'.$s;
-      #$s = $s.'('.$a['line'].')';
-      $s = $s.':'.$a['line'];
+      else
+      {
+        $c = $b['file'];
+        if ($i = strrpos($c, DIRECTORY_SEPARATOR))
+        {
+          $b['dir']  = substr($c, 0, $i + 1);
+          $b['file'] = substr($c, $i + 1);
+        }
+        else {
+          $b['dir'] = '';
+        }
+        $b['case'] = empty($b['class'])
+          ? 2 # file + function
+          : 3;# file + class + function
+      }
+      $a[] = $b;
     }
-    else {
-      $s = 'INTERNAL';
-    }
-    $f = isset($a['class'])
-      ? $a['class'].$a['type'].$a['function']
-      : $a['function'];
-    ###
-    return $s.' → '.$f;
+    return $a;
   }
   # }}}
   # }}}
 }
 # }}}
-return ErrorLog::init() && ErrorEx::init();
+class ErrorLog implements Mustachable # {{{
+{
+  const ANSI_TEMPLATE=[# {{{
+    'root' => # {{{
+    '
+
+      {{^level}}
+        {{#assign level-color-0}}{:green:}{{/}}
+        {{#assign level-color-1}}{:green-bright:}{{/}}
+      {{|}}
+        {{#assign level-color-0}}{:red:}{{/}}
+        {{#assign level-color-1}}{:red-bright:}{{/}}
+      {{/}}
+      {{#assign joiner-0}}{{level-color-1}}│{:end-color:}{{/}}
+      {{#assign joiner-1}}{{level-color-1}}└{:end-color:}{{/}}
+      {{#assign joiner-2}}{{level-color-1}}├{:end-color:}{{/}}
+      {{#assign spacer-1}}
+        {{level-color-0}}
+        {{^type}} ► {{|}} ◄ {{/}}
+        {:end-color:}
+      {{/}}
+      {{#assign spacer-2}}
+        {{spacer-1}}
+      {{/}}
+
+      {{insert time}}
+
+      {{level-color-1}}♦{:end-color:}
+      {{@slice message}}
+        {{^_first}}{{pad-0}}{{/}}
+        {{.}}{:BR:}
+      {{/}}
+      {{#has-logs}}
+        {{#slice logs}}
+          {{pad-0}}{{.}}{:BR:}
+        {{/}}
+      {{/}}
+
+    ',
+    # }}}
+    'time' => # {{{
+    '
+
+      {{#assign pad-0}}
+        {{^level}}{:bg-green:}
+        {{|     }}{:bg-red:}
+        {{/}}
+        {:REPEAT  ,10:}
+        {:end-bg-color:}
+      {{/}}
+
+      {{^time}}
+        {{pad-0}}
+      {{|}}
+        {{#date}}
+          {:COLOR black,cyan:}
+          {:erase-line:}{:BR:}
+          {:SP:}
+          {{Y}}/{{M}}/{{D}}
+          {:SP:}{:erase-line:}
+          {:BR:}
+          {:end-colors:}
+          {:BR:}
+        {{/}}
+        {{^level}}{:COLOR cyan-bright,green:}
+        {{|     }}{:COLOR cyan-bright,red:}
+        {{/}}
+        {:SP:}
+        {{h}}:{{m}}:{{s}}
+        {:SP:}
+        {:end-colors:}
+      {{/}}
+
+    ',
+    # }}}
+    'message' => # {{{
+    '
+
+      {{^msg-type}}
+      {{|1}}
+        {{insert msg-path}}
+        {{insert span}}
+      {{|2}}
+        {{insert msg-block}}
+        {{insert span}}
+      {{|3}}
+        {{insert msg-path}}
+        {{insert span}}
+        {:BR:}
+        {{joiner-0}}
+        {{insert msg-block}}
+      {{/}}
+
+    ',
+    # }}}
+    'msg-path' => # {{{
+    '
+
+      {{@msg-path}}
+        {{^_first}}
+          {{^_last}}
+            {{spacer-1}}
+          {{|}}
+            {{spacer-2}}
+          {{/}}
+        {{/}}
+        {{.}}
+      {{/}}
+
+    ',
+    # }}}
+    'msg-block' => # {{{
+    '
+
+      {:!
+        0??╓
+        1├└╢ ...
+        2│ ║ ───
+        2│ ║ ...
+        2│ ╙
+      :}
+      {{#has-logs}}
+        {{#assign pad-1}}{{joiner-2}}{{/}}
+        {{#assign pad-2}}{{joiner-0}}{{/}}
+      {{|}}
+        {{#assign pad-1}}{{joiner-1}}{{/}}
+        {{#assign pad-2}}{:SP:}{{/}}
+      {{/}}
+
+      {{level-color-0}}╓{:end-color:}
+      {:BR:}
+      {{pad-1}}{{level-color-0}}╢{:end-color:}
+      {{#has-msg-block}}
+        {{#msg-title}}
+          {:SP:}{:underline:}{{.}}{:end-underline:}
+          {:BR:}
+          {{pad-2}}{{level-color-0}}║{:end-color:}
+        {{/}}
+        {{@msg-block}}
+          {{^_first}}
+            {{pad-2}}{{level-color-0}}║{:end-color:}
+          {{/}}
+          {:SP:}{{.}}
+          {:BR:}
+        {{/}}
+        {{#has-trace}}
+          {{pad-2}}{{level-color-0}}║ ───{:end-color:}
+          {:BR:}
+          {{#slice trace}}
+            {{pad-2}}{{level-color-0}}║{:end-color:}
+            {:SP:}{{.}}
+            {:BR:}
+          {{/}}
+        {{/}}
+      {{|}}
+        {{@slice trace}}
+          {{^_first}}
+            {{pad-2}}{{level-color-0}}║{:end-color:}
+          {{/}}
+          {:SP:}{{.}}
+          {:BR:}
+        {{/}}
+      {{/}}
+      {{pad-2}}{{level-color-0}}╙{:end-color:}
+
+    ',
+    # }}}
+    'trace' => # {{{
+    '
+
+      {{@trace}}
+        {{^case}}
+          {{#trace-dir}}
+            {:black-bright:}{{dir}}{:end-color:}
+          {{/}}
+          {{file}}
+          {:cyan:}:{{line}}{:end-color:}
+        {{|1}}
+          INTERNAL
+          {:SP:}→{:SP:}
+          {:cyan:}{{function}}{:end-color:}
+        {{|2}}
+          {{#trace-dir}}
+            {:black-bright:}{{dir}}{:end-color:}
+          {{/}}
+          {{file}}
+          {:cyan:}:{{line}}{:end-color:}
+          {:SP:}→{:SP:}
+          {:cyan:}{{function}}{:end-color:}
+        {{|3}}
+          {{#trace-dir}}
+            {:black-bright:}{{dir}}{:end-color:}
+          {{/}}
+          {{file}}
+          {:cyan:}:{{line}}{:end-color:}
+          {:SP:}→{:SP:}
+          {{class}}{{type}}
+          {:cyan:}{{function}}{:end-color:}
+        {{/}}
+        {{^_last}}{:BR:}{{/}}
+      {{/}}
+
+    ',
+    # }}}
+    'span' => # {{{
+    '
+
+      {:! ･ ㎱ ㎲ ㎳ :}
+      {:SP:}{:black-bright:}
+      ~{{time}}
+      {{^unit}}
+      {{|ns}}㎱
+      {{|us}}㎲
+      {{|ms}}㎳
+      {{/}}
+      {:end-color:}
+
+    ',
+    # }}}
+    'logs' => # {{{
+    '
+
+      {{@logs}}
+        {{^_last}}
+          {{@slice item}}
+            {{#_first}}
+              {{.....joiner-2}}
+            {{|}}
+              {{.....joiner-0}}
+            {{/}}
+            {{.}}
+            {:BR:}
+          {{/}}
+        {{|}}
+          {{@slice item}}
+            {{#_first}}
+              {{.....joiner-1}}
+            {{|}}
+              {:SP:}
+            {{/}}
+            {{.}}
+            {{^_last}}{:BR:}{{/}}
+          {{/}}
+        {{/}}
+      {{/}}
+
+    ',
+    # }}}
+    'item' => # {{{
+    '
+
+      {{^level}}
+        {{#assign level-color-0}}{:green:}{{/}}
+        {{#assign level-color-1}}{:green-bright:}{{/}}
+      {{|1}}
+        {{#assign level-color-0}}{:yellow:}{{/}}
+        {{#assign level-color-1}}{:yellow-bright:}{{/}}
+      {{|2}}
+        {{#assign level-color-0}}{:red:}{{/}}
+        {{#assign level-color-1}}{:red-bright:}{{/}}
+      {{/}}
+      {{#assign joiner-0}}{{level-color-1}}│{:end-color:}{{/}}
+      {{#assign joiner-1}}{{level-color-1}}└{:end-color:}{{/}}
+      {{#assign joiner-2}}{{level-color-1}}├{:end-color:}{{/}}
+      {{#assign spacer-1}}
+        {{level-color-0}}·{:end-color:}
+      {{/}}
+      {{#assign spacer-2}}
+        {{level-color-0}}
+        {{^type}} ► {{|}} ◄ {{/}}
+        {:end-color:}
+      {{/}}
+
+      {{^msg-type}}
+        {{level-color-1}}●{:end-color:}
+        {:BR:}
+        {{insert logs}}
+      {{|}}
+        {{level-color-1}}▪{:end-color:}
+        {{insert message}}
+        {{#has-logs}}
+          {:BR:}
+          {{insert logs}}
+        {{/}}
+      {{/}}
+
+    ',
+    # }}}
+  ];
+  # }}}
+  const TEXT_TEMPLATE=[# {{{
+    'root' => # {{{
+    '
+
+      {{#assign level-tag}}
+        {{^level}}PASS
+        {{|     }}FAIL
+        {{/}}
+      {{/}}
+      {{#assign joiner-0}}│{{/}}
+      {{#assign joiner-1}}└{{/}}
+      {{#assign joiner-2}}├{{/}}
+      {{#assign spacer-1}}
+        {{^type}} > {{|}} < {{/}}
+      {{/}}
+      {{#assign spacer-2}}
+        {{spacer-1}}
+      {{/}}
+
+
+      ■{{insert time}}
+      {{level-tag}}
+
+      {{@slice message}}
+        {{^_first}}{{pad-0}}{{/}}
+        {{.}}{:BR:}
+      {{/}}
+      {{#has-logs}}
+        {{#slice logs}}
+          {{pad-0}}{{.}}{:BR:}
+        {{/}}
+      {{/}}
+
+    ',
+    # }}}
+    'time' => # {{{
+    '
+
+      {{#assign pad-0}}
+        {:!REPEAT ░,20:}
+        {:!REPEAT  ,20:}
+      {{/}}
+
+      {{^time}}
+        {{level-pad}}
+      {{|}}
+        {{Y}}/{{M}}/{{D}}
+        {:SP:}
+        {{h}}:{{m}}:{{s}}
+        {:SP:}
+      {{/}}
+
+    ',
+    # }}}
+    'message' => # {{{
+    '
+
+      {{^msg-type}}
+      {{|1}}
+        : {{insert msg-path}}
+        {{insert span}}
+      {{|2}}
+        {:BR:}
+        {{joiner-0}}
+        {{insert msg-block}}
+        {{insert span}}
+      {{|3}}
+        : {{insert msg-path}}
+        {{insert span}}
+        {:BR:}
+        {{joiner-0}}
+        {{insert msg-block}}
+      {{/}}
+
+    ',
+    # }}}
+    'msg-path' => # {{{
+    '
+
+      {{@msg-path}}
+        {{^_first}}
+          {{^_last}}
+            {{spacer-1}}
+          {{|}}
+            {{spacer-2}}
+          {{/}}
+        {{/}}
+        {{.}}
+      {{/}}
+
+    ',
+    # }}}
+    'msg-block' => # {{{
+    '
+
+      {{#has-logs}}
+        {{#assign pad-1}}{{joiner-2}}{{/}}
+        {{#assign pad-2}}{{joiner-0}}{{/}}
+      {{|}}
+        {{#assign pad-1}}{{joiner-1}}{{/}}
+        {{#assign pad-2}}{:SP:}{{/}}
+      {{/}}
+
+      ╓
+      {:BR:}
+      {{pad-1}}╢
+      {{#has-msg-block}}
+        {{#msg-title}}
+          {:SP:}{{.}}
+          {:BR:}
+          {{pad-2}}║
+        {{/}}
+        {{@msg-block}}
+          {{^_first}}
+            {{pad-2}}║
+          {{/}}
+          {:SP:}{{.}}
+          {:BR:}
+        {{/}}
+        {{#has-trace}}
+          {{pad-2}}║ ───
+          {:BR:}
+          {{#slice trace}}
+            {{pad-2}}║
+            {:SP:}{{.}}
+            {:BR:}
+          {{/}}
+        {{/}}
+      {{|}}
+        {{@slice trace}}
+          {{^_first}}
+            {{pad-2}}║
+          {{/}}
+          {:SP:}{{.}}
+          {:BR:}
+        {{/}}
+      {{/}}
+      {{pad-2}}╙
+
+    ',
+    # }}}
+    'trace' => # {{{
+    '
+
+      {{@trace}}
+        {{^case}}
+          {{#text-trace-dir}}{{dir}}{{/}}
+          {{file}}:{{line}}
+        {{|1}}
+          INTERNAL
+          {:SP:}>{:SP:}
+          {{function}}
+        {{|2}}
+          {{#text-trace-dir}}{{dir}}{{/}}
+          {{file}}:{{line}}
+          {:SP:}>{:SP:}
+          {{function}}
+        {{|3}}
+          {{#text-trace-dir}}{{dir}}{{/}}
+          {{file}}:{{line}}
+          {:SP:}>{:SP:}
+          {{class}}{{type}}{{function}}
+        {{/}}
+        {{^_last}}{:BR:}{{/}}
+      {{/}}
+
+    ',
+    # }}}
+    'span' => # {{{
+    '
+
+      {:SP:}~{{time}}·{{unit}}
+
+    ',
+    # }}}
+    'logs' => # {{{
+    '
+
+      {{@logs}}
+        {{^_last}}
+          {{@slice item}}
+            {{#_first}}
+              {{.....joiner-2}}
+            {{|}}
+              {{.....joiner-0}}
+            {{/}}
+            {{.}}
+            {:BR:}
+          {{/}}
+        {{|}}
+          {{@slice item}}
+            {{#_first}}
+              {{.....joiner-1}}
+            {{|}}
+              {:SP:}
+            {{/}}
+            {{.}}
+            {{^_last}}{:BR:}{{/}}
+          {{/}}
+        {{/}}
+      {{/}}
+
+    ',
+    # }}}
+    'item' => # {{{
+    '
+
+      {{#assign level-tag}}
+        {{^level}}INFO
+        {{|1    }}WARNING
+        {{|2    }}ERROR
+        {{/}}
+      {{/}}
+      {{#assign spacer-1}}
+        ·
+      {{/}}
+      {{#assign spacer-2}}
+        {{^type}} > {{|}} < {{/}}
+      {{/}}
+
+      {{^msg-type}}
+        ■{{level-tag}}
+        {:BR:}
+        {{insert logs}}
+      {{|}}
+        >{{level-tag}}
+        {{insert message}}
+        {{#has-logs}}
+          {:BR:}
+          {{insert logs}}
+        {{/}}
+      {{/}}
+
+    ',
+    # }}}
+  ];
+  # }}}
+  const ANSI_CHARS=[# {{{
+    # erase
+    'erase-screen' => "\033[J",
+    'erase-line'   => "\033[K",
+    # styles
+    'reset'         => "\033[0m",
+    'bold'          => "\033[1m",
+    'faint'         => "\033[2m",
+    'italic'        => "\033[3m",
+    'underline'     => "\033[4m",
+    'blink'         => "\033[5m",
+    'inverse'       => "\033[7m",
+    'hide'          => "\033[8m",
+    'strike'        => "\033[9m",# strikethrough
+    'end-bold'      => "\033[21m",
+    'end-faint'     => "\033[22m",
+    'end-italic'    => "\033[23m",
+    'end-underline' => "\033[24m",
+    'end-blink'     => "\033[25m",
+    'end-inverse'   => "\033[27m",
+    'end-hide'      => "\033[28m",
+    'end-strike'    => "\033[29m",
+    # foreground colors
+    'black'          => "\033[30m",
+    'red'            => "\033[31m",
+    'green'          => "\033[32m",
+    'yellow'         => "\033[33m",
+    'blue'           => "\033[34m",
+    'magenta'        => "\033[35m",
+    'cyan'           => "\033[36m",
+    'white'          => "\033[37m",
+    'black-bright'   => "\033[90m",
+    'red-bright'     => "\033[91m",
+    'green-bright'   => "\033[92m",
+    'yellow-bright'  => "\033[93m",
+    'blue-bright'    => "\033[94m",
+    'magenta-bright' => "\033[95m",
+    'cyan-bright'    => "\033[96m",
+    'white-bright'   => "\033[97m",
+    # background colors
+    'bg-black'          => "\033[40m",
+    'bg-red'            => "\033[41m",
+    'bg-green'          => "\033[42m",
+    'bg-yellow'         => "\033[43m",
+    'bg-blue'           => "\033[44m",
+    'bg-magenta'        => "\033[45m",
+    'bg-cyan'           => "\033[46m",
+    'bg-white'          => "\033[47m",
+    'bg-black-bright'   => "\033[100m",
+    'bg-red-bright'     => "\033[101m",
+    'bg-green-bright'   => "\033[102m",
+    'bg-yellow-bright'  => "\033[103m",
+    'bg-blue-bright'    => "\033[104m",
+    'bg-magenta-bright' => "\033[105m",
+    'bg-cyan-bright'    => "\033[106m",
+    'bg-white-bright'   => "\033[107m",
+    # color resets
+    'end-color'    => "\033[39m",
+    'end-bg-color' => "\033[49m",
+    'end-colors'   => "\033[39;49m",
+  ];
+  # }}}
+  const TEXT_CHARS=[# {{{
+    'BR'   => "\n",
+    'TAB'  => "\t",
+    'NBSP' => "\xC2\xA0",
+    'SP'   => ' ',
+  ];
+  # }}}
+  const ITEM_HELPER=[# {{{
+    # options
+    'trace-dir'=>false,
+    'text-trace-dir'=>true,
+    # assignable
+    'level-tag'=>'',
+    'level-color-0'=>'','level-color-1'=>'',
+    'joiner-0'=>'','joiner-1'=>'','joiner-2'=>'',
+    'spacer-1'=>'','spacer-2'=>'',
+    'pad-0'=>'','pad-1'=>'','pad-2'=>'',
+    # helpers
+    'has-logs'=>false,'has-trace'=>false,
+    'has-msg-block'=>false,
+    'msg-type'=>0,'msg-path'=>[],
+    'msg-title'=>'','msg-block'=>[],
+  ];
+  # }}}
+  # singleton constructor {{{
+  static self   $I;
+  public object $mustache;
+  public array  $template=[],$date=['',''];
+  public int    $index=0;
+  private function __construct()
+  {
+    $this->mustache = $m = Mustache::new([
+      'helpers' => [
+        $this, self::TEXT_CHARS,
+        self::ITEM_HELPER, self::ANSI_CHARS
+      ]
+    ]);
+    $a = [];
+    foreach (self::TEXT_TEMPLATE as $k => $t) {
+      $a[$k] = $m->prep($t, '{: :}');
+    }
+    $this->template[] = $a;
+    $a = [];
+    foreach (self::ANSI_TEMPLATE as $k => $t) {
+      $a[$k] = $m->prep($t, '{: :}');
+    }
+    $this->template[] = $a;
+    $m->pull();# eject ANSI chars
+  }
+  static function init(array $o=[]): void
+  {
+    if (isset(self::$I))
+    {
+      $I = self::$I;
+      if (isset($o[$k = 'ansi'])) {
+        $I->index = $o[$k] ? 1 : 0;
+      }
+      if (isset($o[$k = 'trace-dir'])) {
+        $I->mustache->value($k, !!$o[$k]);
+      }
+      if (isset($o[$k = 'text-trace-dir'])) {
+        $I->mustache->value($k, !!$o[$k]);
+      }
+      $I->date = ['',''];
+    }
+    else {
+      self::$I = new self();
+    }
+  }
+  function __debugInfo(): array
+  {
+    return [
+      'object is '.
+      (isset(self::$I)?'':'not ').'initialized.'
+    ];
+  }
+  # }}}
+  # lambdas {{{
+  const STASH = [
+    'assign' => 7+1,
+    'insert' => 7+1,
+    'slice'  => 7+4,
+    'COLOR'  => 7+1,
+    'REPEAT' => 7+1
+  ];
+  function assign(object $m, string $a): string # {{{
+  {
+    # render primary section and
+    # assign result to the value in the stack
+    $m->value($a, $m->render());
+    return '';
+  }
+  # }}}
+  function insert(object $m, string $a): string # {{{
+  {
+    $i = $this->index;
+    $t = $this->template[$i][$a];
+    switch ($a) {
+    case 'time':# {{{
+      # create datetime helper
+      # get timestamp
+      if ($n = $m->value('.time'))
+      {
+        # parse and set variables
+        $a = explode('/', date('Y/m/d/H/i/s', $n));
+        $b = $a[0].$a[1].$a[2];
+        $c = [
+          'Y' => $a[0],
+          'M' => $a[1],
+          'D' => $a[2],
+          'h' => $a[3],
+          'm' => $a[4],
+          's' => $a[5],
+          'time' => true,
+          'date' => false,
+        ];
+        # set/display date when changed
+        if ($this->date[$i] !== $b)
+        {
+          $this->date[$i] = $b;
+          $c['date'] = true;
+        }
+      }
+      else {
+        $c = ['time' => false];
+      }
+      return $m->get($t, $c);
+      # }}}
+    case 'span':# {{{
+      # get duration
+      if (!($n = $m->value('.span'))) {
+        return '';
+      }
+      # prepare time value and unit
+      if ($n > 1000000)# nano => milli
+      {
+        $n = (int)($n / 1000000);
+        $s = 'ms';
+      }
+      elseif ($n > 1000)# nano => micro
+      {
+        $n = (int)($n / 1000);
+        $s = 'us';
+      }
+      else {
+        $s = 'ns';
+      }
+      # render
+      return $m->get($t, [
+        'time' => $n,
+        'unit' => $s,
+      ]);
+      # }}}
+    case 'logs':
+      return $m->get($t, $m->value('..'));
+    }
+    return $m->get($t);
+  }
+  # }}}
+  function slice(object $m, string $a): array # {{{
+  {
+    $t = $this->template[$this->index][$a];
+    switch ($a) {
+    case 'item':
+      self::h_item(
+        $m->value('..'),
+        $m->value('.')
+      );
+      break;
+    case 'logs':
+      return explode(
+        "\n", $m->get($t, $m->value('..'))
+      );
+    }
+    return explode("\n", $m->get($t));
+  }
+  # }}}
+  function COLOR(object $m, string $a): string # {{{
+  {
+    static $COLOR=[# {{{
+      'black'   => 30,
+      'red'     => 31,
+      'green'   => 32,
+      'yellow'  => 33,
+      'blue'    => 34,
+      'magenta' => 35,
+      'cyan'    => 36,
+      'white'   => 37,
+      'black-bright'   => 90,
+      'red-bright'     => 91,
+      'green-bright'   => 92,
+      'yellow-bright'  => 93,
+      'blue-bright'    => 94,
+      'magenta-bright' => 95,
+      'cyan-bright'    => 96,
+      'white-bright'   => 97,
+    ];
+    # }}}
+    $b = explode(',', $a);
+    $i = $COLOR[$b[0]];
+    $j = $COLOR[$b[1]] + 10;
+    return "\033[".$i.';'.$j.'m';
+  }
+  # }}}
+  function REPEAT(object $m, string $a): string # {{{
+  {
+    if (strpos($a, ','))
+    {
+      $b = explode(',', $a);
+      $i = intval($b[1]);
+      $a = $b[0];
+    }
+    else {
+      $i = 1;
+    }
+    return str_repeat($a, $i);
+  }
+  # }}}
+  # }}}
+  static function h_item(array &$h, array $item): array # {{{
+  {
+    # determine message count
+    $n = isset($item['msg'])
+      ? count($item['msg'])
+      : 0;
+    # set easy flags
+    $h['has-logs']  = (
+      isset($item['logs']) &&
+      count($item['logs']) > 0
+    );
+    $h['has-trace'] = $hasTrace =
+      isset($item['trace']);
+    # check no message
+    if (!$n)
+    {
+      # trace as message?
+      $h['has-msg-block'] = false;
+      $h['msg-type'] = $hasTrace ? 2 : 0;
+      return $item;
+    }
+    # analyze the message
+    $m = $item['msg'];
+    $s = $m[$n - 1];
+    if (($i = strpos($s, "\n")) === false)
+    {
+      # path only or with the trace
+      $h['has-msg-block'] = false;
+      $h['msg-type'] = $hasTrace ? 3 : 1;
+      $h['msg-path'] = $m;
+      return $item;
+    }
+    # multiline
+    $h['has-msg-block'] = true;
+    if ($i)
+    {
+      if ($n < 2)
+      {
+        # multiline only
+        $h['msg-type']  = 2;
+        $h['msg-path']  = [];
+      }
+      else
+      {
+        # path + multiline
+        $m[$n - 1] = substr($s, 0, $i);
+        $s = substr($s, $i + 1);
+        $h['msg-type'] = 3;
+        $h['msg-path'] = $m;
+      }
+      $h['msg-title'] = '';
+      $h['msg-block'] = explode("\n", $s);
+      return $item;
+    }
+    if ($n <= 2)
+    {
+      # multiline only
+      $h['msg-type']  = 2;
+      $h['msg-path']  = [];
+      $h['msg-title'] = ($n < 2)
+        ? '' : $m[$n - 2];
+    }
+    else
+    {
+      # path + multiline
+      $h['msg-type']  = 3;
+      $h['msg-path']  = array_slice($m, 0, $n - 2);
+      $h['msg-title'] = $m[$n - 2];
+    }
+    $h['msg-block'] = explode("\n", ltrim($s));
+    return $item;
+  }
+  # }}}
+  static function render(# {{{
+    array $a, bool $ansi=false
+  ):string
+  {
+    if (func_num_args() > 1)
+    {
+      $I = self::$I;
+      $i = $I->index;
+      $I->index = $ansi ? 1 : 0;
+      $s = array_is_list($a)
+        ? self::all($a)
+        : self::one($a);
+      ###
+      $I->index = $i;
+      return $s;
+    }
+    return array_is_list($a)
+      ? self::all($a)
+      : self::one($a);
+  }
+  # }}}
+  static function one(array $a): string # {{{
+  {
+    $I = self::$I;
+    $m = $I->mustache;
+    return $m->get(
+      $I->template[$I->index]['root'],
+      self::h_item($m->value('.'), $a)
+    );
+  }
+  # }}}
+  static function all(array $a): string # {{{
+  {
+    $I = self::$I;
+    $t = $I->template[$I->index]['root'];
+    $m = $I->mustache;
+    $h = &$m->value('.');
+    for ($x='',$i=0,$j=count($a); $i < $j; ++$i) {
+      $x .= $m->get($t, self::h_item($h, $a[$i]));
+    }
+    return $x;
+  }
+  # }}}
+}
+# }}}
+return ErrorEx::init() && ErrorLog::init();
 ###

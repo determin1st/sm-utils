@@ -8,6 +8,9 @@ test_info('PromiseResult','
 [2] dump Promise::Row
 [3] ErrorLog::from(<PromiseResult>)
 ');
+if (class_exists('SM\Conio', false)) {
+  ErrorLog::init(['ansi' => Conio::is_ansi()]);
+}
 while (1)
 {
   switch (Conio::getch()) {
@@ -76,7 +79,7 @@ while (1)
     break;
   # }}}
   case '3':# {{{
-    echo "> ErrorLog::from(<PromiseResult>): ";
+    echo "> ErrorLog::render(<PromiseResult>): ";
     $r = await(
       Promise::Func(function($f) {
         $r = $f->result;
@@ -110,7 +113,8 @@ while (1)
     #echo "\n================\n";
     $r = $r->log();
     #var_dump($r);
-    echo ErrorLog::render($r, true);
+    #ErrorLog::init(['trace-dir' => true]);
+    echo ErrorLog::render($r);
     #echo "================\n";
     break;
   # }}}

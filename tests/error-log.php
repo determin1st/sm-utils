@@ -205,7 +205,22 @@ if (0)
     json_encode($logs,  JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE)
   );
 }
-#echo SM\ErrorLog::render($logs);
-#echo SM\ErrorLog::render($logs, true);
-echo SM\ErrorLog::render($logs, SM\Conio::is_ansi());
+if (class_exists('SM\Conio', false))
+{
+  SM\ErrorLog::init([
+    'ansi' => SM\Conio::is_ansi()
+  ]);
+}
+$out = SM\ErrorLog::render($logs);
+echo $out;
+if (0)
+{
+  file_put_contents(
+    substr(__FILE__, 0, -4).'.out',
+    #mb_convert_encoding($out, 'UTF-16BE', 'UTF-8')
+    #iconv('UTF-8', 'CP866', $out)
+    mb_convert_encoding($out, 'CP866', 'UTF-8')
+    #$out
+  );
+}
 ###
