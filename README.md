@@ -62,6 +62,7 @@ both are to be associated with particular
 in **the context stack** using **the path**.
 
 ### the context stack
+![stack](https://raw.githack.com/determin1st/sm-utils/main/mm/mustache-stack.jpg)
 a place inside the mustache instance where all the data sits.
 internally it represents a
 [stack](https://en.wikipedia.org/wiki/Stack_(abstract_data_type)).
