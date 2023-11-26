@@ -22,7 +22,7 @@ to meet personal preferences of its glourious author.
 
 ### performance
 this implementation, running in
-[JIT mode](https://php.watch/versions/8.0/JIT),
+[the JIT mode](https://php.watch/versions/8.0/JIT),
 is comparable to various JS implementations
 ![perf](https://raw.githack.com/determin1st/sm-utils/main/mm/mustache-perf.jpg)
 
@@ -51,11 +51,15 @@ $id  = $m->prep($template, '{: :}');;
 
 ### clauses
 ![clause](https://raw.githack.com/determin1st/sm-utils/main/mm/mustache-clause.jpg)
+a clause consists of a
+[special sigil](https://en.wikipedia.org/wiki/Sigil_(computer_programming))
+and/or [a path](https://en.wikipedia.org/wiki/Path_(computing)).
+
 there are two major kinds of clauses in mustache -
 a **variable** (independent) and a **block** (dependent).
 both are to be associated with particular
 [value](https://en.wikipedia.org/wiki/Value_(computer_science))
-in **the context stack** using **the path**
+in **the context stack** using **the path**.
 
 ### the context stack
 a place inside the mustache instance where all the data sits.
@@ -64,7 +68,7 @@ internally it represents a
 any [composite data](https://en.wikipedia.org/wiki/Composite_data_type)
 (an [array](https://www.php.net/manual/en/language.types.array.php)
 or an [object](https://www.php.net/manual/en/language.oop5.php)
-) pushed to the context stack prior to template processing
+) pushed to the stack prior to template processing
 is called **a helper** or a helper data or
 a data that helps in rendering.
 
@@ -89,6 +93,40 @@ $m->pull(true);# removes all
 ```
 
 ### the path
+![path](https://raw.githack.com/determin1st/sm-utils/main/mm/mustache-path.jpg)
+represents
+[an address of the value](https://en.wikipedia.org/wiki/Name_binding)
+in **the context stack**.
+it typically consists of
+[an identifier](https://en.wikipedia.org/wiki/Identifier)
+or a chain of identifiers separated with **the dot** sigil.
+```php
+$m = SM\Mustache::new([
+  'helpers' => [
+    ['name' => 'Barak', 'age' => 62],
+    ['name' => 'Donald','another' => ['name' => 'mr.Green']],
+    ['name' => 'Joe',   'another' => ['word' => 'Sleepy']]
+  ]
+]);
+$m->value('name');# Joe
+$m->value('age');# 62
+$m->value('another.name');# mr.Green
+```
+when `.` precedes a path, the value is fetched
+rather than looked up, that is,
+the `.` selector points to the top of the stack,
+`..` to the second value from the top, etc.
+```php
+echo $m->value('.name');# Joe
+echo $m->value('..name');# Donald
+echo $m->value('...name');# Barak
+```
+thus, this constitutes **the dot notation**.
+
+
+
+
+
 
 
 <details>
