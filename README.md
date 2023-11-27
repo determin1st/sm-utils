@@ -30,7 +30,7 @@ is comparable to various JS implementations
 ### delimiters
 a pair of markers - `{{` and `}}` (the default, which look like
 [moustache](https://en.wikipedia.org/wiki/Moustache)) are
-used to point a
+used to point to a
 [clause](https://en.wikipedia.org/wiki/Clause)
 in the
 [template](https://en.wikipedia.org/wiki/Template_(word_processing)).
@@ -51,7 +51,11 @@ $id  = $m->prep($template, '{: :}');;
 
 ### clauses
 ![clause](https://raw.githack.com/determin1st/sm-utils/main/mm/mustache-clause.jpg)
-a clause consists of a
+a clause is the basic construct of the
+[mustache language](https://en.wikipedia.org/wiki/Transformation_language),
+it will be removed or replaced in the final output.
+
+its content may consists of a
 [special sigil](https://en.wikipedia.org/wiki/Sigil_(computer_programming))
 and/or [a path](https://en.wikipedia.org/wiki/Path_(computing)).
 
@@ -97,33 +101,32 @@ $m->pull(true);# removes all
 ![path](https://raw.githack.com/determin1st/sm-utils/main/mm/mustache-path.jpg)
 represents
 [an address of the value](https://en.wikipedia.org/wiki/Name_binding)
-in **the context stack**.
-it typically consists of
-[an identifier](https://en.wikipedia.org/wiki/Identifier)
-or a chain of identifiers separated with **the dot** sigil.
+in **the context stack** and follows **the dot notation**.
+it consists of one or multiple
+[identifiers](https://en.wikipedia.org/wiki/Identifier)
 ```php
 $m = SM\Mustache::new([
   'helpers' => [
+    ['name' => 'Joe',   'age' => 81, 'another' => ['name' => 'Sleepy']]
     ['name' => 'Barak', 'age' => 62],
-    ['name' => 'Donald','another' => ['name' => 'mr.Green']],
-    ['name' => 'Joe',   'another' => ['word' => 'Sleepy']]
+    ['name' => 'Donald','another' => ['term' => 2024]],
   ]
 ]);
-$m->value('name');# Joe
+$m->value('name');# Donald
 $m->value('age');# 62
-$m->value('another.name');# mr.Green
+$m->value('another.name');# Sleepy
 ```
 when `.` precedes a path, the value is fetched
 rather than looked up, that is,
 the `.` selector points to the top of the stack,
 `..` to the second value from the top, etc.
 ```php
-echo $m->value('.name');# Joe
-echo $m->value('..name');# Donald
-echo $m->value('...name');# Barak
+echo $m->value('.name');# Donald
+echo $m->value('..name');# Barak
+echo $m->value('...name');# Joe
 ```
-thus, this constitutes **the dot notation**.
 
+### variables
 
 
 
