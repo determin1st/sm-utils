@@ -442,6 +442,28 @@ $b = [
   }),
 ];
 # }}}
+# terminus as comment {{{
+$a = $m->outdent('
+
+  {{/
+
+    Hello
+
+  }}
+  {{#people}}
+    hello {{name}}!{{BR}}
+  {{/}}
+
+');
+$b = [
+  'people' => [
+    ['name'=>'Joe','age'=>80],
+    ['name'=>'Bill','age'=>67],
+    ['name'=>'Donald','age'=>77],
+  ],
+];
+/***/
+# }}}
 # render! {{{
 try
 {

@@ -1597,7 +1597,7 @@ class MustacheCtx # data stack {{{
   # }}}
   # }}}
   # standard {{{
-  function b0(# FALSY OR {{{
+  function b0(# FALSY {{{
     string $p, int $pi, int $n, ?array $pn, int $t,
     int $i0, int $i1
   ):string
@@ -1637,7 +1637,7 @@ class MustacheCtx # data stack {{{
       : '';
   }
   # }}}
-  function bf0(# FALSY LAMBDA OR {{{
+  function bf0(# FALSY LAMBDA {{{
     object $f, string $arg, int $t, int $j,
     int $i0, int $i1
   ):string
@@ -1690,7 +1690,7 @@ class MustacheCtx # data stack {{{
     return $r;
   }
   # }}}
-  function b1(# TRUTHY OR {{{
+  function b1(# TRUTHY {{{
     string $p, int $pi, int $n, ?array $pn, int $t,
     int $i0, int $i1
   ):string
@@ -1778,7 +1778,7 @@ class MustacheCtx # data stack {{{
     ###
   }
   # }}}
-  function bf1(# TRUTHY LAMBDA OR {{{
+  function bf1(# TRUTHY LAMBDA {{{
     object $f, string $arg, int $t, int $j,
     int $i0, int $i1
   ):string
@@ -1879,7 +1879,7 @@ class MustacheCtx # data stack {{{
     ###
   }
   # }}}
-  function bi(# ITERABLE OR {{{
+  function bi(# ITERABLE {{{
     string $p, int $pi, int $n, ?array $pn, int $t,
     int $i0, int $i1
   ):string
@@ -1928,7 +1928,7 @@ class MustacheCtx # data stack {{{
     );
   }
   # }}}
-  function bfi(# ITERABLE LAMBDA OR {{{
+  function bfi(# ITERABLE LAMBDA {{{
     object $f, string $arg, int $t, int $j,
     int $i0, int $i1
   ):string
@@ -2236,7 +2236,7 @@ class MustacheCtx # data stack {{{
   # }}}
   # }}}
   # assisted value {{{
-  function a01(# FALSY/TRUTHY OR {{{
+  function a01(# FALSY/TRUTHY {{{
     string $p, int $i, int $t,
     int $i0, int $i1
   ):string
