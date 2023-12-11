@@ -1,5 +1,6 @@
 # mustache
 ## about <!-- {{{ -->
+![logo](mm/mustache-logo.webp)
 `SM\Mustache` is a
 ***template processor***<sup>[◥][m-engine]</sup> of
 ***mustache templates***<sup>[◥][template]</sup>
@@ -25,6 +26,7 @@ is comparable to various JS implementations
 <!-- }}} -->
 ## syntax <!-- {{{ -->
 ### clauses
+![delims](mm/mustache-clause.jpg)
 > *The army consists of the first infantry division and eight million replacements.*
 > 
 > **Sebastian Junger**
@@ -50,12 +52,14 @@ which make up [blocks](#blocks).
 ![delims](mm/mustache-delims.jpg)
 
 a ***pair of markers***<sup>[◥][m-delims]</sup>,
-such as `{{` and `}}` (the default, which look like
-***moustache***<sup>[◥][moustache]</sup>),
-that effectively frame a [clause](#clauses) in the template.
+which ***frame the stem***<sup>[◥][circumfix]</sup>
+of a [clause](#clauses) in the template.
 
-delimiter examples: `{: :}`,`/* */`,`<% %>`,
-`(( ))`,`<[ ]>`,`<!--{ }-->`,`{{{ }}}`..
+the default delimiters are **`{{`** and **`}}`**
+that look like a ***moustache***<sup>[◥][moustache]</sup>.
+
+delimiter examples: `{: :}`, `/* */`, `<% %>`,
+`(( ))`, `<[ ]>`, `<!--{ }-->`, `{{{ }}}`..
 
 such balanced delimiters dont have to mirror each other or
 be of equal length, but they **must differ**
@@ -70,6 +74,7 @@ delimiters are determined during
 
 
 ### the sigil
+![path](mm/mustache-sigil.jpg)
 the ***type and meaning*** of the [clause](#clauses) is determined
 by a ***sigil***<sup>[◥][sigil]</sup>
 that is ***suffixed***<sup>[◥][suffix]</sup>
@@ -78,8 +83,8 @@ to the opening [delimiter](#delimiters).
 this implementation defines:
 - `&` - [variable](#variables) modifier (optional)
 - `!` - [commentary](#comments)
-- `#`,`^`,`@` - [primary sections](#blocks)
-- `|` - [supplementary section](#OR-section)
+- `#`,`^`,`@` - [primary section](#blocks)
+- `|` - [alternative section](#OR-section)
 - `/` - [terminus](#terminus)
 
 
@@ -100,17 +105,18 @@ and one of word combinatory practices -
 ***camelCase***<sup>[◥][camelCase]</sup> or
 ***snake_case***<sup>[◥][snake_case]</sup>
 is recommended.
-name may not contain a dot `.` or a space ` ` character -
-they have a special meaning.
+the name cannot contain a ***dot***<sup>[◥][dot]</sup>
+or ***whitespace***<sup>[◥][whitespace]</sup>
+characters - they have a special meaning.
 
 #### dot notation
-when a `.` is met somewhere in the path,
+when a ***dot is met in the path***<sup>[◥][interfix]</sup>,
 for example in `first.second`,
 it is assumed that the `first` name points to
 a ***container***<sup>[◥][container]</sup>
 and the `second` name points to the value in that container.
 for the `first.second.third` path, the rule extrapolates further -
-the `third` value is to be extracted from the `second` nested container
+the `third` ***value is to be extracted*** from the `second` nested container
 which is extracted from the `first` container.
 
 #### absolute path
@@ -124,7 +130,7 @@ such a **backpedal** requires the knowledge of stack contents.
 thus, absolute path defines an **explict selection** of the value.
 
 #### relative path
-when a ***name is met first***<sup>[◥][infix]</sup>,
+when a ***name is met first***,
 the first value is ***searched***<sup>[◥][linear-search]</sup>
 in [the stack](#the-context-stack)
 from top to bottom. that is, each value is checked -
@@ -135,7 +141,7 @@ in case [the dot notation](#dot-notation) applies but fails,
 the path resolves as unfound.
 
 ### variables
-![delims](mm/mustache-var.jpg)
+![delims](mm/mustache-path.jpg)
 
 a ***variable***<sup>[◥][m-var]</sup>
 is an ***independent***<sup>[◥][m-clause-ind]</sup>
@@ -157,11 +163,11 @@ for example, putting `<World>` into:
 ```html
 <p>Hello {{&name}}!</p>
 ```
-and having html opt-in escaping will result in:
+with html escaping results in:
 ```html
 <p>Hello &lt;World&gt;</p>
 ```
-escaping is one of [many possibilities](#preparation) -
+escaping is only one of [many possibilities](#preparation) -
 the output can be transformed to suit other requirements.
 
 
@@ -198,9 +204,9 @@ from the [resulting output](#examples).
 using ***whitespace***<sup>[◥][whitespace]</sup>.
 
 for example `{{ & path.to.value }}` equals to `{{&path.to.value}}`,
-but don't forget that [the path](#the-path) itself
-cannot use whitespace for indentation -
-the `{{ & path . to . value }}` is incorrect.
+but don't forget [the path](#the-path) itself
+cannot be indented with whitespace -
+the `{{&path . to . value}}` is incorrect.
 
 
 ### blocks
@@ -208,41 +214,60 @@ the `{{ & path . to . value }}` is incorrect.
 
 a ***block***<sup>[◥][m-block]</sup>
 consists of one or more ***sections***<sup>[◥][m-section]</sup> and
-a ***terminus***<sup>[◥][m-terminus]</sup>.
-
-[upon rendering](#rendering), a block is
-***removed or replaced***<sup>[◥][substitution]</sup>
-as a whole.
+a [terminus](#terminus).
 
 a ***section***<sup>[◥][m-section]</sup>
-consists of ***section's clause***
-and ***section contents***<sup>[◥][template]</sup>
-that ends with ***terminus***<sup>[◥][m-terminus]</sup>
-or another ***section***.
+consists of a ***dependent***<sup>[◥][m-clause-ind]</sup> [clause](#clauses)
+and a ***section's content***<sup>[◥][template]</sup>
+that ends with a [terminus](#terminus) or another ***section***.
 
 > *A dependent clause is like a dependent child: incapable of standing on its own but able to cause a lot of trouble.*
 > 
 > **William Safire**
 
-a ***section's clause***
-is a ***dependent***<sup>[◥][m-clause-dep]</sup>
-[clause](#clauses)
-of ***mustache language***<sup>[◥][m-lang]</sup>
-which consists of [delimiters](#delimiters)
-[sigil](#the-sigil) and [path](#the-path).
+the first section of a block
+aka ***the primary section***<sup>[◥][cond-precedent]</sup>
+determines ***the type of block***.
+a [clause](#clauses) of the primary section represents
+a ***conditional construct***<sup>[◥][m-conditional]</sup>
+that evaluates ***the value***<sup>[◥][value]</sup>
+resolved from [the path](#the-path) -
+either its ***truthiness or falsiness***<sup>[◥][truth-value]</sup>
+influence the way the block renders.
 
-the ***first section of the block*** or the ***primary section***
-determines the type of the block.
+[sigil](#the-sigil) variants (***block types***) are:
+- [**`#`**](#TRUTHY-block), [**`@`**](#ITERABLE-block) - expects truthy values
+- [**`^`**](#FALSY-block) - expects falsy values
+
+any ***subsequent section***<sup>[◥][cond-subsequent]</sup>
+is called an [alternative section](#OR-section)
+and its [clause](#clauses) ***is affixed***<sup>[◥][affix]</sup>
+with [**`|`**](#OR-section) [sigil](#the-sigil).
+
+[upon rendering](#rendering), a block is
+***removed or replaced***<sup>[◥][substitution]</sup>
+as a whole.
 
 
 #### terminus
 ![terminus](mm/mustache-terminus.jpg)
+
+a ***terminus***<sup>[◥][m-terminus]</sup>
+is a ***dependent***<sup>[◥][m-clause-dep]</sup>
+[clause](#clauses)
+of ***mustache language***<sup>[◥][m-lang]</sup>
+which consists of [delimiters](#delimiters),
+the **`/`** [sigil](#the-sigil)
+and an optional ***annotation***<sup>[◥][annotation]</sup>.
+
+the purpose of a ***terminus***<sup>[◥][m-terminus]</sup>
+is to ***terminate the block***<sup>[◥][boundary-marker]</sup>.
 ```
 {{/
 
   a terminus clause may look like a commentary, irrelevant,
-  but it dependent on block's might, without it,
-  there will be a terrible failure - a barbarian invasion.
+  but it depends on block's might, without it,
+  there will be a terrible failure - a barbarian invasion!
 
   the opposite is also true - when a terminus is plowed
   by ignorant peasant, the block demarks itself as open
@@ -250,6 +275,7 @@ determines the type of the block.
 
 }}
 ```
+
 
 #### FALSY block
 if-not block is rendered when block value is falsy
@@ -516,8 +542,9 @@ echo $m->prepare($template, ['list'=>['one','two','three']]);# prints onetwothre
 [m-block]: https://en.wikipedia.org/wiki/Block_(programming)
 [m-terminus]: https://en.wikipedia.org/wiki/Terminus_(god) "terminator, boundary"
 [m-section]: https://dictionary.cambridge.org/dictionary/english/section "one of the parts that something is divided into"
+[m-conditional]: https://en.wikipedia.org/wiki/Conditional_(computer_programming) "whether a value is truthy or falsy"
 [moustache]: https://en.wikipedia.org/wiki/Moustache
-[template]: https://en.wikipedia.org/wiki/Template_(word_processing)
+[template]: https://en.wikipedia.org/wiki/Template_(word_processing) "template"
 [substitution]: https://en.wikipedia.org/wiki/String_interpolation "substitution"
 [sigil]: https://en.wikipedia.org/wiki/Sigil_(computer_programming) "affixed symbol"
 [value]: https://en.wikipedia.org/wiki/Value_(computer_science)
@@ -529,10 +556,12 @@ echo $m->prepare($template, ['list'=>['one','two','three']]);# prints onetwothre
 [camelCase]: https://en.wikipedia.org/wiki/Camel_case
 [snake_case]: https://en.wikipedia.org/wiki/Snake_case
 [container]: https://en.wikipedia.org/wiki/Associative_array
+[dot]: https://en.wikipedia.org/wiki/Full_stop "full stop. period. full point."
 [prefix]: https://en.wikipedia.org/wiki/Polish_notation "prefix"
-[infix]: https://en.wikipedia.org/wiki/Infix_notation "in-between"
+[interfix]: https://en.wikipedia.org/wiki/Interfix "linking element"
 [affix]: https://en.wikipedia.org/wiki/Affix
 [suffix]: https://en.wikipedia.org/wiki/Suffix "postfix"
+[circumfix]: https://en.wikipedia.org/wiki/Circumfix
 [escape-char]: https://en.wikipedia.org/wiki/Escape_character
 [modifier]: https://en.wikipedia.org/wiki/Grammatical_modifier
 [stack-peek]: https://en.wikipedia.org/wiki/Peek_(data_type_operation)
@@ -540,5 +569,10 @@ echo $m->prepare($template, ['list'=>['one','two','three']]);# prints onetwothre
 [free-form]: https://en.wikipedia.org/wiki/Free-form_language
 [whitespace]: https://en.wikipedia.org/wiki/Whitespace_character#Programming_languages "SPACE, TAB, LINE FEED"
 [readability]: https://en.wikipedia.org/wiki/Readability "readability"
+[annotation]: https://en.wikipedia.org/wiki/Annotation "extra information"
+[boundary-marker]: https://en.wikipedia.org/wiki/Boundary_marker
+[cond-precedent]: https://en.wikipedia.org/wiki/Condition_precedent "required before something else will occur"
+[cond-subsequent]: https://en.wikipedia.org/wiki/Condition_subsequent "brings a duty to an end"
+[truth-value]: https://en.wikipedia.org/wiki/Truth_value
 <!-- }}} -->
 <!--::-->
