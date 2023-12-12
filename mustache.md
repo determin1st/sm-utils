@@ -1,6 +1,6 @@
 # mustache
-## about <!-- {{{ -->
 ![logo](mm/mustache-logo.webp)
+## about <!-- {{{ -->
 `SM\Mustache` is a
 ***template processor***<sup>[◥][m-engine]</sup> of
 ***mustache templates***<sup>[◥][template]</sup>
@@ -75,7 +75,8 @@ delimiters are determined during
 
 ### the sigil
 ![path](mm/mustache-sigil.jpg)
-the ***type and meaning*** of the [clause](#clauses) is determined
+
+the ***type of clause*** is determined
 by a ***sigil***<sup>[◥][sigil]</sup>
 that is ***suffixed***<sup>[◥][suffix]</sup>
 to the opening [delimiter](#delimiters).
@@ -141,7 +142,7 @@ in case [the dot notation](#dot-notation) applies but fails,
 the path resolves as unfound.
 
 ### variables
-![delims](mm/mustache-path.jpg)
+![delims](mm/mustache-var.jpg)
 
 a ***variable***<sup>[◥][m-var]</sup>
 is an ***independent***<sup>[◥][m-clause-ind]</sup>
@@ -172,6 +173,7 @@ the output can be transformed to suit other requirements.
 
 
 ### comments
+![delims](mm/mustache-comment.jpg)
 ```
 {{!
 
