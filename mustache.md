@@ -1,5 +1,5 @@
 # mustache
-[![logo](mm/mustache-logo.webp)](#about)
+[![logo](mm/mustache-logo.webp)](#about-)
 ## about <!-- {{{ -->
 `SM\Mustache` is a
 ***template processor***<sup>[◥][m-engine]</sup>
@@ -39,7 +39,7 @@ in the [resulting output](#examples).
 a clause consists of:
 - [delimiters](#delimiters)
 - [sigil](#sigils) (optional)
-- [path](#paths) or ***literal***<sup>[◥][leteral]</sup> or ***annotation***<sup>[◥][annotation]</sup> (optional)
+- [path](#paths) or ***literal***<sup>[◥][literal]</sup> or ***annotation***<sup>[◥][annotation]</sup> (optional)
 
 there are two kinds of clauses:
 - ***independent***<sup>[◥][m-clause-ind]</sup> are [variables](#variables) and [comments](#comments).
@@ -124,14 +124,32 @@ that is, the `first.second` value contains the `third` value,
 which is simply a `first.second.third` value.
 
 #### absolute path
-when a ***dot is met first***<sup>[◥][prefix]</sup>,
-the first value is **peeked**<sup>[◥][stack-peek]</sup>
-from [the stack](#the-context-stack).
-a single `.` - points to the top of the stack,
-a double `..` - to the second value from the top,
-`...` - to the third and so on.
-such a **backpedal** requires the knowledge of stack contents.
-thus, absolute path defines an **explict selection** of the value.
+a ***path*** that is ***prefixed***<sup>[◥][prefix]</sup>
+with ***one or multiple dots***
+is called ***absolute***<sup>[◥][abs-path]</sup>.
+
+[![path-abs](mm/mustache-path-abs.jpg)](#absolute-path)
+
+for example, in the `.name` path,
+a ***single dot***<sup>[◥][dot]</sup>
+points to the ***top of the stack***,
+which must be the ***container***<sup>[◥][container]</sup>
+where the `name` resides.
+
+in the `..name`, there is a ***double dot***
+pointing downwards (***top to bottom***)
+to the ***second container***<sup>[◥][container]</sup>
+on [the stack](#the-context-stack) and the `name` value inside that container.
+
+in the `...`, a ***triple dot*** points to
+the ***third value*** on [the stack](#the-context-stack)
+and so on..
+such a construct is called a **backpedal** -
+it requires the knowledge of stack contents.
+
+thus, an ***absolute path***<sup>[◥][abs-path]</sup>. implies
+an **explicit selection**<sup>[◥][stack-peek]</sup>
+of value.
 
 #### relative path
 when a ***name is met first***,
@@ -571,6 +589,8 @@ echo $m->prepare($template, ['list'=>['one','two','three']]);# prints onetwothre
 [snake_case]: https://en.wikipedia.org/wiki/Snake_case
 [container]: https://en.wikipedia.org/wiki/Associative_array
 [dot]: https://en.wikipedia.org/wiki/Full_stop "full stop. period. full point."
+[abs-path]: https://www.computerhope.com/jargon/a/absopath.htm
+[rel-path]: https://www.computerhope.com/jargon/r/relapath.htm
 [prefix]: https://en.wikipedia.org/wiki/Polish_notation "prefix"
 [interfix]: https://en.wikipedia.org/wiki/Interfix "linking element"
 [affix]: https://en.wikipedia.org/wiki/Affix
