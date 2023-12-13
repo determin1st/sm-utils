@@ -1,32 +1,31 @@
 # mustache
-![logo](mm/mustache-logo.webp)
+[![logo](mm/mustache-logo.webp)](#about)
 ## about <!-- {{{ -->
 `SM\Mustache` is a
-***template processor***<sup>[◥][m-engine]</sup> of
-***mustache templates***<sup>[◥][template]</sup>
+***template processor***<sup>[◥][m-engine]</sup>
+implementation of ***mustache templates***<sup>[◥][template]</sup>
 written in ***PHP***<sup>[◥](https://www.php.net/)</sup>
 and compatible with
 ***mustache specification***<sup>[◥](https://github.com/mustache/spec)</sup>
-in reasonable parts.
+in its reasonable parts.
 
 ### history
 - [the-parable-of-mustache-js](https://writing.jan.io/2013/11/01/the-parable-of-mustache-js.html)
 - [mustache-2.0](https://writing.jan.io/mustache-2.0.html)
 
 ### performance
-this implementation, running in the
-***JIT mode***<sup>[◥](https://php.watch/versions/8.0/JIT)</sup>,
-is comparable to various JS implementations
-![perf](mm/mustache-perf.jpg)
+running in ***the JIT mode***<sup>[◥](https://php.watch/versions/8.0/JIT)</sup>,
+this implementation is comparable to various JS implementations:
+[![perf](mm/mustache-perf.jpg)](#performance)
 
 ### principles
 - `logic-less` - in comparison with other template processors, where data is sliced and diced inside the template, this implementation strives to control the **data flow** through the template. in practice, it looks like **more concise syntax** with selections instead of cryptic expressions. thus, **less mental load** - more templating.
-- `data for template` - template is more important than data, a variety sets of data may fit into a single template. paths used in the **template should look nice**, readable and explanatory. the question about escaping special characters to accommodate data should never arise - avoid `template for data` at all costs, do a preliminary **data massaging** when necessary.
+- `data for template` - template is more important than data, a variety sets of data may fit into a single template. paths used in the **template should look nice**, readable and explanatory. the question of escaping sigils to accommodate data should never arise - avoid `template for data` at all costs, do a preliminary **data massaging** when necessary.
 - `??` - **use of helpers** is recommended.
 <!-- }}} -->
 ## syntax <!-- {{{ -->
 ### clauses
-![delims](mm/mustache-clause.jpg)
+[![clause](mm/mustache-clause.jpg)](#clauses)
 > *The army consists of the first infantry division and eight million replacements.*
 > 
 > **Sebastian Junger**
@@ -37,66 +36,66 @@ is the ***clause***<sup>[◥][m-clause]</sup>
 which is ***removed or replaced***<sup>[◥][substitution]</sup>
 in the [resulting output](#examples).
 
-a clause consists of [delimiters](#delimiters),
-a [sigil](#the-sigil)
-and/or a [path](#the-path).
+a clause consists of:
+- [delimiters](#delimiters)
+- [sigil](#sigils) (optional)
+- [path](#paths) or ***literal***<sup>[◥][leteral]</sup> or ***annotation***<sup>[◥][annotation]</sup> (optional)
 
-there are two kinds of clauses -
-***independent***<sup>[◥][m-clause-ind]</sup>,
-which are self-contained
-([variables](#variables) and [comments](#comments)),
-and ***dependent***<sup>[◥][m-clause-dep]</sup>,
-which make up [blocks](#blocks).
+there are two kinds of clauses:
+- ***independent***<sup>[◥][m-clause-ind]</sup> are [variables](#variables) and [comments](#comments).
+- ***dependent***<sup>[◥][m-clause-dep]</sup> are composed in [blocks](#blocks).
+
 
 ### delimiters
-![delims](mm/mustache-delims.jpg)
+[![delims](mm/mustache-delims.jpg)](#delimiters)
 
-a ***pair of markers***<sup>[◥][m-delims]</sup>,
+***delimiters***<sup>[◥][m-delims]</sup> are
+a ***pair of markers***
 which ***frame the stem***<sup>[◥][circumfix]</sup>
 of a [clause](#clauses) in the template.
+the default are **`{{`** and **`}}`**
+which look like a ***moustache***<sup>[◥][moustache]</sup>.
 
-the default delimiters are **`{{`** and **`}}`**
-that look like a ***moustache***<sup>[◥][moustache]</sup>.
+the first delimiter is called ***opening***,
+the second - ***closing***.
 
-delimiter examples: `{: :}`, `/* */`, `<% %>`,
-`(( ))`, `<[ ]>`, `<!--{ }-->`, `{{{ }}}`..
+***custom delimiters*** may be set at
+[the phase of preparation](#preparation).
+some examples: `{: :}`, `/* */`, `<{ }>`, `<[ ]>`,
+`<% %>`, `[% %]`, `{% %}`, `(( ))`, `[[ ]]`, `<!--{ }-->`, `{{{ }}}`.
 
-such balanced delimiters dont have to mirror each other or
-be of equal length, but they **must differ**
+such balanced delimiters do not have to mirror each other or
+be of equal length, but they ***must differ***
 to avoid ***delimiter collision***.
-even a single character might be used as a delimiter, but:
+a single character may also be used as a delimiter, but:
 > *There is no such thing as accident; It is fate misnamed.*
 > 
 > **Napoleon Bonaparte**
 
-delimiters are determined during
-[the phase of preparation](#preparation).
 
+### sigils
+[![sigil](mm/mustache-sigil.jpg)](#sigils)
 
-### the sigil
-![path](mm/mustache-sigil.jpg)
-
-the ***type of clause*** is determined
-by a ***sigil***<sup>[◥][sigil]</sup>
+a ***sigil***<sup>[◥][sigil]</sup>
+is a ***symbol***<sup>[◥][symbol]</sup>
 that is ***suffixed***<sup>[◥][suffix]</sup>
-to the opening [delimiter](#delimiters).
+to [the opening delimiter](#delimiters).
 
-this implementation defines:
-- `&` - [variable](#variables) modifier (optional)
+a ***sigil*** effectively ***denotes the type*** of [clause](#clauses):
+- `&` - [variable](#variables) (optional modifier)
 - `!` - [commentary](#comments)
 - `#`,`^`,`@` - [primary section](#blocks)
 - `|` - [alternative section](#OR-section)
 - `/` - [terminus](#terminus)
 
 
-### the path
-![path](mm/mustache-path.jpg)
+### paths
+[![path](mm/mustache-path.jpg)](#paths)
 
 a ***path***<sup>[◥][m-path]</sup>
-is ***the address of the value***<sup>[◥][name-binding]</sup>
-in [the context stack](#the-context-stack).
-it consists of one or multiple ***names***<sup>[◥][name-value]</sup>
-and follows [the dot notation](#dot-notation).
+consists of ***one or multiple names***<sup>[◥][name-value]</sup>
+that indicate ***the address of a value***<sup>[◥][name-binding]</sup>
+on [the context stack](#the-context-stack).
 
 it is crusial to follow a rigid
 ***naming convention***<sup>[◥][naming]</sup> -
@@ -111,14 +110,18 @@ or ***whitespace***<sup>[◥][whitespace]</sup>
 characters - they have a special meaning.
 
 #### dot notation
-when a ***dot is met in the path***<sup>[◥][interfix]</sup>,
-for example in `first.second`,
-it is assumed that the `first` name points to
-a ***container***<sup>[◥][container]</sup>
-and the `second` name points to the value in that container.
-for the `first.second.third` path, the rule extrapolates further -
-the `third` ***value is to be extracted*** from the `second` nested container
-which is extracted from the `first` container.
+***multiple names*** in the path
+***are joined***<sup>[◥][interfix]</sup>
+with the ***dot***<sup>[◥][dot]</sup> character.
+
+for example, the path of two names - `first.second`
+assumes that the `first` name ***points to the container***<sup>[◥][container]</sup>
+and the `second` name points to ***the value inside*** that container.
+for the `first.second.third` path, the rule extrapolates -
+the `third` value ***must be extracted from*** the `second` container
+which must be extracted from the `first` container.
+that is, the `first.second` value contains the `third` value,
+which is simply a `first.second.third` value.
 
 #### absolute path
 when a ***dot is met first***<sup>[◥][prefix]</sup>,
@@ -141,46 +144,43 @@ when the name is found, the search does not resume -
 in case [the dot notation](#dot-notation) applies but fails,
 the path resolves as unfound.
 
+
 ### variables
-![delims](mm/mustache-var.jpg)
+[![var](mm/mustache-var.jpg)](#variables)
+> *Make everything as simple as possible, but not simpler.*
+> 
+> **Albert Einstein**
 
 a ***variable***<sup>[◥][m-var]</sup>
 is an ***independent***<sup>[◥][m-clause-ind]</sup>
 [clause](#clauses)
 of ***mustache language***<sup>[◥][m-lang]</sup>
-which consists of [delimiters](#delimiters)
-and [path](#the-path).
-> *Make everything as simple as possible, but not simpler.*
-> 
-> **Albert Einstein**
+that consists of [delimiters](#delimiters)
+and [path](#paths).
 
-a variable ***can be affixed***<sup>[◥][affix]</sup>
-with the **`&`** [sigil](#the-sigil) -
+a ***variable***<sup>[◥][m-var]</sup>
+may be ***affixed***<sup>[◥][affix]</sup>
+with the **`&`** [sigil](#sigils) -
 a ***modifier***<sup>[◥][modifier]</sup>
-that disables or enables generic
-***escaping of a string value***<sup>[◥][escape-char]</sup>.
-
-for example, putting `<World>` into:
-```html
-<p>Hello {{&name}}!</p>
-```
-with html escaping results in:
-```html
-<p>Hello &lt;World&gt;</p>
-```
-escaping is only one of [many possibilities](#preparation) -
-the output can be transformed to suit other requirements.
+that [controls the escaping](#escaping)
+of the value.
+***escaping***<sup>[◥][escape-char]</sup>
+is only a historical title for
+a common ***post-processing mechanism***
+which ***is disabled by default*** -
+the affix has no effect.
 
 
 ### comments
-![delims](mm/mustache-comment.jpg)
+[![comment](mm/mustache-comment.jpg)](#comments)
 ```
 {{!
 
   When I read commentary
   about suggestions for where C should go,
   I often think back and give thanks that
-  it wasn't developed under the advice of a worldwide crowd.
+  it wasn't developed under
+  the advice of a worldwide crowd.
 
   Dennis Ritchie 🚀
 
@@ -190,9 +190,9 @@ a ***comment***<sup>[◥][m-comment]</sup>
 is an ***independent***<sup>[◥][m-clause-ind]</sup>
 [clause](#clauses)
 of ***mustache language***<sup>[◥][m-lang]</sup>
-which consists of [delimiters](#delimiters),
-the **`!`** [sigil](#the-sigil)
-and ***commentary content***.
+that consists of [delimiters](#delimiters),
+the **`!`** [sigil](#sigils)
+and ***annotation***<sup>[◥][annotation]</sup>.
 
 [upon rendering](#rendering), a comment
 ***is stripped***<sup>[◥][substitution]</sup>
@@ -201,18 +201,18 @@ from the [resulting output](#examples).
 ### inner indentation
 ***for better appearance***<sup>[◥][readability]</sup>,
 [clause](#clauses) components
-([delimiters](#delimiters), [sigil](#the-sigil) and [path](#the-path]))
+([delimiters](#delimiters), [sigil](#sigils) and [path](#paths))
 ***can align with each other***<sup>[◥][free-form]</sup>
 using ***whitespace***<sup>[◥][whitespace]</sup>.
 
 for example `{{ & path.to.value }}` equals to `{{&path.to.value}}`,
-but don't forget [the path](#the-path) itself
+but don't forget that [path](#paths) itself
 cannot be indented with whitespace -
 the `{{&path . to . value}}` is incorrect.
 
 
 ### blocks
-![block](mm/mustache-block.jpg)
+[![block](mm/mustache-block.jpg)](#blocks)
 
 a ***block***<sup>[◥][m-block]</sup>
 consists of one or more ***sections***<sup>[◥][m-section]</sup> and
@@ -233,50 +233,22 @@ determines ***the type of block***.
 a [clause](#clauses) of the primary section represents
 a ***conditional construct***<sup>[◥][m-conditional]</sup>
 that evaluates ***the value***<sup>[◥][value]</sup>
-resolved from [the path](#the-path) -
+resolved from [the path](#paths) -
 either its ***truthiness or falsiness***<sup>[◥][truth-value]</sup>
 influence the way the block renders.
 
-[sigil](#the-sigil) variants (***block types***) are:
+[sigil](#sigils) variants (***block types***) are:
 - [**`#`**](#TRUTHY-block), [**`@`**](#ITERABLE-block) - expects truthy values
 - [**`^`**](#FALSY-block) - expects falsy values
 
 any ***subsequent section***<sup>[◥][cond-subsequent]</sup>
 is called an [alternative section](#OR-section)
 and its [clause](#clauses) ***is affixed***<sup>[◥][affix]</sup>
-with [**`|`**](#OR-section) [sigil](#the-sigil).
+with [**`|`**](#OR-section) [sigil](#sigils).
 
 [upon rendering](#rendering), a block is
 ***removed or replaced***<sup>[◥][substitution]</sup>
 as a whole.
-
-
-#### terminus
-![terminus](mm/mustache-terminus.jpg)
-
-a ***terminus***<sup>[◥][m-terminus]</sup>
-is a ***dependent***<sup>[◥][m-clause-dep]</sup>
-[clause](#clauses)
-of ***mustache language***<sup>[◥][m-lang]</sup>
-which consists of [delimiters](#delimiters),
-the **`/`** [sigil](#the-sigil)
-and an optional ***annotation***<sup>[◥][annotation]</sup>.
-
-the purpose of a ***terminus***<sup>[◥][m-terminus]</sup>
-is to ***terminate the block***<sup>[◥][boundary-marker]</sup>.
-```
-{{/
-
-  a terminus clause may look like a commentary, irrelevant,
-  but it depends on block's might, without it,
-  there will be a terrible failure - a barbarian invasion!
-
-  the opposite is also true - when a terminus is plowed
-  by ignorant peasant, the block demarks itself as open
-  to worldwide scum - a terrible failure!
-
-}}
-```
 
 
 #### FALSY block
@@ -342,12 +314,40 @@ it is more natural than switch block because default section is not the first on
   {{/block}}
 ```
 
+#### terminus
+[![terminus](mm/mustache-terminus.jpg)](#terminus)
+
+a ***terminus***<sup>[◥][m-terminus]</sup>
+is a ***dependent***<sup>[◥][m-clause-dep]</sup>
+[clause](#clauses)
+of ***mustache language***<sup>[◥][m-lang]</sup>
+which consists of [delimiters](#delimiters),
+the **`/`** [sigil](#sigils)
+and an optional ***annotation***<sup>[◥][annotation]</sup>.
+
+the purpose of a ***terminus***<sup>[◥][m-terminus]</sup>
+is to ***terminate the block***<sup>[◥][boundary-marker]</sup>.
+```
+{{/
+
+  a terminus clause may look like a commentary, irrelevant,
+  but it depends on block's might, without it,
+  there will be a terrible failure - a barbarian invasion!
+
+  the opposite is also true - when a terminus is plowed
+  by ignorant peasant, the block demarks itself as open
+  to worldwide scum - a terrible failure!
+
+}}
+```
+
 ### lambdas
+powerful
+
 <!-- }}} -->
 ## usage <!-- {{{ -->
-### escaping
 ### the context stack
-![stack](mm/mustache-stack.jpg)
+[![stack](mm/mustache-stack.jpg)](#the-context-stack)
 
 internally, mustache instance represents
 a ***stack***<sup>[◥](https://en.wikipedia.org/wiki/Stack_(abstract_data_type))</sup>.
@@ -401,6 +401,16 @@ the `.` selector points to the top of the stack,
 echo $m->value('.name');# Donald
 echo $m->value('..name');# Barak
 echo $m->value('...name');# Joe
+```
+### escaping
+123
+for example, putting `<World>` into:
+```html
+<p>Hello {{&name}}!</p>
+```
+with html escaping results in:
+```html
+<p>Hello &lt;World&gt;</p>
 ```
 
 ### preparation
@@ -545,9 +555,11 @@ echo $m->prepare($template, ['list'=>['one','two','three']]);# prints onetwothre
 [m-terminus]: https://en.wikipedia.org/wiki/Terminus_(god) "terminator, boundary"
 [m-section]: https://dictionary.cambridge.org/dictionary/english/section "one of the parts that something is divided into"
 [m-conditional]: https://en.wikipedia.org/wiki/Conditional_(computer_programming) "whether a value is truthy or falsy"
+[literal]: https://en.wikipedia.org/wiki/Literal_(computer_programming) "textual representation of a value"
 [moustache]: https://en.wikipedia.org/wiki/Moustache
 [template]: https://en.wikipedia.org/wiki/Template_(word_processing) "template"
 [substitution]: https://en.wikipedia.org/wiki/String_interpolation "substitution"
+[symbol]: https://en.wikipedia.org/wiki/Symbol "a special character"
 [sigil]: https://en.wikipedia.org/wiki/Sigil_(computer_programming) "affixed symbol"
 [value]: https://en.wikipedia.org/wiki/Value_(computer_science)
 [name-binding]: https://en.wikipedia.org/wiki/Name_binding "dynamic name binding"
