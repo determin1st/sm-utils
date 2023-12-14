@@ -51,7 +51,7 @@ there are two kinds of clauses:
 
 ***delimiters***<sup>[◥][m-delims]</sup> are
 a ***pair of markers***
-which ***frame the stem***<sup>[◥][circumfix]</sup>
+that ***frame the stem***<sup>[◥][circumfix]</sup>
 of a [clause](#clauses) in the template.
 the default are **`{{`** and **`}}`**
 which look like a ***moustache***<sup>[◥][moustache]</sup>.
@@ -114,11 +114,11 @@ characters - they have a special meaning.
 ***are joined***<sup>[◥][interfix]</sup>
 with the ***dot***<sup>[◥][dot]</sup> character.
 
-for example, the path of two names - `first.second`
+for example, the path consisting of two names - `first.second`
 assumes that the `first` name ***points to the container***<sup>[◥][container]</sup>
 and the `second` name points to ***the value inside*** that container.
 for the `first.second.third` path, the rule extrapolates -
-the `third` value ***must be extracted from*** the `second` container
+the `third` value ***must be extracted*** from the `second` container
 which must be extracted from the `first` container.
 that is, the `first.second` value contains the `third` value,
 which is simply a `first.second.third` value.
@@ -135,32 +135,31 @@ a ***single dot***<sup>[◥][dot]</sup>
 points to the ***top of the stack***,
 which must be the ***container***<sup>[◥][container]</sup>
 where the `name` resides.
-
 in the `..name`, there is a ***double dot***
 pointing downwards (***top to bottom***)
 to the ***second container***<sup>[◥][container]</sup>
 on [the stack](#the-context-stack) and the `name` value inside that container.
-
-in the `...`, a ***triple dot*** points to
+in the `...name`, a ***triple dot*** points to
 the ***third value*** on [the stack](#the-context-stack)
 and so on..
-such a construct is called a **backpedal** -
-it requires the knowledge of stack contents.
+such a repeated notation is called a **backpedal** -
+it requires knowledge of [the stack](#the-context-stack) contents.
 
-thus, an ***absolute path***<sup>[◥][abs-path]</sup>. implies
-an **explicit selection**<sup>[◥][stack-peek]</sup>
+thus, an ***absolute path***<sup>[◥][abs-path]</sup>
+implies an **explicit selection**<sup>[◥][stack-peek]</sup>
 of value.
 
 #### relative path
-when a ***name is met first***,
-the first value is ***searched***<sup>[◥][linear-search]</sup>
-in [the stack](#the-context-stack)
-from top to bottom. that is, each value is checked -
-it must be a ***container***<sup>[◥][container]</sup>
-that contains the name.
-when the name is found, the search does not resume -
-in case [the dot notation](#dot-notation) applies but fails,
-the path resolves as unfound.
+a [path](#paths) with ***no backpedal***
+is called ***relative***<sup>[◥][rel-path]</sup> -
+the first name is ***searched***<sup>[◥][linear-search]</sup>
+on [the stack](#the-context-stack) (rather than peeked).
+
+the ***search*** goes from ***top to bottom***
+only inside of ***container***<sup>[◥][container]</sup>
+values. when the first name is found,
+but [the dot notation](#dot-notation) fails,
+the search does not resume.
 
 
 ### variables
@@ -188,6 +187,17 @@ a common ***post-processing mechanism***
 which ***is disabled by default*** -
 the affix has no effect.
 
+### inner indentation
+***for better appearance***<sup>[◥][readability]</sup>,
+[clause](#clauses) components
+([delimiters](#delimiters), [sigil](#sigils) and [path](#paths))
+***can align with each other***<sup>[◥][free-form]</sup>
+using ***whitespace***<sup>[◥][whitespace]</sup>.
+
+for example, `{{ & path.to.value }}` equals to `{{&path.to.value}}`,
+but don't forget that [path](#paths) itself
+cannot be indented with whitespace -
+the `{{&path . to . value}}` is incorrect.
 
 ### comments
 [![comment](mm/mustache-comment.jpg)](#comments)
@@ -216,18 +226,6 @@ and ***annotation***<sup>[◥][annotation]</sup>.
 ***is stripped***<sup>[◥][substitution]</sup>
 from the [resulting output](#examples).
 
-### inner indentation
-***for better appearance***<sup>[◥][readability]</sup>,
-[clause](#clauses) components
-([delimiters](#delimiters), [sigil](#sigils) and [path](#paths))
-***can align with each other***<sup>[◥][free-form]</sup>
-using ***whitespace***<sup>[◥][whitespace]</sup>.
-
-for example `{{ & path.to.value }}` equals to `{{&path.to.value}}`,
-but don't forget that [path](#paths) itself
-cannot be indented with whitespace -
-the `{{&path . to . value}}` is incorrect.
-
 
 ### blocks
 [![block](mm/mustache-block.jpg)](#blocks)
@@ -237,7 +235,8 @@ consists of one or more ***sections***<sup>[◥][m-section]</sup> and
 a [terminus](#terminus).
 
 a ***section***<sup>[◥][m-section]</sup>
-consists of a ***dependent***<sup>[◥][m-clause-ind]</sup> [clause](#clauses)
+consists of a ***dependent***<sup>[◥][m-clause-ind]</sup>
+[clause](#clauses)
 and a ***section's content***<sup>[◥][template]</sup>
 that ends with a [terminus](#terminus) or another ***section***.
 
@@ -245,19 +244,19 @@ that ends with a [terminus](#terminus) or another ***section***.
 > 
 > **William Safire**
 
-the first section of a block
-aka ***the primary section***<sup>[◥][cond-precedent]</sup>
-determines ***the type of block***.
-a [clause](#clauses) of the primary section represents
-a ***conditional construct***<sup>[◥][m-conditional]</sup>
-that evaluates ***the value***<sup>[◥][value]</sup>
-resolved from [the path](#paths) -
-either its ***truthiness or falsiness***<sup>[◥][truth-value]</sup>
-influence the way the block renders.
+the ***first section*** of a block,
+or the ***primary section***
+determines the ***block type***.
+its [clause](#clauses)
+represents a ***conditional construct***<sup>[◥][m-conditional]</sup>
+that tests resolved ***value***<sup>[◥][value]</sup>
+for [truthiness or falsiness](#truthy-or-falsy) -
+the ***result***<sup>[◥][truth-value]</sup>
+influences the way the block renders.
 
-[sigil](#sigils) variants (***block types***) are:
-- [**`#`**](#TRUTHY-block), [**`@`**](#ITERABLE-block) - expects truthy values
-- [**`^`**](#FALSY-block) - expects falsy values
+available ***block types*** ([sigils](#sigils)) are:
+- [**`#`**](#TRUTHY-block),[**`@`**](#ITERABLE-block) - expects truthy
+- [**`^`**](#FALSY-block) - expects falsy
 
 any ***subsequent section***<sup>[◥][cond-subsequent]</sup>
 is called an [alternative section](#OR-section)
@@ -268,6 +267,18 @@ with [**`|`**](#OR-section) [sigil](#sigils).
 ***removed or replaced***<sup>[◥][substitution]</sup>
 as a whole.
 
+#### truthy or falsy
+When non-boolean values are used in a boolean context,
+such as the condition of an if statement,
+they will be coerced into either true or false.
+Values that are coerced into true are called truthy and
+values that are coerced into false are called falsy.
+JavaScript contains the following falsy values:
+- false
+- 0, -0 and 0n
+- "", '' (empty strings)
+- null, undefined and NaN
+- document.all
 
 #### FALSY block
 if-not block is rendered when block value is falsy
