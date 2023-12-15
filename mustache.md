@@ -110,6 +110,8 @@ or ***whitespace***<sup>[◥][whitespace]</sup>
 characters - they have a special meaning.
 
 #### dot notation
+[![path-rel](mm/mustache-path-rel.jpg)](#dot-notation)
+
 ***multiple names*** in the path
 ***are joined***<sup>[◥][interfix]</sup>
 with the ***dot***<sup>[◥][dot]</sup> character.
@@ -124,11 +126,13 @@ that is, the `first.second` value contains the `third` value,
 which is simply a `first.second.third` value.
 
 #### absolute path
+[![path-abs](mm/mustache-path-abs.jpg)](#absolute-path)
+
 a ***path*** that is ***prefixed***<sup>[◥][prefix]</sup>
 with ***one or multiple dots***
 is called ***absolute***<sup>[◥][abs-path]</sup>.
 
-[![path-abs](mm/mustache-path-abs.jpg)](#absolute-path)
+[![path-backpedal](mm/mustache-path-backpedal.jpg)](#absolute-path)
 
 for example, in the `.name` path,
 a ***single dot***<sup>[◥][dot]</sup>
@@ -160,6 +164,11 @@ only inside of ***container***<sup>[◥][container]</sup>
 values. when the first name is found,
 but [the dot notation](#dot-notation) fails,
 the search does not resume.
+
+### lambda path
+[![path-lambda](mm/mustache-path-lambda.jpg)](#lambda-path)
+
+powerful
 
 
 ### variables
@@ -245,18 +254,18 @@ that ends with a [terminus](#terminus) or another ***section***.
 > **William Safire**
 
 the ***first section*** of a block,
-or the ***primary section***
+or the ***primary section*** -
 determines the ***block type***.
 its [clause](#clauses)
 represents a ***conditional construct***<sup>[◥][m-conditional]</sup>
 that tests resolved ***value***<sup>[◥][value]</sup>
 for [truthiness or falsiness](#truthy-or-falsy) -
-the ***result***<sup>[◥][truth-value]</sup>
+the ***result***<sup>[◥][boolean]</sup>
 influences the way the block renders.
 
 available ***block types*** ([sigils](#sigils)) are:
-- [**`#`**](#TRUTHY-block),[**`@`**](#ITERABLE-block) - expects truthy
-- [**`^`**](#FALSY-block) - expects falsy
+- [**`#`**](#TRUTHY-block),[**`@`**](#ITERABLE-block) - [expects truthy](#truthy-or-falsy)
+- [**`^`**](#FALSY-block) - [expects falsy](#truthy-or-falsy)
 
 any ***subsequent section***<sup>[◥][cond-subsequent]</sup>
 is called an [alternative section](#OR-section)
@@ -268,17 +277,23 @@ with [**`|`**](#OR-section) [sigil](#sigils).
 as a whole.
 
 #### truthy or falsy
-When non-boolean values are used in a boolean context,
-such as the condition of an if statement,
-they will be coerced into either true or false.
-Values that are coerced into true are called truthy and
-values that are coerced into false are called falsy.
-JavaScript contains the following falsy values:
-- false
-- 0, -0 and 0n
-- "", '' (empty strings)
-- null, undefined and NaN
-- document.all
+the [path](#paths) of a ***primary section***
+resolves to a ***value***<sup>[◥][value]</sup>
+which ***is coerced***<sup>[◥][coercion]</sup>
+to a ***boolean***<sup>[◥][boolean]</sup>.
+when it is coerced into ***false*** - its ***falsy***,
+otherwise, it is ***true*** and ***truthy***.
+
+this ***mustache***<sup>[◥][m-lang]</sup> implementation
+defines the following ***falsy*** values:
+- `unfound` - when [path](#paths) resolves to ***nothing***<sup>[◥][null]</sup> (value not found)
+- `false` - ***boolean***<sup>[◥][boolean]</sup> (no coercion)
+- `0` - ***zero number***<sup>[◥][zero]</sup>
+- ***empty string***<sup>[◥][empty-string]</sup>
+- `[]` - empty ***array***<sup>[◥][container]</sup>
+- empty ***countable object***<sup>[◥][countable]</sup>
+
+every other value - is ***truthy***.
 
 #### FALSY block
 if-not block is rendered when block value is falsy
@@ -350,11 +365,11 @@ a ***terminus***<sup>[◥][m-terminus]</sup>
 is a ***dependent***<sup>[◥][m-clause-dep]</sup>
 [clause](#clauses)
 of ***mustache language***<sup>[◥][m-lang]</sup>
-which consists of [delimiters](#delimiters),
+that consists of [delimiters](#delimiters),
 the **`/`** [sigil](#sigils)
 and an optional ***annotation***<sup>[◥][annotation]</sup>.
 
-the purpose of a ***terminus***<sup>[◥][m-terminus]</sup>
+the only purpose of a ***terminus***<sup>[◥][m-terminus]</sup>
 is to ***terminate the block***<sup>[◥][boundary-marker]</sup>.
 ```
 {{/
@@ -369,9 +384,6 @@ is to ***terminate the block***<sup>[◥][boundary-marker]</sup>.
 
 }}
 ```
-
-### lambdas
-powerful
 
 <!-- }}} -->
 ## usage <!-- {{{ -->
@@ -522,8 +534,7 @@ function render(string $template, mixed $data=null): string;
 function get(int $template, mixed $data=null): string;
 rendering may look like
 
-$result = $m->render($templateStorage[$name], $data);
-# or when precached
+$result = $m->render($templateStorage[$name], $data);# or when precached
 $result = $m->get($templateStorage[$name], $data);
 regarding to lambdas,
 i suppose that most of them will live a short life at the stage 1 and wont be invoked periodically as projected for stage 3. there is no need for constant ansi wraps or other special/control character insertion in a thoughtful template.
@@ -618,6 +629,11 @@ echo $m->prepare($template, ['list'=>['one','two','three']]);# prints onetwothre
 [boundary-marker]: https://en.wikipedia.org/wiki/Boundary_marker
 [cond-precedent]: https://en.wikipedia.org/wiki/Condition_precedent "required before something else will occur"
 [cond-subsequent]: https://en.wikipedia.org/wiki/Condition_subsequent "brings a duty to an end"
-[truth-value]: https://en.wikipedia.org/wiki/Truth_value
+[boolean]: https://en.wikipedia.org/wiki/Boolean_data_type
+[coercion]: https://en.wikipedia.org/wiki/Type_conversion
+[null]: https://en.wikipedia.org/wiki/Null_pointer
+[zero]: https://en.wikipedia.org/wiki/0
+[empty-string]: https://en.wikipedia.org/wiki/Empty_string
+[countable]: https://www.php.net/manual/en/class.countable.php
 <!-- }}} -->
 <!--::-->

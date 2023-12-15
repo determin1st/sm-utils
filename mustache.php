@@ -1631,6 +1631,12 @@ class MustacheCtx # data stack {{{
           : '';
       }
       return $this->base->func[$i0]($this);
+    case 5:
+    case 6:
+      if (($v instanceof Countable) && !count($v)) {
+        return $this->base->func[$i0]($this);
+      }
+      break;
     }
     return $i1
       ? $this->base->func[$i1]($this)
@@ -1679,10 +1685,17 @@ class MustacheCtx # data stack {{{
         $r = $this->base->func[$i0]($this);
       }
       break;
-    default:
-      $r = $i1
-        ? $this->base->func[$i1]($this)
-        : '';
+    case 5:
+    case 6:
+      if (($v instanceof Countable) && !count($v)) {
+        $r = $this->base->func[$i0]($this);
+      }
+      elseif ($i1) {
+        $r = $this->base->func[$i1]($this);
+      }
+      else {
+        $r = '';
+      }
       break;
     }
     # complete
@@ -1722,6 +1735,12 @@ class MustacheCtx # data stack {{{
         return $this->base->func[$i0]($this);
       }
       break;
+    case 3:
+      return $v
+        ? $this->base->func[$i1]($this)
+        : ($i0
+          ? $this->base->func[$i0]($this)
+          : '');
     case 4:
       if ($k = count($v))
       {
@@ -1745,12 +1764,6 @@ class MustacheCtx # data stack {{{
           : '';
       }
       break;
-    default:
-      return $v
-        ? $this->base->func[$i1]($this)
-        : ($i0
-          ? $this->base->func[$i0]($this)
-          : '');
     }
     render_helper:# single value
       $i = ++$this->stackIdx;
@@ -1812,6 +1825,15 @@ class MustacheCtx # data stack {{{
         return $r;
       }
       break;
+    case 3:
+      # apply truthy/falsy section
+      $r = $v
+        ? $this->base->func[$i1]($this)
+        : ($i0
+          ? $this->base->func[$i0]($this)
+          : '');
+      $this->revoke();
+      return $r;
     case 4:
       if ($k = count($v))
       {
@@ -1841,15 +1863,6 @@ class MustacheCtx # data stack {{{
         return $r;
       }
       break;
-    default:
-      # apply truthy/falsy section
-      $r = $v
-        ? $this->base->func[$i1]($this)
-        : ($i0
-          ? $this->base->func[$i0]($this)
-          : '');
-      $this->revoke();
-      return $r;
     }
     render_helper:# single value
       $i = ++$this->stackIdx;
