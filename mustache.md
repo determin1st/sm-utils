@@ -176,8 +176,6 @@ the start of the ***argument***<sup>[◥][argument]</sup>
 to that lambda.
 
 
-
-
 ### variables
 [![var](mm/mustache-var.jpg)](#variables)
 > *Make everything as simple as possible, but not simpler.*
@@ -284,11 +282,15 @@ with [**`|`**](#OR-section) [sigil](#sigils).
 as a whole.
 
 #### truthy or falsy
+> *I cannot comprehend how any man can want anything but the truth.*
+> 
+> **Marcus Aurelius**
+
 the [path](#paths) of a ***primary section***
 resolves to a ***value***<sup>[◥][value]</sup>
 which ***is coerced***<sup>[◥][coercion]</sup>
 to a ***boolean***<sup>[◥][boolean]</sup>.
-when it is coerced into ***false*** - its ***falsy***,
+when it coerces to ***false*** - its ***falsy***,
 otherwise, it is ***true*** and ***truthy***.
 
 this ***mustache***<sup>[◥][m-lang]</sup> implementation
@@ -303,18 +305,34 @@ defines the following ***falsy*** values:
 every other value - is ***truthy***.
 
 #### FALSY block
-if-not block is rendered when block value is falsy
+[![block-falsy](mm/mustache-block-falsy.jpg)](#FALSY-block)
+
+this block type ***is the simplest*** -
+its primary section is rendered
+only when [the path](#paths)
+resolves to [falsy values](#truthy-or-falsy). the value itself is not used in rendering.
 ```
-{{^block}} falsy {{/block}}
+{{^array}}
+  array is empty
+{{/}}
+{{^array-count}}
+  array is empty (number of elements is zero)
+{{/}}
+{{^user.active}}
+  user is afk
+{{/}}
 ```
 
 #### TRUTHY block
+[![block-truthy](mm/mustache-block-truthy.jpg)](#TRUTHY-block)
+
 if block is rendered when block value is truthy
 ```
 {{#block}} truthy {{/block}}
 ```
 
 #### ITERABLE block
+[![block-iter](mm/mustache-block-iter.jpg)](#ITERABLE-block)
 
 #### OR section
 if-else block has two sections, one is always rendered
@@ -381,7 +399,7 @@ is to ***terminate the block***<sup>[◥][boundary-marker]</sup>.
 ```
 {{/
 
-  a terminus clause may look like a commentary, irrelevant,
+  a terminus clause may look like a comment, irrelevant,
   but it depends on block's might, without it,
   there will be a terrible failure - a barbarian invasion!
 
