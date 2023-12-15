@@ -146,9 +146,9 @@ on [the stack](#the-context-stack) and the `name` value inside that container.
 in the `...name`, a ***triple dot*** points to
 the ***third value*** on [the stack](#the-context-stack)
 and so on..
-such a repeated notation is called a **backpedal** -
-it requires knowledge of [the stack](#the-context-stack) contents.
 
+such a prefixed dot notation is called a **backpedal** -
+it requires knowledge of [the stack](#the-context-stack) contents.
 thus, an ***absolute path***<sup>[◥][abs-path]</sup>
 implies an **explicit selection**<sup>[◥][stack-peek]</sup>
 of value.
@@ -165,10 +165,17 @@ values. when the first name is found,
 but [the dot notation](#dot-notation) fails,
 the search does not resume.
 
-### lambda path
+#### lambda path
 [![path-lambda](mm/mustache-path-lambda.jpg)](#lambda-path)
 
-powerful
+when a ` ` ***space***<sup>[◥][space]</sup> character
+is met ***in the path***,
+it denotes the end of
+[the path that resolves to lambda](#lambdas) and
+the start of the ***argument***<sup>[◥][argument]</sup>
+to that lambda.
+
+
 
 
 ### variables
@@ -196,7 +203,7 @@ a common ***post-processing mechanism***
 which ***is disabled by default*** -
 the affix has no effect.
 
-### inner indentation
+### indentation
 ***for better appearance***<sup>[◥][readability]</sup>,
 [clause](#clauses) components
 ([delimiters](#delimiters), [sigil](#sigils) and [path](#paths))
@@ -290,7 +297,7 @@ defines the following ***falsy*** values:
 - `false` - ***boolean***<sup>[◥][boolean]</sup> (no coercion)
 - `0` - ***zero number***<sup>[◥][zero]</sup>
 - ***empty string***<sup>[◥][empty-string]</sup>
-- `[]` - empty ***array***<sup>[◥][container]</sup>
+- `[]` - empty ***array***<sup>[◥][array]</sup>
 - empty ***countable object***<sup>[◥][countable]</sup>
 
 every other value - is ***truthy***.
@@ -571,6 +578,9 @@ echo $m->render($template, ['list'=>[1,2,3,4,5]]);# prints 12345, template is ca
 echo $m->render($template, ['list'=>['one','two','three']]);# FATAL! - expecting integers in the array
 echo $m->prepare($template, ['list'=>['one','two','three']]);# prints onetwothree, template cache is ignored
 
+### lambdas
+powerful
+
 <!-- }}} -->
 ## examples <!-- {{{ -->
 ### one
@@ -624,6 +634,8 @@ echo $m->prepare($template, ['list'=>['one','two','three']]);# prints onetwothre
 [linear-search]: https://en.wikipedia.org/wiki/Linear_search
 [free-form]: https://en.wikipedia.org/wiki/Free-form_language
 [whitespace]: https://en.wikipedia.org/wiki/Whitespace_character#Programming_languages "SPACE, TAB, LINE FEED"
+[space]: https://en.wikipedia.org/wiki/Space_(punctuation)
+[argument]: https://en.wikipedia.org/wiki/Argument_of_a_function
 [readability]: https://en.wikipedia.org/wiki/Readability "readability"
 [annotation]: https://en.wikipedia.org/wiki/Annotation "extra information"
 [boundary-marker]: https://en.wikipedia.org/wiki/Boundary_marker
@@ -635,5 +647,6 @@ echo $m->prepare($template, ['list'=>['one','two','three']]);# prints onetwothre
 [zero]: https://en.wikipedia.org/wiki/0
 [empty-string]: https://en.wikipedia.org/wiki/Empty_string
 [countable]: https://www.php.net/manual/en/class.countable.php
+[array]: https://www.php.net/manual/en/language.types.array.php
 <!-- }}} -->
 <!--::-->
