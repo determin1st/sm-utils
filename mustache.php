@@ -203,7 +203,7 @@ class Mustache # {{{
           $line,$indent,$i0,$i1
         ];
         break;
-      case '@':# ITERABLE BLOCK
+      case '@':# ITERATOR BLOCK
         $token[$i++] = [
           2,ltrim(substr($c, 1)),
           $line,$indent,$i0,$i1
@@ -396,7 +396,7 @@ class Mustache # {{{
                ($n > 3 && $node[6][3] !== '|')))
           {
             throw new Exception(
-              'iterable block '.
+              'iterator block '.
               'cannot have switch sections '.
               "\n".$this->_wrap($tpl, $a[4], $a[5])
             );
@@ -705,7 +705,7 @@ class Mustache # {{{
               ? '$x->b2('.$d.','.$n.$a.')'
               : '$x->b1('.$d.')';
             break;
-          case 2:# ITERABLE
+          case 2:# ITERATOR
             $x .= '$x->bi('.$d.')';
             break;
           }
@@ -728,7 +728,7 @@ class Mustache # {{{
             ? '$x->f2('.$d.','.$n.$a.')'
             : '$x->f1('.$d.')';
           break;
-        case 2:# ITERABLE LAMBDA
+        case 2:# LAMBDA ITERATOR
           $x .= '$x->fi('.$d.')';
           break;
         }
@@ -1892,7 +1892,7 @@ class MustacheCtx # data stack {{{
     ###
   }
   # }}}
-  function bi(# ITERABLE {{{
+  function bi(# ITERATOR {{{
     string $p, int $pi, int $n, ?array $pn, int $t,
     int $i0, int $i1
   ):string
@@ -1941,7 +1941,7 @@ class MustacheCtx # data stack {{{
     );
   }
   # }}}
-  function bfi(# ITERABLE LAMBDA {{{
+  function bfi(# LAMBDA ITERATOR {{{
     object $f, string $arg, int $t, int $j,
     int $i0, int $i1
   ):string
@@ -1992,7 +1992,7 @@ class MustacheCtx # data stack {{{
       return $r;
     }
     throw new Exception(
-      'lambda block'.
+      'iterator block'.
       ' has recieved a non-iterable value'.
       ' ('.gettype($v).')'
     );
@@ -2180,7 +2180,7 @@ class MustacheCtx # data stack {{{
     );
   }
   # }}}
-  function fi(# ITERABLE {{{
+  function fi(# ITERATOR {{{
     string $p, int $pi, int $n, ?array $pn, int $t,
     string $arg, int $i0, int $i1
   ):string

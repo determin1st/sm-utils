@@ -268,8 +268,8 @@ for [truthiness or falsiness](#truthy-or-falsy) -
 the ***result***<sup>[◥][boolean]</sup>
 influences the way the block renders.
 
-available ***block types*** ([sigils](#sigils)) are:
-- [**`#`**](#TRUTHY-block),[**`@`**](#ITERABLE-block) - [expects truthy](#truthy-or-falsy)
+standard ***block types*** ([sigils](#sigils)) are:
+- [**`#`**](#TRUTHY-block),[**`@`**](#ITERATOR-block) - [expects truthy](#truthy-or-falsy)
 - [**`^`**](#FALSY-block) - [expects falsy](#truthy-or-falsy)
 
 any ***subsequent section***<sup>[◥][cond-subsequent]</sup>
@@ -299,8 +299,8 @@ defines the following ***falsy*** values:
 - `false` - ***boolean***<sup>[◥][boolean]</sup> (no coercion)
 - `0` - ***zero number***<sup>[◥][zero]</sup>
 - ***empty string***<sup>[◥][empty-string]</sup>
-- `[]` - empty ***array***<sup>[◥][array]</sup>
-- empty ***countable object***<sup>[◥][countable]</sup>
+- `[]` - empty ***array***<sup>[◥][php-array]</sup>
+- empty ***countable object***<sup>[◥][php-countable]</sup>
 
 every other value - is ***truthy***.
 
@@ -308,33 +308,108 @@ every other value - is ***truthy***.
 [![block-falsy](mm/mustache-block-falsy.jpg)](#FALSY-block)
 
 this block type ***is the simplest*** -
-its primary section is rendered
-only when [the path](#paths)
-resolves to [falsy values](#truthy-or-falsy). the value itself is not used in rendering.
+its primary section is rendered only when [the path](#paths)
+resolves to [falsy](#truthy-or-falsy).
 ```
+{{^array-count}}
+  array is empty,
+  number of elements is 0
+{{/}}
 {{^array}}
   array is empty
 {{/}}
-{{^array-count}}
-  array is empty (number of elements is zero)
-{{/}}
 {{^user.active}}
-  user is afk
+  user {{user.name}} is not active
 {{/}}
 ```
 
 #### TRUTHY block
 [![block-truthy](mm/mustache-block-truthy.jpg)](#TRUTHY-block)
 
-if block is rendered when block value is truthy
+the primary section of this block
+is rendered only when [the path](#paths)
+resolves to [truthy](#truthy-or-falsy).
+
+for a ***boolean*** value,
+it behaves the ***same as negated***
+[falsy block](#FALSY-block):
 ```
-{{#block}} truthy {{/block}}
+{{#user.active}}
+  user {{user.name}} is active
+{{/}}
+```
+for a ***non-boolean scalar*** (string or number) or
+for a ***non-iterable container*** (array or object),
+the value is pushed to [the context stack](#the-context-stack)
+and becomes a ***temporary helper*** that is accessible
+with a [`.` backpedal](#absolute-path)
+and is pulled after a single render:
+```
+{{#array-count}}
+  number of elements in array: {{.}}
+{{/}}
+{{#user}}
+  user name is {{.name}}
+{{/}}
+```
+for a ***iterable container***<sup>[◥][php-countable]</sup>
+(array or object), the value ***is iterated*** -
+each element is pushed to [the context stack](#the-context-stack),
+rendered and pulled out:
+```
+{{#array}}
+  value={{.}};
+{{/}}
+```
+that is, the primiary section is rendered as many times,
+as many elements are in the container,
+but the stack expands only for a single value.
+
+
+#### ITERATOR block
+[![block-iter](mm/mustache-block-iter.jpg)](#ITERATOR-block)
+
+this block improves the ***iteration capability***<sup>[◥][iterator]</sup>
+of the [truthy block](#TRUTHY-block) and
+introduces ***traversion capability***.
+a ***truthy value*** resolved from [the path](#the-path)
+must be a ***countable container***<sup>[◥][php-countable]</sup>,
+otherwise a [processing exception](#errors) will be thrown.
+
+a set of ***auxilary variables*** is created
+for both iteration and traversion:
+- `_first` - first iteration ***indicator***<sup>[◥][boolean]</sup>
+- `_last` - last iteration ***indicator***<sup>[◥][boolean]</sup>
+- `_index` - current iteration ***number***<sup>[◥][index]</sup>
+- `_key` - current traverion ***name string***<sup>[◥][string]</sup>
+- `_value` - current traversion value of ***mixed type***<sup>[◥][php-mixed]</sup>
+
+thus,  extend :
+```
+{{@array}}
+  {{_index}}={{.}};
+{{/}}
+
+{{@array}}
+  {{.}}{{^_last}},{{/}}
+{{/}}
+
+{{@path.to.traversable.object}}
+  {{_key}}: {{_value}}{{^_last}},{{/}}
+{{/}}
 ```
 
-#### ITERABLE block
-[![block-iter](mm/mustache-block-iter.jpg)](#ITERABLE-block)
+
+
+***assistant*** [variables](#variables)
+have a similar [`_` backpedal](#absolute-path)
+but they live in a separate stack and
+relate only to [iterator blocks](#ITERATOR-block).
+
 
 #### OR section
+[![or](mm/mustache-or.jpg)](#OR-section)
+
 if-else block has two sections, one is always rendered
 ```
 {{#block}} truthy {{|}} falsy {{/block}}
@@ -418,7 +493,7 @@ is to ***terminate the block***<sup>[◥][boundary-marker]</sup>.
 internally, mustache instance represents
 a ***stack***<sup>[◥](https://en.wikipedia.org/wiki/Stack_(abstract_data_type))</sup>.
 
-any ***composite data***<sup>[◥](https://en.wikipedia.org/wiki/Composite_data_type)</sup>
+any ***composite data***<sup>[◥][composite]</sup>
 (an ***array***<sup>[◥](https://www.php.net/manual/en/language.types.array.php)</sup>
 or an ***object***<sup>[◥](https://www.php.net/manual/en/language.oop5.php)</sup>)
 pushed to the stack prior to template processing
@@ -599,6 +674,10 @@ echo $m->prepare($template, ['list'=>['one','two','three']]);# prints onetwothre
 ### lambdas
 powerful
 
+### errors
+parse exceptions
+render exceptions
+
 <!-- }}} -->
 ## examples <!-- {{{ -->
 ### one
@@ -664,7 +743,13 @@ powerful
 [null]: https://en.wikipedia.org/wiki/Null_pointer
 [zero]: https://en.wikipedia.org/wiki/0
 [empty-string]: https://en.wikipedia.org/wiki/Empty_string
-[countable]: https://www.php.net/manual/en/class.countable.php
-[array]: https://www.php.net/manual/en/language.types.array.php
+[string]: https://en.wikipedia.org/wiki/String_(computer_science)
+[composite]: https://en.wikipedia.org/wiki/Composite_data_type
+[iterator]: https://en.wikipedia.org/wiki/Iterator
+[lambda]: https://en.wikipedia.org/wiki/Anonymous_function
+[index]: https://en.wikipedia.org/wiki/Zero-based_numbering
+[php-countable]: https://www.php.net/manual/en/class.countable.php
+[php-array]: https://www.php.net/manual/en/language.types.array.php
+[php-mixed]: https://www.php.net/manual/en/language.types.mixed.php
 <!-- }}} -->
 <!--::-->
