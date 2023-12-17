@@ -376,15 +376,21 @@ a ***truthy value*** resolved from [the path](#the-path)
 must be a ***countable container***<sup>[◥][php-countable]</sup>,
 otherwise a [processing exception](#errors) will be thrown.
 
+this implementation designates
+***index-based arrays*** for ***iteration***,
+while ***key-based or associative arrays***
+for ***traversion***.
+
 a set of ***auxilary variables*** is created
-for both iteration and traversion:
-- `_first` - first iteration ***indicator***<sup>[◥][boolean]</sup>
-- `_last` - last iteration ***indicator***<sup>[◥][boolean]</sup>
-- `_index` - current iteration ***number***<sup>[◥][index]</sup>
-- `_key` - current traverion ***name string***<sup>[◥][string]</sup>
+for both variants:
+- `_first` - first iteration/traversion ***indicator***<sup>[◥][boolean]</sup>
+- `_last` - last iteration/traversion ***indicator***<sup>[◥][boolean]</sup>
+- `_index` - current iteration/traversion ***number***<sup>[◥][index]</sup>
+- `_key` - current traverion name ***string***<sup>[◥][string]</sup>
 - `_value` - current traversion value of ***mixed type***<sup>[◥][php-mixed]</sup>
 
-thus,  extend :
+these greatly enhance the rendering
+of ***containers***<sup>[◥][container]</sup>:
 ```
 {{@array}}
   {{_index}}={{.}};
@@ -398,23 +404,37 @@ thus,  extend :
   {{_key}}: {{_value}}{{^_last}},{{/}}
 {{/}}
 ```
-
-
-
-***assistant*** [variables](#variables)
-have a similar [`_` backpedal](#absolute-path)
+while rendering, both ***iteration*** and ***traversal***
+expand [the stack](#the-context-stack) with the current value
+which may be accessed with [`.` backpedal](#absolute-path).
+***auxilary variables*** have
+a similar [`_` backpedal](#absolute-path) notation,
 but they live in a separate stack and
-relate only to [iterator blocks](#ITERATOR-block).
+only pertain to [iterator blocks](#ITERATOR-block):
+```
+date,time,info;
+{{@events}}
+  {{@.}}
+    {{__key}},{{_key}},{{.}};
+  {{/}}
+{{/}}
+```
+It is important to note that
+***iteration requires*** that
+all ***elements*** in the container
+are ***of the same type***.
 
 
 #### OR section
 [![or](mm/mustache-or.jpg)](#OR-section)
 
-if-else block has two sections, one is always rendered
+if-else block has two sections,
+one is always rendered
 ```
 {{#block}} truthy {{|}} falsy {{/block}}
 ```
-if-not-else block has two sections, one is always rendered
+if-not-else block has two sections,
+one is always rendered
 ```
 {{^block}} falsy {{|}} truthy {{/block}}
 ```
