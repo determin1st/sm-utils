@@ -109,22 +109,6 @@ the name cannot contain a ***dot***<sup>[◥][dot]</sup>
 or ***whitespace***<sup>[◥][whitespace]</sup>
 characters - they have a special meaning.
 
-#### dot notation
-[![path-rel](mm/mustache-path-rel.jpg)](#dot-notation)
-
-***multiple names*** in the path
-***are joined***<sup>[◥][interfix]</sup>
-with the ***dot***<sup>[◥][dot]</sup> character.
-
-for example, the path consisting of two names - `first.second`
-assumes that the `first` name ***points to the container***<sup>[◥][container]</sup>
-and the `second` name points to ***the value inside*** that container.
-for the `first.second.third` path, the rule extrapolates -
-the `third` value ***must be extracted*** from the `second` container
-which must be extracted from the `first` container.
-that is, the `first.second` value contains the `third` value,
-which is simply a `first.second.third` value.
-
 #### absolute path
 [![path-abs](mm/mustache-path-abs.jpg)](#absolute-path)
 
@@ -157,13 +141,30 @@ of value.
 a [path](#paths) with ***no backpedal***
 is called ***relative***<sup>[◥][rel-path]</sup> -
 the first name is ***searched***<sup>[◥][linear-search]</sup>
-on [the stack](#the-context-stack) (rather than peeked).
+on [the stack](#the-context-stack)
+(rather than ***peeked***<sup>[◥][stack-peek]</sup>).
 
 the ***search*** goes from ***top to bottom***
 only inside of ***container***<sup>[◥][container]</sup>
 values. when the first name is found,
 but [the dot notation](#dot-notation) fails,
 the search does not resume.
+
+#### dot notation
+[![path-rel](mm/mustache-path-rel.jpg)](#dot-notation)
+
+***multiple names*** in the path
+***are joined***<sup>[◥][interfix]</sup>
+with the ***dot***<sup>[◥][dot]</sup> character.
+
+for example, the path consisting of two names - `first.second`
+assumes that the `first` name ***points to the container***<sup>[◥][container]</sup>
+and the `second` name points to ***the value inside*** that container.
+for the `first.second.third` path, the rule extrapolates -
+the `third` value ***must be extracted*** from the `second` container
+which must be extracted from the `first` container.
+that is, the `first.second` value contains the `third` value,
+which is simply a `first.second.third` value.
 
 #### lambda path
 [![path-lambda](mm/mustache-path-lambda.jpg)](#lambda-path)
@@ -174,6 +175,10 @@ it denotes the end of
 [the path that resolves to lambda](#lambdas) and
 the start of the ***argument***<sup>[◥][argument]</sup>
 to that lambda.
+
+for example in `hlp.isEven _index`,
+the `hlp.isEven` is [the path](#paths) and
+`_index` is the argument.
 
 
 ### variables
@@ -203,8 +208,8 @@ the affix has no effect.
 
 ### indentation
 ***for better appearance***<sup>[◥][readability]</sup>,
-[clause](#clauses) components
-([delimiters](#delimiters), [sigil](#sigils) and [path](#paths))
+all [clause](#clauses) components -
+[delimiters](#delimiters), [sigil](#sigils) and [path](#paths)
 ***can align with each other***<sup>[◥][free-form]</sup>
 using ***whitespace***<sup>[◥][whitespace]</sup>.
 

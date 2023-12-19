@@ -90,8 +90,8 @@
       "data": {
         "if": [1,2,3,4,5]
       },
-      "template": "{{#if}}true{{#if}}{{.}}{{/if}}{{|1}}1{{|}}false{{/if}}",
-      "expected": "true12345"
+      "template": "{{#if}}{{#.}}{{.}}{{|1}}one{{|2|3|4}}.{{/}}{{/}}",
+      "expected": "one...5"
     }
   ]
 }
