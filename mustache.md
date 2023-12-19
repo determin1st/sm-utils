@@ -311,17 +311,24 @@ this block type ***is the simplest*** -
 its primary section is rendered only when [the path](#paths)
 resolves to [falsy](#truthy-or-falsy).
 ```
-{{^array-count}}
-  array is empty,
-  number of elements is 0
-{{/}}
-{{^array}}
-  array is empty
-{{/}}
 {{^user.active}}
   user {{user.name}} is not active
 {{/}}
+
+{{^array-count}}
+  array is empty
+{{/}}
 ```
+note that ***countable container***<sup>[◥][php-countable]</sup> value
+is ***negated***<sup>[◥][negation]</sup>
+by its ***elements count***:
+```
+{{^array}}
+  array is empty
+{{/}}
+```
+
+
 
 #### TRUTHY block
 [![block-truthy](mm/mustache-block-truthy.jpg)](#TRUTHY-block)
@@ -331,7 +338,7 @@ is rendered only when [the path](#paths)
 resolves to [truthy](#truthy-or-falsy).
 
 for a ***boolean*** value,
-it behaves the ***same as negated***
+it behaves the ***same as negated***<sup>[◥][negation]</sup>
 [falsy block](#FALSY-block):
 ```
 {{#user.active}}
@@ -339,7 +346,7 @@ it behaves the ***same as negated***
 {{/}}
 ```
 for a ***non-boolean scalar*** (string or number) or
-for a ***non-iterable container*** (array or object),
+for a ***non-countable container*** (array or object),
 the value is pushed to [the context stack](#the-context-stack)
 and becomes a ***temporary helper*** that is accessible
 with a [`.` backpedal](#absolute-path)
@@ -348,11 +355,12 @@ and is pulled after a single render:
 {{#array-count}}
   number of elements in array: {{.}}
 {{/}}
+
 {{#user}}
   user name is {{.name}}
 {{/}}
 ```
-for a ***iterable container***<sup>[◥][php-countable]</sup>
+for a ***countable container***<sup>[◥][php-countable]</sup>
 (array or object), the value ***is iterated*** -
 each element is pushed to [the context stack](#the-context-stack),
 rendered and pulled out:
@@ -378,10 +386,10 @@ otherwise a [processing exception](#errors) will be thrown.
 
 this implementation designates
 ***index-based arrays*** for ***iteration***,
-while ***key-based or associative arrays***
+while ***key-based aka associative arrays***
 for ***traversion***.
 
-a set of ***auxilary variables*** is created
+a set of ***auxiliary variables*** is created
 for both variants:
 - `_first` - first iteration/traversion ***indicator***<sup>[◥][boolean]</sup>
 - `_last` - last iteration/traversion ***indicator***<sup>[◥][boolean]</sup>
@@ -407,14 +415,14 @@ of ***containers***<sup>[◥][container]</sup>:
 while rendering, both ***iteration*** and ***traversal***
 expand [the stack](#the-context-stack) with the current value
 which may be accessed with [`.` backpedal](#absolute-path).
-***auxilary variables*** have
+***auxiliary variables*** have
 a similar [`_` backpedal](#absolute-path) notation,
 but they live in a separate stack and
 only pertain to [iterator blocks](#ITERATOR-block):
 ```
 date,time,info;
 {{@events}}
-  {{@.}}
+  {{@_value}}
     {{__key}},{{_key}},{{.}};
   {{/}}
 {{/}}
@@ -428,55 +436,123 @@ are ***of the same type***.
 #### OR section
 [![or](mm/mustache-or.jpg)](#OR-section)
 
-if-else block has two sections,
-one is always rendered
+every block type may have
+an ***alternative section***<sup>[◥][mutual-exclusion]</sup>
+that ***renders once*** the primary condition is unmet
+and ***does not push anything*** to [the stack](#the-context-stack):
 ```
-{{#block}} truthy {{|}} falsy {{/block}}
+{{^array}}
+  array is empty
+{{|}}
+  array is not empty
+{{/}}
 ```
-if-not-else block has two sections,
-one is always rendered
+being the opposite of
+the ***primary conditional***<sup>[◥][m-conditional]</sup>,
+the ***OR section***<sup>[◥][disjunction]</sup>
+construct allows to save on blocks count:
 ```
-{{^block}} falsy {{|}} truthy {{/block}}
+{{#array-count}}
+  array is not empty
+{{/}}
+{{^array-count}}
+  array is empty
+{{/}}
+
+{{#array-count}}
+  array is not empty
+{{|}}
+  array is empty
+{{/}}
 ```
 
 #### SWITCH block
-switch block is composed of multiple sections.
-when one section matches the value, it is rendered,
-otherwise, block renders empty.
-```
-  {{#block}}
-    when other sections dont match,
-    will match TRUE or TRUTHY values
-  {{|}}
-    when other sections dont match,
-    will match FALSE or FALSY values
-  {{|0}}
-    will match 0,"0"
-  {{|1}}
-    will match 1,"1"
-  {{|2}}
-    will match 2,"2"
-  {{|hello}}
-    will match "hello"
-  {{/block}}
-```
+[![block-switch](mm/mustache-block-switch.jpg)](#SWITCH-block)
 
-switch-not block is similar to if-not block.
-only one section may be rendered.
-it is more natural than switch block because default section is not the first one.
+a [truthy block](#TRUTHY-block) or a [falsy block](#FALSY-block)
+that contains a ***conditional OR section*** aka ***CASE section***
+is called a ***switch block***<sup>[◥][m-switch]</sup>:
 ```
-  {{^block}}
-    falsy section
-  {{|0}}
-    zero (string)
-  {{|1}}
-    one (string/number)
-  {{|2}}
-    two (string/number)
-  {{|}}
-    truthy section (default)
-  {{/block}}
+{{#path.to.value}}
+  TRUTHY default,
+  will match non-zero number or non-empty string
+{{|}}
+  FALSY default,
+  will only match the empty string since
+  there is a CASE with number zero
+{{|0}}
+  will match 0,"0"
+{{|1}}
+  will match 1,"1"
+{{|2}}
+  will match 2,"2"
+{{|hello}}
+  will match "hello" string
+{{/}}
 ```
+the ***CASE section***
+contains a ***literal***<sup>[◥][literal]</sup>
+which ***is matched*** in the first place:
+```
+{{^number-that-is-zero}}
+  will never render
+{{|0}}
+  will render
+{{/}}
+```
+both ***primary section*** and
+[OR section](#OR-section) without a ***literal***<sup>[◥][literal]</sup>
+aka ***unconditional CASE section***
+may be represented as ***default cases***
+in an underlying ***metalanguage***<sup>[◥][metalanguage]</sup>:
+```php
+switch (stringify(path.to.value)) {
+case "0":
+  # ...
+  break;
+case "1":
+  # ...
+  break;
+case "2":
+  # ...
+  break;
+case "hello":
+  # ...
+  break;
+default:
+  if (path.to.value)
+  {
+    # TRUTHY default
+    # ...
+  }
+  else
+  {
+    # FALSY default
+    # ...
+  }
+  break;
+}
+```
+a ***fallthrough CASE section***<sup>[◥][m-fallthrough]</sup>
+is also possible:
+```
+{{^number}}
+  zero
+{{|1|2|3}}
+  one or two or three
+{{|4|5}}
+  four or five
+{{|6}}
+  six
+{{/}}
+```
+[the path](#paths) of this [block](#blocks)
+must resolve to a ***numeric or string value***,
+otherwise a [processing exception](#errors) is thrown.
+to match ***CASE section*** literals,
+a ***number is coerced***<sup>[◥][coercion]</sup>
+to a string.
+
 
 #### terminus
 [![terminus](mm/mustache-terminus.jpg)](#terminus)
@@ -517,8 +593,8 @@ any ***composite data***<sup>[◥][composite]</sup>
 (an ***array***<sup>[◥](https://www.php.net/manual/en/language.types.array.php)</sup>
 or an ***object***<sup>[◥](https://www.php.net/manual/en/language.oop5.php)</sup>)
 pushed to the stack prior to template processing
-is called a ***helper*** or a helper data or
-a data that helps in rendering.
+is called a ***helper*** aka helper data aka
+data that helps in rendering.
 
 helpers may be set at instantiation:
 ```php
@@ -722,6 +798,8 @@ render exceptions
 [m-terminus]: https://en.wikipedia.org/wiki/Terminus_(god) "terminator, boundary"
 [m-section]: https://dictionary.cambridge.org/dictionary/english/section "one of the parts that something is divided into"
 [m-conditional]: https://en.wikipedia.org/wiki/Conditional_(computer_programming) "whether a value is truthy or falsy"
+[m-switch]: https://en.wikipedia.org/wiki/Switch_statement
+[m-fallthrough]: https://en.wikipedia.org/wiki/Switch_statement#Fallthrough
 [literal]: https://en.wikipedia.org/wiki/Literal_(computer_programming) "textual representation of a value"
 [moustache]: https://en.wikipedia.org/wiki/Moustache
 [template]: https://en.wikipedia.org/wiki/Template_(word_processing) "template"
@@ -768,6 +846,10 @@ render exceptions
 [iterator]: https://en.wikipedia.org/wiki/Iterator
 [lambda]: https://en.wikipedia.org/wiki/Anonymous_function
 [index]: https://en.wikipedia.org/wiki/Zero-based_numbering
+[disjunction]: https://en.wikipedia.org/wiki/Logical_disjunction
+[negation]: https://en.wikipedia.org/wiki/Negation
+[mutual-exclusion]: https://en.wikipedia.org/wiki/Mutual_exclusivity
+[metalanguage]: https://en.wikipedia.org/wiki/Metalanguage
 [php-countable]: https://www.php.net/manual/en/class.countable.php
 [php-array]: https://www.php.net/manual/en/language.types.array.php
 [php-mixed]: https://www.php.net/manual/en/language.types.mixed.php

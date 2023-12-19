@@ -25,8 +25,9 @@ interface Mustachable # friendly objects {{{
 # }}}
 class Mustache # {{{
 {
-  # TODO: refactor tokenizer
+  # TODO: refactor auxiliary variables
   # TODO: exceptions with source while rendering
+  # TODO: refactor tokenizer
   # TODO: more type prediction
   # constructor {{{
   static string  $EMPTY='';# hash of an empty string
@@ -635,7 +636,7 @@ class Mustache # {{{
         $x .= '$x->av('.$a.')';
         break;
         # }}}
-      default:# block {{{
+      default:# the block {{{
         # prepare
         $b = $node[6];
         $c = count($b);
@@ -2034,9 +2035,10 @@ class MustacheCtx # data stack {{{
       $v = strval($v);# cast to string
       break;
     default:
-      return $v
-        ? ($i1 ? $this->base->func[$i1]($this) : '')
-        : ($i0 ? $this->base->func[$i0]($this) : '');
+      throw new Exception(
+        'the switch of «'.self::dotname($p, $pn).'»'.
+        ' received the incorrect value type: '.$j
+      );
     }
     # render switch section
     for ($v='|'.$v,$i=0; $i < $in; $i+=2)
@@ -2088,11 +2090,10 @@ class MustacheCtx # data stack {{{
       $v = strval($v);# cast to string
       break;
     default:
-      $r = $v
-        ? ($i1 ? $this->base->func[$i1]($this) : '')
-        : ($i0 ? $this->base->func[$i0]($this) : '');
-      $this->revoke();
-      return $r;
+      throw new Exception(
+        'the lambda switch of «'.self::dotname($p, $pn).'»'.
+        ' received the incorrect value type: '.$j
+      );
     }
     # render switch section
     for ($v='|'.$v,$i=0; $i < $in; $i+=2)
@@ -2248,7 +2249,7 @@ class MustacheCtx # data stack {{{
   }
   # }}}
   # }}}
-  # assisted value {{{
+  # auxiliary {{{
   function a01(# FALSY/TRUTHY {{{
     string $p, int $i, int $t,
     int $i0, int $i1
