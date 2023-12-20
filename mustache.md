@@ -1,6 +1,6 @@
 # mustache
-[![logo](mm/mustache-logo.webp)](#about-)
-## about <!-- {{{ -->
+[![logo](mm/mustache-logo.webp)](#about)
+## about<!-- {{{ -->
 `SM\Mustache` is a
 ***template processor***<sup>[◥][m-engine]</sup>
 implementation of ***mustache templates***<sup>[◥][template]</sup>
@@ -21,9 +21,9 @@ this implementation is comparable to various JS implementations:
 ### principles
 - `logic-less` - in comparison with other template processors, where data is sliced and diced inside the template, this implementation strives to control the **data flow** through the template. in practice, it looks like **more concise syntax** with selections instead of cryptic expressions. thus, **less mental load** - more templating.
 - `data for template` - template is more important than data, a variety sets of data may fit into a single template. paths used in the **template should look nice**, readable and explanatory. the question of escaping sigils to accommodate data should never arise - avoid `template for data` at all costs, do a preliminary **data massaging** when necessary.
-- `??` - **use of helpers** is recommended.
+- `not null` - a **null**<sup>[◥][php-null]</sup> is the absence of data. the absence of data leads to the search for imperative solution in the template, which contradicts the `logic-less` principle. thus, to fill the gaps, the [use of helpers](#preparation) is recommended - replace nulls with special case values.
 <!-- }}} -->
-## syntax <!-- {{{ -->
+## syntax<!-- {{{ -->
 ### clauses
 [![clause](mm/mustache-clause.jpg)](#clauses)
 > *The army consists of the first infantry division and eight million replacements.*
@@ -62,7 +62,8 @@ the second - ***closing***.
 ***custom delimiters*** may be set at
 [the phase of preparation](#preparation).
 some examples: `{: :}`, `/* */`, `<{ }>`, `<[ ]>`,
-`<% %>`, `[% %]`, `{% %}`, `(( ))`, `[[ ]]`, `<!--{ }-->`, `{{{ }}}`.
+`<% %>`, `[% %]`, `{% %}`, `(( ))`, `[[ ]]`,
+`<!--{ }-->`, `{{{ }}}`.
 
 such balanced delimiters do not have to mirror each other or
 be of equal length, but they ***must differ***
@@ -176,9 +177,10 @@ it denotes the end of
 the start of the ***argument***<sup>[◥][argument]</sup>
 to that lambda.
 
-for example in `hlp.isEven _index`,
-the `hlp.isEven` is [the path](#paths) and
-`_index` is the argument.
+for example in `isEven _index`,
+the `isEven` is [the relative path](#relative-path)
+that should resolve to lambda and
+the `_index` is the argument.
 
 
 ### variables
@@ -396,13 +398,13 @@ for ***traversion***.
 
 a set of ***auxiliary variables*** is created
 for both variants:
+- `_count` - ***number*** of elements
 - `_first` - first iteration/traversion ***indicator***<sup>[◥][boolean]</sup>
 - `_last` - last iteration/traversion ***indicator***<sup>[◥][boolean]</sup>
 - `_index` - current iteration/traversion ***number***<sup>[◥][index]</sup>
 - `_key` - current traverion name ***string***<sup>[◥][string]</sup>
-- `_value` - current traversion value of ***mixed type***<sup>[◥][php-mixed]</sup>
 
-these greatly enhance the rendering
+these enhance the rendering
 of ***containers***<sup>[◥][container]</sup>:
 ```
 {{@array}}
@@ -414,7 +416,7 @@ of ***containers***<sup>[◥][container]</sup>:
 {{/}}
 
 {{@path.to.traversable.object}}
-  {{_key}}: {{_value}}{{^_last}},{{/}}
+  {{_key}}: {{.}}{{^_last}},{{/}}
 {{/}}
 ```
 while rendering, both ***iteration*** and ***traversal***
@@ -427,7 +429,7 @@ only pertain to [iterator blocks](#ITERATOR-block):
 ```
 date,time,info;
 {{@events}}
-  {{@_value}}
+  {{@.}}
     {{__key}},{{_key}},{{.}};
   {{/}}
 {{/}}
@@ -587,7 +589,8 @@ is to ***terminate the block***<sup>[◥][boundary-marker]</sup>.
 ```
 
 <!-- }}} -->
-## usage <!-- {{{ -->
+## usage<!-- {{{ -->
+
 ### the context stack
 [![stack](mm/mustache-stack.jpg)](#the-context-stack)
 
@@ -780,7 +783,7 @@ parse exceptions
 render exceptions
 
 <!-- }}} -->
-## examples <!-- {{{ -->
+## examples<!-- {{{ -->
 ### one
 1
 ### two
@@ -858,5 +861,6 @@ render exceptions
 [php-countable]: https://www.php.net/manual/en/class.countable.php
 [php-array]: https://www.php.net/manual/en/language.types.array.php
 [php-mixed]: https://www.php.net/manual/en/language.types.mixed.php
+[php-null]: https://www.php.net/manual/en/language.types.null.php
 <!-- }}} -->
 <!--::-->

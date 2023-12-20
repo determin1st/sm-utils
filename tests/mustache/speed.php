@@ -77,7 +77,12 @@ case 4:# old {{{
     '__junk'.DIRECTORY_SEPARATOR.
     'mustache.php'
   );
-  $m = \SM\Mustache::new(['escape'=>true]);
+  $m = \SM\Mustache::new([
+    'escape'=>true,
+    'unescape'=>true,
+    'dedent'=>1,
+  ]);
+  #$m = \SM\Mustache::new(['escape'=>true]);
   #$m = \SM\Mustache::construct([
   #  'escaper' => true
   #]);

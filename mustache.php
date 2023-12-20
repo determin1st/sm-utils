@@ -6,7 +6,7 @@ use function
   is_callable,is_scalar,is_object,is_array,
   is_bool,is_string,method_exists,hash,
   htmlspecialchars,ctype_alnum,ctype_space,
-  preg_replace,str_replace,trim,ltrim,strval,
+  preg_replace,str_replace,trim,ltrim,
   strlen,strpos,substr,addcslashes,str_repeat,
   count,explode,implode,array_slice,array_is_list,
   reset,key,next,gettype;
@@ -26,11 +26,10 @@ interface Mustachable # friendly objects {{{
 class Mustache # {{{
 {
   # TODO: refactor auxiliary variables
-  # TODO: exceptions with source while rendering
-  # TODO: refactor tokenizer
   # TODO: more type prediction
+  # TODO: refactor tokenizer
   # constructor {{{
-  static string  $EMPTY='';# hash of an empty string
+  static string  $EMPTY='';# hash of empty string
   public string  $s0='{{',$s1='}}';# default delimiters
   public int     $n0=2,$n1=2;# delimiter sizes
   public int     $pushed=0;# count of helpers
@@ -38,9 +37,10 @@ class Mustache # {{{
   public bool    $unescape=false;# "&" unescapes/escapes
   public int     $dedent=0;# re-indent?
   public array   $wraps=["\033[41m","\033[49m"];# red bg
-  public int     $index=0;# current hash/text/code/func
-  public array   $hash=[''],$text=[''];
-  public array   $code=[''],$func=[null];
+  public array   $booleans=['',''];
+  public int     $index=0;# current hash/text/func
+  public array   $hash=[''],$text=[''],$func=[null];
+  #public array   $code=[''];# DEBUG?
   public array   $cache=[];# hash=>index
   public object  $ctx;
   private function __construct()
@@ -83,6 +83,9 @@ class Mustache # {{{
     }
     if (isset($o[$k = 'wraps'])) {
       $I->wraps = $o[$k];
+    }
+    if (isset($o[$k = 'booleans'])) {
+      $I->booleans = $o[$k];
     }
     return $I;
   }
@@ -210,18 +213,19 @@ class Mustache # {{{
           $line,$indent,$i0,$i1
         ];
         break;
-      case '|':# BLOCK SECTION
+      case '|':# OR/CASE SECTION
+        # TODO: whitespace alignment
         $token[$i++] = [
           10,ltrim($c),
           $line,$indent,$i0,$i1
         ];
         break;
-      case '/':# BLOCK TERMINATOR
+      case '/':# TERMINUS
         $token[$i++] = [
           11,'',$line,$indent,$i0,$i1
         ];
         break;
-      case '!':# COMMENTARY
+      case '!':# COMMENT
         $token[$i++] = [
           12,'',$line,$indent,$i0,$i1
         ];
@@ -397,8 +401,7 @@ class Mustache # {{{
                ($n > 3 && $node[6][3] !== '|')))
           {
             throw new Exception(
-              'iterator block '.
-              'cannot have switch sections '.
+              'ITERATOR cannot have CASE section '.
               "\n".$this->_wrap($tpl, $a[4], $a[5])
             );
           }
@@ -432,14 +435,6 @@ class Mustache # {{{
   # }}}
   function _node(string $tpl, array $t): array # {{{
   {
-    static $ASSISTED=[# name=>type
-      'first' => 3,
-      'last'  => 3,
-      'index' => 2,
-      'count' => 2,
-      'key'   => 1,
-      'value' => 0,
-    ];
     # prepare
     $isVar = $t[0] === 21;
     $path  = $t[1];
@@ -451,8 +446,8 @@ class Mustache # {{{
       {
         throw new Exception(
           'variable modifier "&" '.
-          'does not apply to blocks'.
-          "\n".$this->_wrap($tpl, $t[5], $t[6])
+          'may not apply to block'.
+          "\n".$this->_wrap($tpl, $t[4], $t[5])
         );
       }
       $path = ltrim(substr($path, 1));
@@ -463,42 +458,47 @@ class Mustache # {{{
     elseif ($isVar && $this->escape) {
       $esc = 1;
     }
-    # check assisted
+    # check auxiliary
     if ($path[0] === '_')
     {
       # count backpedal
       for ($i=1; $path[$i] === '_'; ++$i)
       {}
       $a = substr($path, $i);
-      # validate
+      # verify
       if (($j = strpos($a, '.')) !== false)
       {
+        # dot notation,
+        # check the name is auxiliary
         $a = substr($a, 0, $j);
-        if (isset($ASSISTED[$a]))
+        if (isset(MustacheCtx::AUX[$a]))
         {
           throw new Exception(
-            'dot notation does not apply '.
-            'for assisted value "'.$path.'"'.
-            "\n".$this->_wrap($tpl, $t[5], $t[6])
+            'dot notation may not apply '.
+            'to the auxiliary value of "'.$path.'"'.
+            "\n".$this->_wrap($tpl, $t[4], $t[5])
           );
         }
       }
       elseif (($j = strpos($a, ' ')) !== false)
       {
+        # lambda argument,
+        # check the name is auxiliary
         $a = substr($a, 0, $j);
-        if (isset($ASSISTED[$a]))
+        if (isset(MustacheCtx::AUX[$a]))
         {
           throw new Exception(
-            'lambda does not apply '.
-            'for assisted value "'.$path.'"'.
-            "\n".$this->_wrap($tpl, $t[5], $t[6])
+            'lambda argument may not apply '.
+            'to the auxiliary value of "'.$path.'"'.
+            "\n".$this->_wrap($tpl, $t[4], $t[5])
           );
         }
       }
-      elseif (isset($ASSISTED[$a]))
+      elseif (isset(MustacheCtx::AUX[$a]))
       {
-        $a = "'".$a."',".$i.','.$ASSISTED[$a];
-        return [100 + $t[0],$a,$t[4],$t[5],'',$esc];
+        # auxiliary value
+        $a = "'".$a."',".$i.','.MustacheCtx::AUX[$a];
+        return [100 + $t[0],$a,'',$esc,$t[4],$t[5]];
       }
     }
     # check arguments
@@ -521,7 +521,7 @@ class Mustache # {{{
       {
         return [
           $t[0],"'',".$i.',0,null',
-          $t[4],$t[5],$arg,$esc
+          $arg,$esc,$t[4],$t[5]
         ];
       }
     }
@@ -551,7 +551,7 @@ class Mustache # {{{
     }
     return [
       $t[0],"'".$a."',".$i.','.$j.','.$c,
-      $t[4],$t[5],$arg,$esc
+      $arg,$esc,$t[4],$t[5]
     ];
   }
   # }}}
@@ -594,7 +594,8 @@ class Mustache # {{{
       'return $r;'.
     '});';
     # compile and store
-    $this->code[$i] = $s;
+    #$this->code[$i] = $s;# DEBUG?
+    $this->text[$i] = $tpl;
     $this->func[$i] = eval($s);
     # complete
     return $i;
@@ -618,21 +619,24 @@ class Mustache # {{{
         # }}}
       case 21:# variable {{{
         $a = $node[1].','.$ctx->typeSz.',';
-        if ($node[4] === '')
+        if ($node[2] === '')
         {
-          $a .= $node[5];
-          $x .= '$x->v('.$a.')';
+          $a .= $node[3];
+          $x .= '$x->bv('.$a.')';
         }
         else
         {
-          $a .= $node[4].','.$node[5];
+          $a .= $node[2].','.$node[3];
           $x .= '$x->fv('.$a.')';
         }
+        # create type entry
         $ctx->typeMap[$ctx->typeSz++] = 0;
+        $ctx->typeMap[$ctx->typeSz++] = $node[4];
+        $ctx->typeMap[$ctx->typeSz++] = $node[5];
         break;
         # }}}
-      case 121:# assisted variable {{{
-        $a  = $node[1].','.$node[5];
+      case 121:# auxiliary variable {{{
+        $a  = $node[1].','.$node[3];
         $x .= '$x->av('.$a.')';
         break;
         # }}}
@@ -640,7 +644,7 @@ class Mustache # {{{
         # prepare
         $b = $node[6];
         $c = count($b);
-        # construct primary section
+        # construct the primary section
         $k = $this->_index($b[1], $b[2], $depth);
         if ($b[0])
         {
@@ -671,7 +675,7 @@ class Mustache # {{{
             $i1 = $k;
           }
         }
-        # compose assisted block
+        # compose auxiliary block
         if ($node[0] >= 100)
         {
           if ($n)
@@ -686,22 +690,26 @@ class Mustache # {{{
           }
           break;
         }
-        # compose generic block
-        if ($node[4] === '')
+        # compose standard block
+        if ($node[2] === '')
         {
+          # create base parameters
           $d =
-            $node[1].','.
-            $ctx->typeSz.','.
-            $i0.','.$i1;
-          ###
+            $node[1].','.     # the path
+            $ctx->typeSz.','. # type store index
+            $i0.','.$i1;      # sections
+          # create type entry
           $ctx->typeMap[$ctx->typeSz++] = 0;
+          $ctx->typeMap[$ctx->typeSz++] = $node[4];
+          $ctx->typeMap[$ctx->typeSz++] = $node[5];
+          # create and append block entry
           switch ($b[0]) {
-          case 0:# FALSY OR/SWITCH
+          case 0:# FALSY/SWITCH
             $x .= $n
               ? '$x->b2('.$d.','.$n.$a.')'
               : '$x->b0('.$d.')';
             break;
-          case 1:# TRUTHY OR/SWITCH
+          case 1:# TRUTHY/SWITCH
             $x .= $n
               ? '$x->b2('.$d.','.$n.$a.')'
               : '$x->b1('.$d.')';
@@ -713,23 +721,27 @@ class Mustache # {{{
           break;
         }
         # compose lambda block
+        # create base parameters
         $d =
           $node[1].','.$ctx->typeSz.','.
-          $node[4].','.$i0.','.$i1;
-        ###
+          $node[2].','.$i0.','.$i1;
+        # create type entry
         $ctx->typeMap[$ctx->typeSz++] = 7;
+        $ctx->typeMap[$ctx->typeSz++] = $node[4];
+        $ctx->typeMap[$ctx->typeSz++] = $node[5];
+        # create and append block entry
         switch ($b[0]) {
-        case 0:# FALSY LAMBDA OR/SWITCH
+        case 0:# FALSY/SWITCH
           $x .= $n
             ? '$x->f2('.$d.','.$n.$a.')'
             : '$x->f0('.$d.')';
           break;
-        case 1:# TRUTHY LAMBDA OR/SWITCH
+        case 1:# TRUTHY/SWITCH
           $x .= $n
             ? '$x->f2('.$d.','.$n.$a.')'
             : '$x->f1('.$d.')';
           break;
-        case 2:# LAMBDA ITERATOR
+        case 2:# ITERATOR
           $x .= '$x->fi('.$d.')';
           break;
         }
@@ -759,7 +771,7 @@ class Mustache # {{{
     $i = ++$this->index;
     $this->hash[$i] = '';
     $this->text[$i] = $tpl;
-    $this->code[$i] = $s;
+    #$this->code[$i] = $s;# DEBUG?
     $this->func[$i] = eval($s);
     # complete
     return $i;
@@ -966,14 +978,25 @@ class Mustache # {{{
 class MustacheCtx # data stack {{{
 {
   # constructor {{{
+  const TYPE = [# type=>name
+    0 => 'unknown',
+    1 => 'string', 2 => 'number', 3 => 'boolean',
+    4 => 'array',  5 => 'object', 6 => 'Mustachable'
+  ];
+  const AUX = [# name=>type
+    'count' => 2,
+    'first' => 3,
+    'last'  => 3,
+    'index' => 2,
+    'key'   => 1
+  ];
   public int   $helpSz=1;
   public array $help=[[# initial values
+    'count' => 0,
     'first' => true,
     'last'  => false,
     'index' => 0,
-    'count' => 0,
-    'key'   => '',
-    'value' => '',
+    'key'   => ''
   ]];
   public array  $stack=[''],$stackType=[1];
   public int    $stackIdx=0;
@@ -1415,7 +1438,6 @@ class MustacheCtx # data stack {{{
     array|object $a, int $cnt, int $idx
   ):string
   {
-    # assisted iteration
     # prepare
     $f = $this->base->func[$idx];
     $i = ++$this->stackIdx;
@@ -1460,7 +1482,6 @@ class MustacheCtx # data stack {{{
     array $a, int $cnt, int $idx
   ):string
   {
-    # assisted array traversal
     # prepare
     $f = $this->base->func[$idx];
     $i = ++$this->stackIdx;
@@ -1468,7 +1489,6 @@ class MustacheCtx # data stack {{{
     $h = &$this->help[$this->helpSz++];
     $h = $this->help[0];
     $h['count'] = $cnt;
-    $h['value'] = &$v;
     $v = reset($a);
     $this->stackType[$i] = 0;# flexy
     $h['key'] = key($a);
@@ -1509,7 +1529,6 @@ class MustacheCtx # data stack {{{
     object $o, int $cnt, int $idx
   ):string
   {
-    # assisted object traversal
     # prepare
     $f = $this->base->func[$idx];
     $i = ++$this->stackIdx;
@@ -1517,7 +1536,6 @@ class MustacheCtx # data stack {{{
     $h = &$this->help[$this->helpSz++];
     $h = $this->help[0];
     $h['count'] = $cnt;
-    $h['value'] = &$v;
     $o->rewind();
     $v = $o->current();
     $this->stackType[$i] = 0;# flexy
@@ -1597,7 +1615,7 @@ class MustacheCtx # data stack {{{
   }
   # }}}
   # }}}
-  # standard {{{
+  # basic entry {{{
   function b0(# FALSY {{{
     string $p, int $pi, int $n, ?array $pn, int $t,
     int $i0, int $i1
@@ -1610,98 +1628,10 @@ class MustacheCtx # data stack {{{
     }
     # handle lambda
     if (($j = $this->typeMap[$t]) >= 7) {
-      return $this->bf0($v, '', $t, $j, $i0, $i1);
+      return $this->f0x($v, '', $t, $i0, $i1);
     }
-    # render
-    switch ($j) {
-    case 1:
-      if ($v === '') {
-        return $this->base->func[$i0]($this);
-      }
-      if ($i1) {
-        return $this->base->func[$i1]($this);
-      }
-      return '';
-    case 2:
-    case 3:
-    case 4:
-      if ($v)
-      {
-        return $i1
-          ? $this->base->func[$i1]($this)
-          : '';
-      }
-      return $this->base->func[$i0]($this);
-    case 5:
-    case 6:
-      if (($v instanceof Countable) && !count($v)) {
-        return $this->base->func[$i0]($this);
-      }
-      break;
-    }
-    return $i1
-      ? $this->base->func[$i1]($this)
-      : '';
-  }
-  # }}}
-  function bf0(# FALSY LAMBDA {{{
-    object $f, string $arg, int $t, int $j,
-    int $i0, int $i1
-  ):string
-  {
-    # execute
-    $v = $this->invoke($f, $arg, 0);
-    # clarify
-    if ($j > 7) {
-      $j -= 7;
-    }
-    else
-    {
-      $j = self::typeof($v);
-      $this->typeMap[$t] = 7 + $j;
-    }
-    # render
-    switch ($j) {
-    case 1:
-      if ($v === '') {
-        $r = $this->base->func[$i0]($this);
-      }
-      elseif ($i1) {
-        $r = $this->base->func[$i1]($this);
-      }
-      else {
-        $r = '';
-      }
-      break;
-    case 2:
-    case 3:
-    case 4:
-      if ($v)
-      {
-        $r = $i1
-          ? $this->base->func[$i1]($this)
-          : '';
-      }
-      else {
-        $r = $this->base->func[$i0]($this);
-      }
-      break;
-    case 5:
-    case 6:
-      if (($v instanceof Countable) && !count($v)) {
-        $r = $this->base->func[$i0]($this);
-      }
-      elseif ($i1) {
-        $r = $this->base->func[$i1]($this);
-      }
-      else {
-        $r = '';
-      }
-      break;
-    }
-    # complete
-    $this->revoke();
-    return $r;
+    # render value
+    return $this->v0($v, $j, $i0, $i1);
   }
   # }}}
   function b1(# TRUTHY {{{
@@ -1709,19 +1639,387 @@ class MustacheCtx # data stack {{{
     int $i0, int $i1
   ):string
   {
-    # prepare
+    # resolve the path
     $v = $this->get($p, $pi, $n, $pn, $t);
-    if ($v === null)
-    {
-      return $i0
-        ? $this->base->func[$i0]($this)
-        : '';
+    if ($v === null) {
+      return $i0 ? $this->base->func[$i0]($this) : '';
     }
-    # handle lambda
+    # render lambda
     if (($j = $this->typeMap[$t]) >= 7) {
-      return $this->bf1($v, '', $t, $j, $i0, $i1);
+      return $this->f1x($v, '', $t, $i0, $i1);
     }
-    # render
+    # render value
+    return $this->v1($v, $j, $i0, $i1);
+  }
+  # }}}
+  function bi(# ITERATOR {{{
+    string $p, int $pi, int $n, ?array $pn, int $t,
+    int $i0, int $i1
+  ):string
+  {
+    # resolve the path
+    $v = $this->get($p, $pi, $n, $pn, $t);
+    if ($v === null) {
+      return $i0 ? $this->base->func[$i0]($this) : '';
+    }
+    # render lambda
+    if (($j = $this->typeMap[$t]) >= 7) {
+      return $this->fix($v, '', $t, $i0, $i1);
+    }
+    # render value
+    return $this->vi($v, $t, $j, $i0, $i1);
+  }
+  # }}}
+  function b2(# SWITCH {{{
+    string $p, int $pi, int $n, ?array $pn, int $t,
+    int $i0, int $i1, int $in, ...$a
+  ):string
+  {
+    # resolve the path
+    $v = $this->get($p, $pi, $n, $pn, $t);
+    if ($v === null) {
+      return $i0 ? $this->base->func[$i0]($this) : '';
+    }
+    # render lambda
+    if (($j = $this->typeMap[$t]) >= 7) {
+      return $this->f2x($v, '', $t, $i0, $i1, $in, $a);
+    }
+    # render value
+    return $this->v2($v, $t, $j, $i0, $i1, $in, $a);
+  }
+  # }}}
+  function bv(# VARIABLE {{{
+    string $p, int $pi, int $n, ?array $pn, int $t,
+    int $escape
+  ):string
+  {
+    # resolve the path
+    $v = $this->get($p, $pi, $n, $pn, $t);
+    if ($v === null) {
+      return '';
+    }
+    # render lambda
+    if (($j = $this->typeMap[$t]) >= 7) {
+      return $this->fvx($v, '', $t, $escape);
+    }
+    # render value
+    return $this->vv($v, $t, $j, $escape);
+  }
+  # }}}
+  # }}}
+  # lambda entry {{{
+  function f0(# FALSY getter {{{
+    string $p, int $pi, int $n, ?array $pn, int $t,
+    string $arg, int $i0, int $i1
+  ):string
+  {
+    $v = $this->get($p, $pi, $n, $pn, $t);
+    if ($v === null) {
+      return $this->base->func[$i0]($this);
+    }
+    return $this->f0x($v, $arg, $t, $i0, $i1);
+  }
+  # }}}
+  function f0x(# FALSY executor {{{
+    object $f, string $arg, int $t, int $i0, int $i1
+  ):string
+  {
+    # execute
+    $v = $this->invoke($f, $arg, 0);
+    # clarify the type
+    if (($j = $this->typeMap[$t]) > 7) {
+      $j -= 7;
+    }
+    else
+    {
+      $j = self::typeof($v);
+      $this->typeMap[$t] = 7 + $j;
+    }
+    # complete
+    $r = $this->v0($v, $j, $i0, $i1);
+    $this->revoke();
+    return $r;
+  }
+  # }}}
+  function f1(# TRUTHY getter {{{
+    string $p, int $pi, int $n, ?array $pn, int $t,
+    string $arg, int $i0, int $i1
+  ):string
+  {
+    $v = $this->get($p, $pi, $n, $pn, $t);
+    if ($v === null) {
+      return $i0 ? $this->base->func[$i0]($this) : '';
+    }
+    return $this->f1x($v, $arg, $t, $i0, $i1);
+  }
+  # }}}
+  function f1x(# TRUTHY executor {{{
+    object $f, string $arg, int $t, int $i0, int $i1
+  ):string
+  {
+    # execute
+    $v = $this->invoke($f, $arg, $i1);
+    # clarify the type
+    if (($j = $this->typeMap[$t]) > 7) {
+      $j -= 7;
+    }
+    else
+    {
+      $j = self::typeof($v);
+      $this->typeMap[$t] = 7 + $j;
+    }
+    # handle content substitution
+    if ($j === 1)
+    {
+      if ($i0 && $v === '') {
+        $v = $this->base->func[$i0]($this);
+      }
+      $this->revoke();
+      return $v;
+    }
+    # complete normally
+    $r = $this->v1($v, $j, $i0, $i1);
+    $this->revoke();
+    return $r;
+  }
+  # }}}
+  function fi(# ITERATOR getter {{{
+    string $p, int $pi, int $n, ?array $pn, int $t,
+    string $arg, int $i0, int $i1
+  ):string
+  {
+    $v = $this->get($p, $pi, $n, $pn, $t);
+    if ($v === null) {
+      return $i0 ? $this->base->func[$i0]($this) : '';
+    }
+    return $this->fix($v, $arg, $t, $i0, $i1);
+  }
+  # }}}
+  function fix(# ITERATOR executor {{{
+    object $f, string $arg, int $t, int $i0, int $i1
+  ):string
+  {
+    # execute
+    $v = $this->invoke($f, $arg, $i1);
+    # clarify the type
+    if (($j = $this->typeMap[$t]) > 7) {
+      $j -= 7;
+    }
+    else
+    {
+      $j = self::typeof($v);
+      $this->typeMap[$t] = 7 + $j;
+    }
+    # complete
+    $r = $this->vi($v, $t, $j, $i0, $i1);
+    $this->revoke();
+    return $r;
+  }
+  # }}}
+  function f2(# SWITCH getter {{{
+    string $p, int $pi, int $n, ?array $pn, int $t,
+    string $arg, int $i0, int $i1, int $in, ...$a
+  ):string
+  {
+    # get the lambda
+    $f = $this->get($p, $pi, $n, $pn, $t);
+    if ($f === null) {
+      return $i0 ? $this->base->func[$i0]($this) : '';
+    }
+    # complete
+    return $this->f2x(
+      $f, $arg, $t, $i0, $i1, $in, $a
+    );
+  }
+  # }}}
+  function f2x(# SWITCH executor {{{
+    object $f, string $arg, int $t,
+    int $i0, int $i1, int $in, array $a
+  ):string
+  {
+    # determine the primary section
+    if ($i0)
+    {
+      if ($i1) {
+        $i = ($i0 < $i1) ? $i0 : $i1;
+      }
+      else {
+        $i = $i0;
+      }
+    }
+    else {
+      $i = $i1;
+    }
+    # execute
+    $v = $this->invoke($f, $arg, $i);
+    # clarify the type
+    if (($j = $this->typeMap[$t]) > 7) {
+      $j -= 7;
+    }
+    else
+    {
+      $j = self::typeof($v);
+      $this->typeMap[$t] = 7 + $j;
+    }
+    # complete
+    $r = $this->v2($v, $t, $j, $i0, $i1, $in, $a);
+    $this->revoke();
+    return $r;
+  }
+  # }}}
+  function fv(# VARIABLE getter {{{
+    string $p, int $pi, int $n, ?array $pn, int $t,
+    string $arg, int $escape
+  ):string
+  {
+    # get the lambda
+    $f = $this->get($p, $pi, $n, $pn, $t);
+    if ($f === null) {
+      return '';
+    }
+    # complete
+    return $this->fvx($f, $arg, $t, $escape);
+  }
+  # }}}
+  function fvx(# VARIABLE executor {{{
+    object $f, string $arg, int $t, int $escape
+  ):string
+  {
+    # execute
+    $v = $this->invoke($f, $arg, -1);
+    # clarify the type
+    if (($j = $this->typeMap[$t]) > 7) {
+      $j -= 7;
+    }
+    else
+    {
+      $j = self::typeof($v);
+      $this->typeMap[$t] = 7 + $j;
+    }
+    # complete
+    return $this->vv($v, $t, $j, $escape);
+  }
+  # }}}
+  # }}}
+  # auxiliary entry {{{
+  function a01(# FALSY/TRUTHY {{{
+    string $p, int $i, int $t,
+    int $i0, int $i1
+  ):string
+  {
+    if (($i = $this->helpSz - $i) < 0) {
+      return '';
+    }
+    $E = $this->base;
+    $v = $this->help[$i][$p];
+    switch ($t ?: self::typeof($v)) {
+    case 1:
+      return ($v === '')
+        ? ($i0 ? $E->func[$i0]($this) : '')
+        : ($i1 ? $E->func[$i1]($this) : '');
+    default:
+      return $v
+        ? ($i1 ? $E->func[$i1]($this) : '')
+        : ($i0 ? $E->func[$i0]($this) : '');
+    }
+  }
+  # }}}
+  function a2(# SWITCH {{{
+    string $p, int $i, int $t,
+    int $i0, int $i1, int $in, ...$a
+  ):string
+  {
+    # prepare
+    if (($i = $this->helpSz - $i) < 0) {
+      return '';
+    }
+    $v = $this->help[$i][$p];
+    # render falsy/simplified
+    switch ($t ?: self::typeof($v)) {
+    case 1:
+      if ($v === '')
+      {
+        return $i0
+          ? $this->base->func[$i0]($this)
+          : '';
+      }
+      $w = true;
+      break;
+    case 2:
+      $w = $v !== 0;
+      $v = (string)$v;
+      break;
+    default:
+      return $v
+        ? ($i1 ? $this->base->func[$i1]($this) : '')
+        : ($i0 ? $this->base->func[$i0]($this) : '');
+    }
+    # render switch section
+    for ($v='|'.$v,$i=0; $i < $in; $i+=2)
+    {
+      if (strpos($a[$i], $v) !== false) {
+        return $this->base->func[$a[$i+1]]($this);
+      }
+    }
+    # render default (truthy/falsy) section
+    return $w
+      ? ($i1 ? $this->base->func[$i1]($this) : '')
+      : ($i0 ? $this->base->func[$i0]($this) : '');
+  }
+  # }}}
+  function av(# VARIABLE {{{
+    string $p, int $i, int $t, int $escape
+  ):string
+  {
+    if (($i = $this->helpSz - $i) < 0) {
+      return '';
+    }
+    $v = $this->help[$i][$p];
+    switch ($t ?: self::typeof($v)) {
+    case 1:
+      if ($escape && !$t) {
+        return ($this->base->escape)($v);
+      }
+      return $v;
+    case 2:
+      return (string)$v;
+    }
+    return '';
+  }
+  # }}}
+  # }}}
+  # value renderers {{{
+  function v0(# FALSY {{{
+    $v, int $j, int $i0, int $i1
+  ):string
+  {
+    switch ($j) {
+    case 1:
+      return ($v === '')
+        ? $this->base->func[$i0]($this)
+        : ($i1 ? $this->base->func[$i1]($this) : '');
+      ###
+    case 5:
+    case 6:
+      if (($v instanceof Countable) && !count($v)) {
+        return $this->base->func[$i0]($this);
+      }
+      return $i1
+        ? $this->base->func[$i1]($this)
+        : '';
+      ###
+    default:# 2,3,4
+      return $v
+        ? ($i1 ? $this->base->func[$i1]($this) : '')
+        : $this->base->func[$i0]($this);
+    }
+  }
+  # }}}
+  function v1(# TRUTHY {{{
+    $v, int $j, int $i0, int $i1
+  ):string
+  {
+    # check type
     switch ($j) {
     case 1:
       if ($v === '')
@@ -1792,125 +2090,59 @@ class MustacheCtx # data stack {{{
     ###
   }
   # }}}
-  function bf1(# TRUTHY LAMBDA {{{
-    object $f, string $arg, int $t, int $j,
-    int $i0, int $i1
+  function v2(# SWITCH {{{
+    $v, int $t, int $j,
+    int $i0, int $i1, int $in, array $a
   ):string
   {
-    # execute
-    $v = $this->invoke($f, $arg, $i1);
-    # clarify
-    if ($j > 7) {
-      $j -= 7;
-    }
-    else
-    {
-      $j = self::typeof($v);
-      $this->typeMap[$t] = 7 + $j;
-    }
-    # render
+    # check type
     switch ($j) {
     case 1:
-      # content substitution
-      if ($v === '' && $i0) {
-        $v = $this->base->func[$i0]($this);
-      }
-      $this->revoke();
-      return $v;
-    case 2:
-      if ($i0 && !$v)
+      # the CASE section cannot contain empty string,
+      # so check and render it first
+      if ($v === '')
       {
-        # apply falsy section
-        $r = $this->base->func[$i0]($this);
-        $this->revoke();
-        return $r;
-      }
-      break;
-    case 3:
-      # apply truthy/falsy section
-      $r = $v
-        ? $this->base->func[$i1]($this)
-        : ($i0
-          ? $this->base->func[$i0]($this)
-          : '');
-      $this->revoke();
-      return $r;
-    case 4:
-      if ($k = count($v))
-      {
-        if (array_is_list($v)) {
-          goto render_iterable;
-        }
-        break;
-      }
-      # apply falsy section
-      $r = $i0
-        ? $this->base->func[$i0]($this)
-        : '';
-      $this->revoke();
-      return $r;
-    case 5:
-    case 6:
-      if ($v instanceof Countable)
-      {
-        if ($k = count($v)) {
-          goto render_iterable;
-        }
-        # apply falsy section
-        $r = $i0
+        return $i0
           ? $this->base->func[$i0]($this)
           : '';
-        $this->revoke();
-        return $r;
       }
+      $w = true;# TRUTHY default
       break;
+    case 2:
+      $w = $v !== 0;# determine default
+      $v = (string)$v;
+      break;
+    default:
+      throw new Exception(
+        'SWITCH: incorrect value type: '.$j.
+        (isset(self::TYPE[$j])
+          ? '='.self::TYPE[$j]
+          : ''
+        ).
+        "\n".$this->base->_wrap(
+          $this->base->text[$this->index],
+          $this->typeMap[$t + 1],
+          $this->typeMap[$t + 2]
+        )
+      );
     }
-    render_helper:# single value
-      $i = ++$this->stackIdx;
-      $this->stack[$i] = $v;
-      $this->stackType[$i] = $j;
-      $r = $this->base->func[$i1]($this);
-      $this->stackIdx--;
-      $this->revoke();
-      return $r;
-    ###
-    render_iterable:# multiple values
-      $i = ++$this->stackIdx;
-      $w = &$this->stack[$i];
-      $w = $v[0];
-      $this->stackType[$i] = self::type_456($w);
-      $f = $this->base->func[$i1];
-      $r = $f($this);
-      $j = 0;
-      while (++$j < $k)
-      {
-        $w  = $v[$j];
-        $r .= $f($this);
+    # render CASE
+    for ($v='|'.$v,$i=0; $i < $in; $i+=2)
+    {
+      if (strpos($a[$i], $v) !== false) {
+        return $this->base->func[$a[$i+1]]($this);
       }
-      $this->stackIdx--;
-      $this->revoke();
-      return $r;
-    ###
+    }
+    # render DEFAULT
+    return $w
+      ? ($i1 ? $this->base->func[$i1]($this) : '')
+      : ($i0 ? $this->base->func[$i0]($this) : '');
   }
   # }}}
-  function bi(# ITERATOR {{{
-    string $p, int $pi, int $n, ?array $pn, int $t,
-    int $i0, int $i1
+  function vi(# ITERATOR {{{
+    $v, int $t, int $j, int $i0, int $i1
   ):string
   {
-    # prepare
-    $v = $this->get($p, $pi, $n, $pn, $t);
-    if ($v === null)
-    {
-      return $i0
-        ? $this->base->func[$i0]($this)
-        : '';
-    }
-    # handle lambda
-    if (($j = $this->typeMap[$t]) >= 7) {
-      return $this->bfi($v, '', $t, $j, $i0, $i1);
-    }
-    # render
     switch ($j) {
     case 4:
       if ($k = count($v))
@@ -1936,403 +2168,45 @@ class MustacheCtx # data stack {{{
         : '';
     }
     throw new Exception(
-      'block @'.self::dotname($p, $pn).
-      ' has recieved a non-iterable value'.
-      ' ('.gettype($v).')'
+      'ITERATOR: incorrect value type: '.$j.
+      (isset(self::TYPE[$j])
+        ? '='.self::TYPE[$j]
+        : ''
+      ).
+      "\n".$this->base->_wrap(
+        $this->base->text[$this->index],
+        $this->typeMap[$t + 1],
+        $this->typeMap[$t + 2]
+      )
     );
   }
   # }}}
-  function bfi(# LAMBDA ITERATOR {{{
-    object $f, string $arg, int $t, int $j,
-    int $i0, int $i1
+  function vv(# VARIABLE {{{
+    $v, int $t, int $j, int $escape
   ):string
   {
-    # execute
-    $v = $this->invoke($f, $arg, $i1);
-    # clarify
-    if ($j > 7) {
-      $j -= 7;
-    }
-    else
-    {
-      $j = self::typeof($v);
-      $this->typeMap[$t] = 7 + $j;
-    }
-    # render
     switch ($j) {
-    case 4:
-      if ($k = count($v))
-      {
-        $r = array_is_list($v)
-          ? $this->iterate($v, $k, $i1)
-          : $this->traverseA($v, $k, $i1);
-      }
-      else
-      {
-        $r = $i0
-          ? $this->base->func[$i0]($this)
-          : '';
-      }
-      $this->revoke();
-      return $r;
-    case 5:
-    case 6:
-      if ($k = count($v))
-      {
-        $r = ($v instanceof Iterator)
-          ? $this->traverseO($v, $k, $i1)
-          : $this->iterate($v, $k, $i1);
-      }
-      else
-      {
-        $r = $i0
-          ? $this->base->func[$i0]($this)
-          : '';
-      }
-      $this->revoke();
-      return $r;
+    case 1:
+      return $escape
+        ? ($this->base->escape)($v)
+        : $v;
+    case 2:
+      return (string)$v;
+    case 3:
+      return $this->base->booleans[$v ? 1 : 0];
     }
     throw new Exception(
-      'iterator block'.
-      ' has recieved a non-iterable value'.
-      ' ('.gettype($v).')'
+      'VARIABLE: incorrect value type: '.$j.
+      (isset(self::TYPE[$j])
+        ? '='.self::TYPE[$j]
+        : ''
+      ).
+      "\n".$this->base->_wrap(
+        $this->base->text[$this->index],
+        $this->typeMap[$t + 1],
+        $this->typeMap[$t + 2]
+      )
     );
-  }
-  # }}}
-  function b2(# SWITCH {{{
-    string $p, int $pi, int $n, ?array $pn, int $t,
-    int $i0, int $i1, int $in, ...$a
-  ):string
-  {
-    # prepare
-    $v = $this->get($p, $pi, $n, $pn, $t);
-    if ($v === null)
-    {
-      return $i0
-        ? $this->base->func[$i0]($this)
-        : '';
-    }
-    # handle lambda
-    if (($j = $this->typeMap[$t]) >= 7)
-    {
-      return $this->bf2(
-        $v, '', $t, $j, $i0, $i1, $in, $a
-      );
-    }
-    # render falsy/simplified
-    switch ($j) {
-    case 1:
-      if ($v === '')
-      {
-        return $i0
-          ? $this->base->func[$i0]($this)
-          : '';
-      }
-      $w = true;
-      break;
-    case 2:
-      $w = $v !== 0;
-      $v = strval($v);# cast to string
-      break;
-    default:
-      throw new Exception(
-        'the switch of «'.self::dotname($p, $pn).'»'.
-        ' received the incorrect value type: '.$j
-      );
-    }
-    # render switch section
-    for ($v='|'.$v,$i=0; $i < $in; $i+=2)
-    {
-      if (strpos($a[$i], $v) !== false) {
-        return $this->base->func[$a[$i+1]]($this);
-      }
-    }
-    # render default section (truthy/falsy)
-    return $w
-      ? ($i1 ? $this->base->func[$i1]($this) : '')
-      : ($i0 ? $this->base->func[$i0]($this) : '');
-  }
-  # }}}
-  function bf2(# LAMBDA SWITCH {{{
-    object $f, string $arg, int $t, int $j,
-    int $i0, int $i1, int $in, array $a
-  ):string
-  {
-    # determine primary section and execute
-    $i = ($i0 && $i1)
-      ? (($i0 < $i1) ? $i0 : $i1)
-      : ($i0 ? $i0 : $i1);
-    $v = $this->invoke($f, $arg, $i);
-    # clarify
-    if ($j > 7) {
-      $j -= 7;
-    }
-    else
-    {
-      $j = self::typeof($v);
-      $this->typeMap[$t] = 7 + $j;
-    }
-    # render falsy/simplified
-    switch ($j) {
-    case 1:
-      if ($v === '')
-      {
-        $r = $i0
-          ? $this->base->func[$i0]($this)
-          : '';
-        $this->revoke();
-        return $r;
-      }
-      $w = true;
-      break;
-    case 2:
-      $w = $v !== 0;
-      $v = strval($v);# cast to string
-      break;
-    default:
-      throw new Exception(
-        'the lambda switch of «'.self::dotname($p, $pn).'»'.
-        ' received the incorrect value type: '.$j
-      );
-    }
-    # render switch section
-    for ($v='|'.$v,$i=0; $i < $in; $i+=2)
-    {
-      if (strpos($a[$i], $v) !== false)
-      {
-        $r = $this->base->func[$a[$i+1]]($this);
-        $this->revoke();
-        return $r;
-      }
-    }
-    # render default section (truthy/falsy)
-    $r = $w
-      ? ($i1 ? $this->base->func[$i1]($this) : '')
-      : ($i0 ? $this->base->func[$i0]($this) : '');
-    $this->revoke();
-    return $r;
-  }
-  # }}}
-  function v(# VARIABLE {{{
-    string $p, int $pi, int $n, ?array $pn, int $t,
-    int $escape
-  ):string
-  {
-    # prepare
-    $v = $this->get($p, $pi, $n, $pn, $t);
-    if ($v === null) {
-      return '';
-    }
-    # handle lambda
-    if (($j = $this->typeMap[$t]) >= 7)
-    {
-      $v = $this->invoke($v, '', -1);
-      if ($j > 7) {
-        $j -= 7;
-      }
-      else
-      {
-        $j = self::typeof($v);
-        $this->typeMap[$t] = 7 + $j;
-      }
-    }
-    # render
-    switch ($j) {
-    case 1:
-      return $escape
-        ? ($this->base->escape)($v)
-        : $v;
-    case 2:
-      return strval($v);
-    }
-    return '';
-  }
-  # }}}
-  # }}}
-  # lambda {{{
-  function f0(# FALSY {{{
-    string $p, int $pi, int $n, ?array $pn, int $t,
-    string $arg, int $i0, int $i1
-  ):string
-  {
-    $v = $this->get($p, $pi, $n, $pn, $t);
-    if ($v === null) {
-      return $this->base->func[$i0]($this);
-    }
-    return $this->bf0(
-      $v, $arg, $t, $this->typeMap[$t], $i0, $i1
-    );
-  }
-  # }}}
-  function f1(# TRUTHY {{{
-    string $p, int $pi, int $n, ?array $pn, int $t,
-    string $arg, int $i0, int $i1
-  ):string
-  {
-    $v = $this->get($p, $pi, $n, $pn, $t);
-    if ($v === null)
-    {
-      return $i0
-        ? $this->base->func[$i0]($this)
-        : '';
-    }
-    return $this->bf1(
-      $v, $arg, $t, $this->typeMap[$t], $i0, $i1
-    );
-  }
-  # }}}
-  function fi(# ITERATOR {{{
-    string $p, int $pi, int $n, ?array $pn, int $t,
-    string $arg, int $i0, int $i1
-  ):string
-  {
-    $v = $this->get($p, $pi, $n, $pn, $t);
-    if ($v === null)
-    {
-      return $i0
-        ? $this->base->func[$i0]($this)
-        : '';
-    }
-    return $this->bfi(
-      $v, $arg, $t, $this->typeMap[$t], $i0, $i1
-    );
-  }
-  # }}}
-  function f2(# SWITCH {{{
-    string $p, int $pi, int $n, ?array $pn, int $t,
-    string $arg, int $i0, int $i1, int $in, ...$a
-  ):string
-  {
-    $v = $this->get($p, $pi, $n, $pn, $t);
-    if ($v === null)
-    {
-      return $i0
-        ? $this->base->func[$i0]($this)
-        : '';
-    }
-    return $this->bf2(
-      $v, $arg, $t, $this->typeMap[$t],
-      $i0, $i1, $in, $a
-    );
-  }
-  # }}}
-  function fv(# VARIABLE {{{
-    string $p, int $pi, int $n, ?array $pn, int $t,
-    string $arg, int $escape
-  ):string
-  {
-    # prepare
-    $v = $this->get($p, $pi, $n, $pn, $t);
-    if ($v === null) {
-      return '';
-    }
-    # handle lambda
-    $v = $this->invoke($v, $arg, -1);
-    if (($j = $this->typeMap[$t]) > 7) {
-      $j -= 7;
-    }
-    else
-    {
-      $j = self::typeof($v);
-      $this->typeMap[$t] = 7 + $j;
-    }
-    # render
-    switch ($j) {
-    case 1:
-      return $escape
-        ? ($this->base->escape)($v)
-        : $v;
-    case 2:
-      return strval($v);
-    }
-    return '';
-  }
-  # }}}
-  # }}}
-  # auxiliary {{{
-  function a01(# FALSY/TRUTHY {{{
-    string $p, int $i, int $t,
-    int $i0, int $i1
-  ):string
-  {
-    if (($i = $this->helpSz - $i) < 0) {
-      return '';
-    }
-    $E = $this->base;
-    $v = $this->help[$i][$p];
-    switch ($t ?: self::typeof($v)) {
-    case 1:
-      return ($v === '')
-        ? ($i0 ? $E->func[$i0]($this) : '')
-        : ($i1 ? $E->func[$i1]($this) : '');
-    default:
-      return $v
-        ? ($i1 ? $E->func[$i1]($this) : '')
-        : ($i0 ? $E->func[$i0]($this) : '');
-    }
-  }
-  # }}}
-  function a2(# SWITCH {{{
-    string $p, int $i, int $t,
-    int $i0, int $i1, int $in, ...$a
-  ):string
-  {
-    # prepare
-    if (($i = $this->helpSz - $i) < 0) {
-      return '';
-    }
-    $v = $this->help[$i][$p];
-    # render falsy/simplified
-    switch ($t ?: self::typeof($v)) {
-    case 1:
-      if ($v === '')
-      {
-        return $i0
-          ? $this->base->func[$i0]($this)
-          : '';
-      }
-      $w = true;
-      break;
-    case 2:
-      $w = $v !== 0;
-      $v = strval($v);
-      break;
-    default:
-      return $v
-        ? ($i1 ? $this->base->func[$i1]($this) : '')
-        : ($i0 ? $this->base->func[$i0]($this) : '');
-    }
-    # render switch section
-    for ($v='|'.$v,$i=0; $i < $in; $i+=2)
-    {
-      if (strpos($a[$i], $v) !== false) {
-        return $this->base->func[$a[$i+1]]($this);
-      }
-    }
-    # render default (truthy/falsy) section
-    return $w
-      ? ($i1 ? $this->base->func[$i1]($this) : '')
-      : ($i0 ? $this->base->func[$i0]($this) : '');
-  }
-  # }}}
-  function av(# VARIABLE {{{
-    string $p, int $i, int $t, int $escape
-  ):string
-  {
-    if (($i = $this->helpSz - $i) < 0) {
-      return '';
-    }
-    $v = $this->help[$i][$p];
-    switch ($t ?: self::typeof($v)) {
-    case 1:
-      if ($escape && !$t) {
-        return ($this->base->escape)($v);
-      }
-      return $v;
-    case 2:
-      return strval($v);
-    }
-    return '';
   }
   # }}}
   # }}}

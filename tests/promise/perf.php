@@ -10,6 +10,41 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
 require_once DIR_SM_UTILS.'functions.php';
 require_once DIR_SM_UTILS.'promise.php';
 # }}}
+echo "f(5) VS f(9)"; # {{{
+echo "\n\n";
+$n = 100000000;
+$a = (static function(
+  int $i1,int $i2,int $i3,int $i4,int $i5
+):int {
+  return $i1+$i2+$i3+$i4+$i5;
+});
+$b = (static function(
+  int $i1,int $i2,int $i3,int $i4,int $i5,
+  int $i6,int $i7,int $i8,int $i9
+):int {
+  return $i1+$i2+$i3+$i4+$i5;
+});
+###
+###
+echo "> f(5): ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  $a($i,2,3,4,5);
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+echo "> f(7): ";
+$t = hrtime(true);
+for ($i=0,$j=0; $i < $n; ++$i)
+{
+  $b($i,2,3,4,5,6,7,8,9);
+}
+echo hrtime_delta_ms($t)."ms\n";
+###
+###
+exit(0);
+# }}}
 echo "[]= VS [last]="; # {{{
 echo "\n\n";
 $n = 100000000;
