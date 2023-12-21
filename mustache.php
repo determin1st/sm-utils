@@ -1,15 +1,17 @@
 <?php declare(strict_types=1);
 # defs {{{
 namespace SM;
-use Countable,Iterator,Exception,Closure;
+use
+  Countable,Iterator,ArrayAccess,
+  Exception,Closure;
 use function
   is_callable,is_scalar,is_object,is_array,
   is_bool,is_string,method_exists,hash,
   htmlspecialchars,ctype_alnum,ctype_space,
   preg_replace,str_replace,trim,ltrim,
   strlen,strpos,substr,addcslashes,str_repeat,
-  count,explode,implode,array_slice,array_is_list,
-  reset,key,next,gettype;
+  count,explode,implode,array_slice,array_pop,
+  array_is_list,reset,key,next,gettype;
 # }}}
 interface Mustachable # friendly objects {{{
 {
@@ -25,8 +27,8 @@ interface Mustachable # friendly objects {{{
 # }}}
 class Mustache # {{{
 {
-  # TODO: refactor auxiliary variables
-  # TODO: more type prediction
+  # TODO: more type predictions / re-composition
+  # TODO: restore after exception? set dirty? state cleanup?
   # TODO: refactor tokenizer
   # constructor {{{
   static string  $EMPTY='';# hash of empty string
@@ -321,7 +323,7 @@ class Mustache # {{{
     while ($idx < $cnt)
     {
       # select area
-      $section = &$area[$idx][0];
+      $x = &$area[$idx][0];
       $i = $area[$idx][1];
       $j = $area[$idx][2];
       $idx++;
@@ -334,13 +336,11 @@ class Mustache # {{{
         case 1:
         case 2:
           # THE BLOCK {{{
-          # construct block node
-          $node = $this->_node($tpl, $a);
+          # create section storage
+          # with the first section
+          $sect = [$a[0]];
           $offs = $a[5];
-          # create section storage and
-          # open first section
-          $node[6] = [$a[0]];
-          # search for terminator
+          # collect content and alternative sections
           for ($k=$i,$n=0; $k < $j; ++$k)
           {
             $b = $token[$k];
@@ -359,17 +359,17 @@ class Mustache # {{{
               }
               # close previous section,
               # add text
-              $node[6][] = substr(
+              $sect[] = substr(
                 $tpl, $offs, $b[4] - $offs
               );
               # add new area for parsing
               $area[$cnt] = [[], $i, $k];
-              $node[6][] = &$area[$cnt][0];
+              $sect[] = &$area[$cnt][0];
               $cnt++;
               $i = $k + 1;
               # open next section
+              $sect[] = $b[1];
               $offs = $b[5];
-              $node[6][] = $b[1];
               break;
             case 11:
               # decrement inner blocks count and
@@ -379,11 +379,11 @@ class Mustache # {{{
               }
               # close previous section,
               # add text and new area for parsing
-              $node[6][] = substr(
+              $sect[] = substr(
                 $tpl, $offs, $b[4] - $offs
               );
               $area[$cnt] = [[], $i, $k];
-              $node[6][] = &$area[$cnt][0];
+              $sect[] = &$area[$cnt][0];
               $cnt++;
               $i = $k + 1;
               goto block_complete;
@@ -391,41 +391,48 @@ class Mustache # {{{
           }
           $c = ('^#@'[$a[0]]).$a[1];
           throw new Exception(
-            'unclosed '.$c.' at '.$a[4].
+            'unterminated block '.$c.' at '.$a[4].
             "\n".$this->_wrap($tpl, $a[4], $a[5])
           );
           # }}}
         block_complete:
+          # validate
           if (($a[0] === 2) &&
-              (($n = count($node[6])) > 6 ||
-               ($n > 3 && $node[6][3] !== '|')))
+              (($n = count($sect)) > 6 ||
+               ($n > 3 && $sect[3] !== '|')))
           {
             throw new Exception(
-              'ITERATOR cannot have CASE section '.
+              'ITERATOR cannot have a CASE section '.
               "\n".$this->_wrap($tpl, $a[4], $a[5])
             );
           }
-          $section[] = $node;
+          # assemble block node
+          $x[] = $this->_node($tpl, $a, $sect);
           break;
         case 10:
           throw new Exception(
-            'unexpected |'.$a[1].' at '.$a[4].
+            'unexpected '.
+            ((strlen($a[1]) > 1)
+              ? 'CASE'
+              : 'OR'
+            ).
+            ' section at '.$a[4].
             "\n".$this->_wrap($tpl, $a[4], $a[5])
           );
         case 11:
           throw new Exception(
-            'unexpected /'.$a[1].' at '.$a[4].
+            'unexpected TERMINUS at '.$a[4].
             "\n".$this->_wrap($tpl, $a[4], $a[5])
           );
         case 20:# plaintext
           if ($a[1] !== '')
           {
             $a[1] = "'".addcslashes($a[1], "'\\")."'";
-            $section[] = $a;
+            $x[] = $a;
           }
           break;
         case 21:# variable
-          $section[] = $this->_node($tpl, $a);
+          $x[] = $this->_node($tpl, $a);
           break;
         }
       }
@@ -433,7 +440,9 @@ class Mustache # {{{
     return $area[0][0];
   }
   # }}}
-  function _node(string $tpl, array $t): array # {{{
+  function _node(# {{{
+    string $tpl, array $t, ?array $sect=null
+  ):array
   {
     # prepare
     $isVar = $t[0] === 21;
@@ -497,8 +506,37 @@ class Mustache # {{{
       elseif (isset(MustacheCtx::AUX[$a]))
       {
         # auxiliary value
-        $a = "'".$a."',".$i.','.MustacheCtx::AUX[$a];
-        return [100 + $t[0],$a,'',$esc,$t[4],$t[5]];
+        # verify use in blocks
+        if ($sect)
+        {
+          if ($sect[0] > 1)
+          {
+            throw new Exception(
+              'auxiliary value cannot be iterated'.
+              "\n".$this->_wrap($tpl, $t[4], $t[5])
+            );
+          }
+          $j = MustacheCtx::AUX[$a];
+          if (($j > 2) &&
+              (($k = count($sect)) > 6 ||
+               ($k > 3 && $sect[3] !== '|')))
+          {
+            throw new Exception(
+              'auxiliary value of type '.$j.
+              (isset(MustacheCtx::TYPE[$j])
+                ? '='.MustacheCtx::TYPE[$j]
+                : ''
+              ).
+              ' cannot be used in the SWITCH block'.
+              "\n".$this->_wrap($tpl, $t[4], $t[5])
+            );
+          }
+        }
+        $a = "'".$a."',".$i;
+        return [
+          100 + $t[0],$a,'',$esc,
+          $t[4],$t[5],$sect
+        ];
       }
     }
     # check arguments
@@ -521,7 +559,7 @@ class Mustache # {{{
       {
         return [
           $t[0],"'',".$i.',0,null',
-          $arg,$esc,$t[4],$t[5]
+          $arg,$esc,$t[4],$t[5],$sect
         ];
       }
     }
@@ -551,7 +589,7 @@ class Mustache # {{{
     }
     return [
       $t[0],"'".$a."',".$i.','.$j.','.$c,
-      $arg,$esc,$t[4],$t[5]
+      $arg,$esc,$t[4],$t[5],$sect
     ];
   }
   # }}}
@@ -613,11 +651,11 @@ class Mustache # {{{
     {
       $node = $tree[$i];
       switch ($node[0]) {
-      case 20:# plaintext {{{
+      case  20:# plaintext {{{
         $x .= $node[1];
         break;
         # }}}
-      case 21:# variable {{{
+      case  21:# variable {{{
         $a = $node[1].','.$ctx->typeSz.',';
         if ($node[2] === '')
         {
@@ -636,8 +674,7 @@ class Mustache # {{{
         break;
         # }}}
       case 121:# auxiliary variable {{{
-        $a  = $node[1].','.$node[3];
-        $x .= '$x->av('.$a.')';
+        $x .= '$x->av('.$node[1].')';
         break;
         # }}}
       default:# the block {{{
@@ -656,7 +693,7 @@ class Mustache # {{{
           $i0 = $k;
           $i1 = 0;
         }
-        # construct secondary sections
+        # construct alternative sections
         for ($a='',$n=0,$m=3; $m < $c; $m+=3)
         {
           $k = $this->_index(
@@ -678,19 +715,26 @@ class Mustache # {{{
         # compose auxiliary block
         if ($node[0] >= 100)
         {
-          if ($n)
+          # create base parameters
+          $d = $node[1].','.$i0.','.$i1;
+          # create and append block entry
+          if ($b[0])
           {
-            $a  = $node[1].','.$i0.','.$i1.','.$n.$a;
-            $x .= '$x->a2('.$a.')';
+            # TRUTHY/SWITCH
+            $x .= $n
+              ? '$x->a2('.$d.','.$n.$a.')'
+              : '$x->a1('.$d.')';
           }
           else
           {
-            $a  = $node[1].','.$i0.','.$i1;
-            $x .= '$x->a01('.$a.')';
+            # FALSY/SWITCH
+            $x .= $n
+              ? '$x->a2('.$d.','.$n.$a.')'
+              : '$x->a0('.$d.')';
           }
           break;
         }
-        # compose standard block
+        # compose basic block
         if ($node[2] === '')
         {
           # create base parameters
@@ -1902,89 +1946,54 @@ class MustacheCtx # data stack {{{
   # }}}
   # }}}
   # auxiliary entry {{{
-  function a01(# FALSY/TRUTHY {{{
-    string $p, int $i, int $t,
-    int $i0, int $i1
+  function a0(# FALSY {{{
+    string $p, int $i, int $i0, int $i1
   ):string
   {
     if (($i = $this->helpSz - $i) < 0) {
-      return '';
+      return $this->base->func[$i0]($this);
     }
-    $E = $this->base;
-    $v = $this->help[$i][$p];
-    switch ($t ?: self::typeof($v)) {
-    case 1:
-      return ($v === '')
-        ? ($i0 ? $E->func[$i0]($this) : '')
-        : ($i1 ? $E->func[$i1]($this) : '');
-    default:
-      return $v
-        ? ($i1 ? $E->func[$i1]($this) : '')
-        : ($i0 ? $E->func[$i0]($this) : '');
+    return $this->v0(
+      $this->help[$i][$p], self::AUX[$p], $i0, $i1
+    );
+  }
+  # }}}
+  function a1(# TRUTHY {{{
+    string $p, int $i, int $i0, int $i1
+  ):string
+  {
+    if (($i = $this->helpSz - $i) < 0) {
+      return $i0 ? $this->base->func[$i0]($this) : '';
     }
+    return $this->v1(
+      $this->help[$i][$p], self::AUX[$p], $i0, $i1
+    );
   }
   # }}}
   function a2(# SWITCH {{{
-    string $p, int $i, int $t,
+    string $p, int $i,
     int $i0, int $i1, int $in, ...$a
   ):string
   {
-    # prepare
     if (($i = $this->helpSz - $i) < 0) {
-      return '';
+      return $i0 ? $this->base->func[$i0]($this) : '';
     }
-    $v = $this->help[$i][$p];
-    # render falsy/simplified
-    switch ($t ?: self::typeof($v)) {
-    case 1:
-      if ($v === '')
-      {
-        return $i0
-          ? $this->base->func[$i0]($this)
-          : '';
-      }
-      $w = true;
-      break;
-    case 2:
-      $w = $v !== 0;
-      $v = (string)$v;
-      break;
-    default:
-      return $v
-        ? ($i1 ? $this->base->func[$i1]($this) : '')
-        : ($i0 ? $this->base->func[$i0]($this) : '');
-    }
-    # render switch section
-    for ($v='|'.$v,$i=0; $i < $in; $i+=2)
-    {
-      if (strpos($a[$i], $v) !== false) {
-        return $this->base->func[$a[$i+1]]($this);
-      }
-    }
-    # render default (truthy/falsy) section
-    return $w
-      ? ($i1 ? $this->base->func[$i1]($this) : '')
-      : ($i0 ? $this->base->func[$i0]($this) : '');
+    return $this->v2(
+      $this->help[$i][$p], -1, self::AUX[$p],
+      $i0, $i1, $in, $a
+    );
   }
   # }}}
   function av(# VARIABLE {{{
-    string $p, int $i, int $t, int $escape
+    string $p, int $i
   ):string
   {
     if (($i = $this->helpSz - $i) < 0) {
       return '';
     }
-    $v = $this->help[$i][$p];
-    switch ($t ?: self::typeof($v)) {
-    case 1:
-      if ($escape && !$t) {
-        return ($this->base->escape)($v);
-      }
-      return $v;
-    case 2:
-      return (string)$v;
-    }
-    return '';
+    return $this->vv(
+      $this->help[$i][$p], -1, self::AUX[$p], 0
+    );
   }
   # }}}
   # }}}
@@ -2213,6 +2222,7 @@ class MustacheCtx # data stack {{{
 }
 # }}}
 class MustacheLambda # {{{
+  implements ArrayAccess
 {
   # constructor {{{
   public object $base;
@@ -2220,6 +2230,19 @@ class MustacheLambda # {{{
   function __construct(object $mustache) {
     $this->base = $mustache;
   }
+  # }}}
+  # [] access {{{
+  function offsetExists(mixed $k): bool {
+    return $this->value($k) !== null;
+  }
+  function offsetGet(mixed $k): mixed {
+    return $this->value($k);
+  }
+  function offsetSet(mixed $k, mixed $v): void {
+    $this->value($k, $v);
+  }
+  function offsetUnset(mixed $k): void
+  {}
   # }}}
   function text(): string # {{{
   {
@@ -2230,6 +2253,26 @@ class MustacheLambda # {{{
   # }}}
   function &value(string $path='.', $val=null): mixed # {{{
   {
+    # handle auxiliary (readonly)
+    if ($path[0] === '_')
+    {
+      # count backpedal
+      for ($i=1; $path[$i] === '_'; ++$i)
+      {}
+      $a = substr($path, $i);
+      # check name exists
+      if (isset(MustacheCtx::AUX[$a]))
+      {
+        $x = $this->base->ctx;
+        if (($i = $x->helpSz - $i) < 0)
+        {
+          $v = null;
+          return $v;
+        }
+        $v = $x->help[$i][$a];
+        return $v;
+      }
+    }
     return $this->base->value($path, $val);
   }
   # }}}

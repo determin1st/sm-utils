@@ -1,13 +1,13 @@
 <?php declare(strict_types=1);
 # defs {{{
 namespace SM;
-use
-  Error,Throwable;
+use Error,Throwable;
 use function
   class_alias,set_error_handler,func_num_args,
-  implode,count,array_reverse,array_pop,
-  array_is_list,array_slice,intval,strval,
-  is_string,str_repeat,strpos,strrpos,substr;
+  implode,explode,count,array_reverse,array_pop,
+  array_unshift,array_slice,array_is_list,
+  date,intval,strval,ltrim,is_string,str_repeat,
+  strpos,strrpos,substr;
 use const
   DIRECTORY_SEPARATOR;
 ###

@@ -458,6 +458,36 @@ catch (Throwable $e) {
 }
 exit;
 # }}}
+# even/odd lambda {{{
+$a = $m->outdent('
+
+  {{@people}}
+    {{#isEven _index}}
+      even
+    {{|}}
+      odd
+    {{/}}
+    : hello {{name}}!
+    {{BR}}
+  {{/}}
+
+');
+$b = [
+  'people' => [
+    ['name'=>'Joe','age'=>80],
+    ['name'=>'Bill','age'=>67],
+    ['name'=>'Donald','age'=>77],
+  ],
+  'isEven' => (function(
+    object $m, string $a
+  ):bool {
+    ######
+    #return !($m->value('_index') % 2);
+    return !($m['_index'] % 2);
+  }),
+];
+/***/
+# }}}
 # terminus as comment {{{
 $a = $m->outdent('
 
@@ -541,7 +571,7 @@ $b['iterate'] = (function ($m,$a) use ($b) {
 });
 /***/
 # }}}
-# path: dot selector {{{
+# absolute path / backpedal {{{
 $a = $m->outdent('
 
   [0]: {{fruit}}{{BR}}
