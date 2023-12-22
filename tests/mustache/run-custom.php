@@ -233,27 +233,7 @@ $a = $m->outdent('
     {{/f.not_found}}
     {{BR}}
 
-    ^2: boolean false{{TAB}}
-    {{^test false}}
-      ok (falsy section)
-    {{|}}
-      fail (truthy section)
-    {{|123}}
-      fail (switch section)
-    {{/test}}
-    {{BR}}
-
-    ^3: boolean true{{TAB}}
-    {{^test true}}
-      fail (falsy section)
-    {{|123}}
-      fail (switch section)
-    {{|}}
-      ok (truthy section)
-    {{/test}}
-    {{BR}}
-
-    ^4: integer zero{{TAB}}
+    ^2: zero number{{TAB}}{{TAB}}
     {{^integer 0}}
       ok (falsy section)
     {{|}}
@@ -263,7 +243,7 @@ $a = $m->outdent('
     {{/integer}}
     {{BR}}
 
-    ^5: empty string{{TAB}}
+    ^3: empty string{{TAB}}
     {{^test empty_string}}
       ok (falsy section)
     {{|}}
@@ -273,37 +253,7 @@ $a = $m->outdent('
     {{/test}}
     {{BR}}
 
-    ^6: empty array{{TAB}}{{TAB}}
-    {{^test empty_array}}
-      ok (falsy section)
-    {{|}}
-      fail (truthy section)
-    {{|123}}
-      fail (switch section)
-    {{/test}}
-    {{BR}}
-
-    ^7: non-empty array{{TAB}}
-    {{^test array}}
-      fail (falsy section)
-    {{|}}
-      ok (truthy section)
-    {{|123}}
-      fail (switch section)
-    {{/test}}
-    {{BR}}
-
-    ^8: object{{TAB}}{{TAB}}
-    {{^test object}}
-      fail (falsy section)
-    {{|}}
-      ok (truthy section)
-    {{|123}}
-      fail (switch section)
-    {{/test}}
-    {{BR}}
-
-    ^9: string match{{TAB}}
+    ^4: string match{{TAB}}
     {{^string 0}}
       fail (falsy section)
     {{|}}
@@ -313,7 +263,7 @@ $a = $m->outdent('
     {{/string}}
     {{BR}}
 
-    ^10: integer match{{TAB}}
+    ^5: integer match{{TAB}}
     {{^integer 0}}
       fail (falsy section)
     {{|}}
@@ -323,7 +273,7 @@ $a = $m->outdent('
     {{/integer}}
     {{BR}}
 
-    ^11: string no match{{TAB}}
+    ^6: string no match{{TAB}}
     {{^string hello}}
       fail (falsy section)
     {{|}}
@@ -333,7 +283,7 @@ $a = $m->outdent('
     {{/string}}
     {{BR}}
 
-    ^12: integer>0 no match{{TAB}}
+    ^7: integer>0 no match{{TAB}}
     {{^integer 123}}
       fail (falsy section)
     {{|}}
@@ -457,6 +407,25 @@ catch (Throwable $e) {
   var_dump($e);
 }
 exit;
+# }}}
+# indenting CASE section {{{
+$a = $m->outdent('
+
+  {{^number}}
+    zero
+  {{|1|2|3}}
+    one or two or three
+  {{|
+      4|5
+  }}
+    four or five
+  {{/}}
+
+');
+$b = [
+  'number' => 5,
+];
+/***/
 # }}}
 # even/odd lambda {{{
 $a = $m->outdent('

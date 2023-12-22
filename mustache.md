@@ -45,6 +45,17 @@ there are two kinds of clauses:
 - ***independent***<sup>[◥][m-clause-ind]</sup> are [variables](#variables) and [comments](#comments).
 - ***dependent***<sup>[◥][m-clause-dep]</sup> are composed in [blocks](#blocks).
 
+### indentation
+***for better appearance***<sup>[◥][readability]</sup>,
+[clause](#clauses) components -
+[delimiters](#delimiters), [sigil](#sigils) and [path](#paths)
+***can align with each other***<sup>[◥][free-form]</sup>
+using ***whitespace***<sup>[◥][whitespace]</sup>.
+
+for example, `{{ & path.to.value }}` equals to `{{&path.to.value}}`,
+but don't forget that [path](#paths) itself
+cannot be indented with whitespace -
+the `{{&path . to . value}}` is incorrect.
 
 ### delimiters
 [![delims](mm/mustache-delims.jpg)](#delimiters)
@@ -73,7 +84,6 @@ a single character may also be used as a delimiter, but:
 > 
 > **Napoleon Bonaparte**
 
-
 ### sigils
 [![sigil](mm/mustache-sigil.jpg)](#sigils)
 
@@ -88,7 +98,6 @@ a ***sigil*** effectively ***denotes the type*** of [clause](#clauses):
 - `#`,`^`,`@` - [primary section](#blocks)
 - `|` - [alternative section](#OR-section)
 - `/` - [terminus](#terminus)
-
 
 ### paths
 [![path](mm/mustache-path.jpg)](#paths)
@@ -208,18 +217,6 @@ a common ***post-processing mechanism***
 which ***is disabled by default*** -
 the affix has no effect.
 
-### indentation
-***for better appearance***<sup>[◥][readability]</sup>,
-all [clause](#clauses) components -
-[delimiters](#delimiters), [sigil](#sigils) and [path](#paths)
-***can align with each other***<sup>[◥][free-form]</sup>
-using ***whitespace***<sup>[◥][whitespace]</sup>.
-
-for example, `{{ & path.to.value }}` equals to `{{&path.to.value}}`,
-but don't forget that [path](#paths) itself
-cannot be indented with whitespace -
-the `{{&path . to . value}}` is incorrect.
-
 ### comments
 [![comment](mm/mustache-comment.jpg)](#comments)
 ```
@@ -311,6 +308,7 @@ defines the following ***falsy*** values:
 
 every other value - is ***truthy***.
 
+
 #### FALSY block
 [![block-falsy](mm/mustache-block-falsy.jpg)](#FALSY-block)
 
@@ -334,8 +332,6 @@ by its ***elements count***:
   array is empty
 {{/}}
 ```
-
-
 
 #### TRUTHY block
 [![block-truthy](mm/mustache-block-truthy.jpg)](#TRUTHY-block)
@@ -379,7 +375,6 @@ rendered and pulled out:
 that is, the primiary section is rendered as many times,
 as many elements are in the container,
 but the stack expands only for a single value.
-
 
 #### ITERATOR block
 [![block-iter](mm/mustache-block-iter.jpg)](#ITERATOR-block)
@@ -439,7 +434,6 @@ It is important to note that
 all ***elements*** in the container
 are ***of the same type***.
 
-
 #### OR section
 [![or](mm/mustache-or.jpg)](#OR-section)
 
@@ -468,6 +462,12 @@ construct allows to save on blocks count:
 
 {{#array-count}}
   array is not empty
+{{|}}
+  array is empty
+{{/}}
+
+{{@array}}
+  index={{_index}},value={{.}};
 {{|}}
   array is empty
 {{/}}
@@ -547,10 +547,14 @@ is also possible:
   zero
 {{|1|2|3}}
   one or two or three
-{{|4|5}}
+{{|
+    4|5
+}}
   four or five
 {{|6}}
   six
+{{|}}
+  unknown number
 {{/}}
 ```
 [the path](#paths) of this [block](#blocks)
@@ -559,7 +563,6 @@ otherwise a [processing exception](#errors) is thrown.
 to match ***CASE section*** literals,
 a ***number is coerced***<sup>[◥][coercion]</sup>
 to a string.
-
 
 #### terminus
 [![terminus](mm/mustache-terminus.jpg)](#terminus)
@@ -590,6 +593,46 @@ is to ***terminate the block***<sup>[◥][boundary-marker]</sup>.
 
 <!-- }}} -->
 ## usage<!-- {{{ -->
+to start rendering templates
+an ***instance***<sup>[◥][instance]</sup>
+of `SM\Mustache` must be created:
+```php
+require_once SM_BASE_PATH.'mustache.php';
+$m = \SM\Mustache::new();# default options
+```
+emperimenting requires only this bare minimum:
+```php
+echo $m->prepare(
+
+  'Hello {{name}}!',  # template
+  ['name'=>'world']   # data
+
+);# outputs: "Hello world!"
+```
+a `prepare` method is used
+either for [preparations](#preparation) or
+for ***experimenting***<sup>[◥][experiment]</sup>
+with the engine.
+
+### instance options
+#### custom delimiters
+123
+
+#### escaping
+for example, putting `<World>` into:
+```html
+<p>Hello {{&name}}!</p>
+```
+with html escaping results in:
+```html
+<p>Hello &lt;World&gt;</p>
+```
+
+#### booleans
+by default, ***boolean***<sup>[◥][boolean]</sup>
+values (either `true` or `false`) render to empty.
+
+
 
 ### the context stack
 [![stack](mm/mustache-stack.jpg)](#the-context-stack)
@@ -647,24 +690,13 @@ echo $m->value('.name');# Donald
 echo $m->value('..name');# Barak
 echo $m->value('...name');# Joe
 ```
-### escaping
-123
-for example, putting `<World>` into:
-```html
-<p>Hello {{&name}}!</p>
-```
-with html escaping results in:
-```html
-<p>Hello &lt;World&gt;</p>
-```
-
-### preparation
+### preparation<!--{{{-->
 > *There are no secrets to success. It is the result of preparation, hard work, and learning from failure.*
 > 
 > **Colin Powell**
 
 delimiters are set once for the
-***instance***<sup>[◥](https://en.wikipedia.org/wiki/Instance_(computer_science))</sup>
+***instance***<sup>[◥][instance]</sup>
 :
 ```php
 $m = SM\Mustache::new(['delims' => '<% %>']);
@@ -677,35 +709,63 @@ $txt = $m->prepare($template, $data, '[[ ]]');
 $id  = $m->prep($template, '{: :}');;
 ```
 
+<!--}}}-->
+
 ### compilation (cache preset)
 2
 
 ### rendering
 3
 
-yes, that's a feature i want to deviate a bit. make it opt in instead of opt out, meaning that {{&userInput}} is whats going to be escaped. im not sure how to do that, maybe an option to the instance that inverts default behavior. it is based on HTML and proposition that templates are typed by users. developer knows exactly what "stage" currently is and whether it s a user input or template composition.
+yes, that's a feature i want to deviate a bit.
+make it opt in instead of opt out,
+meaning that {{&userInput}} is whats going to be escaped.
+im not sure how to do that, maybe an option to the instance
+that inverts default behavior.
+it is based on HTML and proposition that
+templates are typed by users.
+developer knows exactly what "stage" currently is and
+whether it s a user input or template composition.
 
-To go a little off topic here so I can understand better about your implementation I group Mustache implementations like this:
-
-STATIC based
-TRANSFORM based
-REFLECTIVE based
-oke, let me explain how i see stage things in the modern template EVALuator.
+oke, let me explain how i see stage things in
+the modern template EVALuator.
 HTML-only days are over, so it must be generic view.
 
 stage 1: preparation
-templates should be somehow beautiful and easy to read and to modify - for example, check how beautiful are json spec files - long one-liners with zero indentation, yaml files, in this case, arent the source of truth, because they bypass stage 1 implicitly. json is what we need, big lengthy json objects with infinite one-liners.. (put some irony here).
+templates should be somehow beautiful and
+easy to read and to modify - for example,
+check how beautiful are json spec files -
+long one-liners with zero indentation,
+yaml files, in this case, arent the source of truth,
+because they bypass stage 1 implicitly.
+json is what we need, big lengthy json objects
+with infinite one-liners.. (put some irony here).
 
-i think you agree that template storage represents a hasmap - name=>template content, it can be filename (still a name) or json object key, also a name bound with content - string type. php arrays are better than JSON files, aesthetically. i bet any language does better job in template sourcing - better representation for a developer.
+i think you agree that template storage represents
+a hasmap - name=>template content,
+it can be filename (still a name) or json object key,
+also a name bound with content - string type.
+php arrays are better than JSON files, aesthetically.
+i bet any language does better job in template sourcing -
+better representation for a developer.
 
 single template, one may wish to see is:
 
-  {:BR:}{:TAB:}
-  Hey, {{name}}, you are {:#ansi_color red:}{{age}}{:/ansi_color:} years old!
-this tiny indentation brings an issue to non-HTML sources. "remove indentation around standalone blocks" feature in mustache doesnt fully do OUTdentation. the issue is obscure in HTML, because HTML usually eats any whitespace in the view. same as in yaml files, you dont see it. i think that explicit outdentation is required. mine has two methods for this stage:
+{:BR:}{:TAB:}
+Hey, {{name}}, you are {:#ansi_color red:}{{age}}{:/ansi_color:} years old!
+
+this tiny indentation brings an issue to non-HTML sources.
+"remove indentation around standalone blocks"
+feature in mustache doesnt fully do OUTdentation.
+the issue is obscure in HTML,
+because HTML usually eats any whitespace in the view.
+same as in yaml files, you dont see it.
+i think that explicit outdentation is required.
+mine has two methods for this stage:
 
 function outdent(string $template): string;
 function prepare(string $template, mixed $data=null, string $customDelimiters=''): string
+
 the process may look like
 
 foreach ($templateStorage as $name => &$template) {
@@ -784,11 +844,11 @@ render exceptions
 
 <!-- }}} -->
 ## examples<!-- {{{ -->
-### one
+### in the terminal
 1
-### two
+### in the telegram app
 2
-### three
+### in the web browser
 3
 <!-- }}} -->
 <!-- links {{{ -->
@@ -858,6 +918,8 @@ render exceptions
 [negation]: https://en.wikipedia.org/wiki/Negation
 [mutual-exclusion]: https://en.wikipedia.org/wiki/Mutual_exclusivity
 [metalanguage]: https://en.wikipedia.org/wiki/Metalanguage
+[instance]: https://en.wikipedia.org/wiki/Instance_(computer_science)
+[experiment]: https://en.wikipedia.org/wiki/Experiment
 [php-countable]: https://www.php.net/manual/en/class.countable.php
 [php-array]: https://www.php.net/manual/en/language.types.array.php
 [php-mixed]: https://www.php.net/manual/en/language.types.mixed.php

@@ -39,7 +39,7 @@ class Mustache # {{{
   public bool    $unescape=false;# "&" unescapes/escapes
   public int     $dedent=0;# re-indent?
   public array   $wraps=["\033[41m","\033[49m"];# red bg
-  public array   $booleans=['',''];
+  public array   $booleans=['no','yes'];
   public int     $index=0;# current hash/text/func
   public array   $hash=[''],$text=[''],$func=[null];
   #public array   $code=[''];# DEBUG?
@@ -216,7 +216,6 @@ class Mustache # {{{
         ];
         break;
       case '|':# OR/CASE SECTION
-        # TODO: whitespace alignment
         $token[$i++] = [
           10,ltrim($c),
           $line,$indent,$i0,$i1
@@ -444,6 +443,8 @@ class Mustache # {{{
     string $tpl, array $t, ?array $sect=null
   ):array
   {
+    # TODO: redefine variable
+    # TODO: exception when variable modifier is applied to a block
     # prepare
     $isVar = $t[0] === 21;
     $path  = $t[1];
@@ -828,12 +829,8 @@ class Mustache # {{{
     static $NONE=null;
     $x = $this->ctx;
     $i = 0;
-    if (!($j = strlen($path)))
-    {
-      throw new Exception(
-        __METHOD__.': '.
-        'path argument is empty'
-      );
+    if (!($j = strlen($path))) {
+      return $NONE;
     }
     # determine dot selector backpedal
     while ($path[$i] === '.')
