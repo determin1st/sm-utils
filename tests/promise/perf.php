@@ -7,8 +7,6 @@ use
   SplDoublyLinkedList,SplObjectStorage;
 ###
 require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
-require_once DIR_SM_UTILS.'functions.php';
-require_once DIR_SM_UTILS.'promise.php';
 # }}}
 echo "f(5) VS f(9)"; # {{{
 echo "\n\n";

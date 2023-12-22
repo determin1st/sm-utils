@@ -4,9 +4,9 @@ require_once(
   __DIR__.DIRECTORY_SEPARATOR.
   '..'.DIRECTORY_SEPARATOR.
   '..'.DIRECTORY_SEPARATOR.
-  'mustache.php'
+  'autoload.php'
 );
-$m = SM\Mustache::new([
+$m = \SM\Mustache::new([
   'helper' => [
     'BR'  => "\n",
     'TAB' => "\t",
@@ -407,6 +407,19 @@ catch (Throwable $e) {
   var_dump($e);
 }
 exit;
+# }}}
+# variable modifier may not apply to block {{{
+$a = $m->outdent('
+
+  {{^ &number}}
+    zero
+  {{/}}
+
+');
+$b = [
+  'number' => 5,
+];
+/***/
 # }}}
 # indenting CASE section {{{
 $a = $m->outdent('

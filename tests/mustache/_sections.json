@@ -360,8 +360,26 @@
       "data": {
         "boolean": true
       },
-      "template": "|{{# boolean }}={{/ boolean }}|",
+      "template": "|{{ #  boolean }}={{/ boolean }}|",
       "expected": "|=|"
+    },
+    {
+      "name": "# - zero is not rendered",
+      "desc": "",
+      "data": {
+        "zero-number": 0
+      },
+      "template": "0{{#zero-number}}0{{/zero-number}}",
+      "expected": "0"
+    },
+    {
+      "name": "# - empty string is not rendered",
+      "desc": "",
+      "data": {
+        "empty-string": ""
+      },
+      "template": "0{{#empty-string}}0{{/empty-string}}",
+      "expected": "0"
     }
   ]
 }

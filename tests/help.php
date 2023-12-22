@@ -1,11 +1,11 @@
 <?php declare(strict_types=1);
 namespace SM;
-define(
-  'DIR_SM_UTILS',
-  realpath(__DIR__.DIRECTORY_SEPARATOR.'..').DIRECTORY_SEPARATOR
-);
-require_once DIR_SM_UTILS.'functions.php';
-require_once DIR_SM_UTILS.'conio.php';
+require_once
+  realpath(__DIR__.DIRECTORY_SEPARATOR.'..').
+  DIRECTORY_SEPARATOR.'autoload.php';
+###
+Functions::AUTOLOAD;
+###
 function test_info(string $name='', string $text=''): void
 {
   static $TITLE='',$INFO='';

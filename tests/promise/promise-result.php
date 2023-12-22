@@ -1,16 +1,13 @@
 <?php declare(strict_types=1);
 namespace SM;
 require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
-require_once DIR_SM_UTILS.'promise.php';
 ###
+ErrorLog::init(['ansi' => Conio::is_ansi()]);
 test_info('PromiseResult','
 [1] dump Promise::Column
 [2] dump Promise::Row
 [3] ErrorLog::from(<PromiseResult>)
 ');
-if (class_exists('SM\Conio', false)) {
-  ErrorLog::init(['ansi' => Conio::is_ansi()]);
-}
 while (1)
 {
   switch (Conio::getch()) {

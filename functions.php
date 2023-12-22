@@ -20,6 +20,19 @@ use const
 ###
 require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
 # }}}
+class Functions
+{
+  const AUTOLOAD=true;
+}
+function await(object|array $p): object # {{{
+{
+  return Loop::await(is_array($p)
+    ? Promise::Row($p)
+    : Promise::from($p)
+  );
+}
+# }}}
+###
 # array {{{
 function array_key(array &$a, int $index): int|string|null # {{{
 {

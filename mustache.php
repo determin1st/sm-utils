@@ -443,29 +443,30 @@ class Mustache # {{{
     string $tpl, array $t, ?array $sect=null
   ):array
   {
-    # TODO: redefine variable
     # TODO: exception when variable modifier is applied to a block
     # prepare
-    $isVar = $t[0] === 21;
-    $path  = $t[1];
-    $esc   = 0;
+    $path = $t[1];
+    $esc  = 0;
     # check escape modifier
     if ($path[0] === '&')
     {
-      if (!$isVar)
+      if ($sect)
       {
         throw new Exception(
-          'variable modifier "&" '.
-          'may not apply to block'.
+          'the VARIABLE modifier '.
+          'may not apply to the BLOCK'.
           "\n".$this->_wrap($tpl, $t[4], $t[5])
         );
       }
       $path = ltrim(substr($path, 1));
-      $esc = $this->escape
-        ? ($this->unescape ? 0 : 1)
-        : 0;
+      if ($this->escape && !$this->unescape) {
+        $esc = 1;
+      }
     }
-    elseif ($isVar && $this->escape) {
+    elseif ($t[0] === 21 &&
+            $this->escape &&
+            $this->unescape)
+    {
       $esc = 1;
     }
     # check auxiliary
@@ -2036,8 +2037,11 @@ class MustacheCtx # data stack {{{
       }
       break;
     case 2:
-      if ($i0 && !$v) {
-        return $this->base->func[$i0]($this);
+      if (!$v)
+      {
+        return $i0
+          ? $this->base->func[$i0]($this)
+          : '';
       }
       break;
     case 3:
@@ -2057,6 +2061,7 @@ class MustacheCtx # data stack {{{
       return $i0
         ? $this->base->func[$i0]($this)
         : '';
+      ###
     case 5:
     case 6:
       if ($v instanceof Countable)

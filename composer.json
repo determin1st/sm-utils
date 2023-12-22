@@ -1,0 +1,22 @@
+{
+    "name": "sm/base",
+    "description": "state machine base",
+    "type": "library",
+    "license": "UNLICENSE",
+    "require": {
+        "php": ">=8.1"
+    },
+    "autoload": {
+        "classmap": [
+            "conio.php",
+            "error.php",
+            "fetch.php",
+            "mustache.php",
+            "promise.php",
+            "sync.php"
+        ],
+        "files": [
+            "functions.php"
+        ]
+    }
+}

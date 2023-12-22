@@ -2,3 +2,5 @@
 *.swp
 *.opcode
 __*
+vendor/
+composer.lock

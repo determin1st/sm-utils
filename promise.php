@@ -11,6 +11,7 @@ use const
   DIRECTORY_SEPARATOR;
 ###
 require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
+require_once __DIR__.DIRECTORY_SEPARATOR.'functions.php';
 # }}}
 abstract class Completable # {{{
 {
@@ -630,14 +631,6 @@ class Loop # {{{
     return $p->result;
   }
   # }}}
-}
-# }}}
-function await(object|array $p): object # {{{
-{
-  return Loop::await(is_array($p)
-    ? Promise::Row($p)
-    : Promise::from($p)
-  );
 }
 # }}}
 # actions {{{

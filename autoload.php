@@ -6,13 +6,21 @@ use const DIRECTORY_SEPARATOR;
 defined('SM\\AUTOLOAD') ||
 define('SM\\AUTOLOAD', new class()
 {
+  const DIR=__DIR__.DIRECTORY_SEPARATOR;
   const MAP=[
-    'SM\\Conio'    => 'conio.php',
-    'SM\\Error'    => 'error.php',
-    'SM\\ErrorLog' => 'error.php',
-    'SM\\Fetch'    => 'fetch.php',
-    'SM\\Mustache' => 'mustache.php',
-    'SM\\Promise'  => 'promise.php',
+    'SM\\Conio'     => 'conio.php',
+    'SM\\Error'     => 'error.php',
+    'SM\\ErrorLog'  => 'error.php',
+    'SM\\Fetch'     => 'fetch.php',
+    'SM\\Functions' => 'functions.php',
+    'SM\\Mustache'  => 'mustache.php',
+    'SM\\Promise'   => 'promise.php',
+    'SM\\Loop'      => 'promise.php',
+    'SM\\SyncExchange'        => 'sync.php',
+    'SM\\SyncBroadcastMaster' => 'sync.php',
+    'SM\\SyncBroadcast'       => 'sync.php',
+    'SM\\SyncAggregateMaster' => 'sync.php',
+    'SM\\SyncAggregate'       => 'sync.php',
   ];
   public object $callback;
   public bool   $ready=false;
@@ -21,12 +29,8 @@ define('SM\\AUTOLOAD', new class()
   }
   function autoload(string $class): void
   {
-    if (isset(self::MAP[$class]))
-    {
-      include
-        __DIR__.
-        DIRECTORY_SEPARATOR.
-        self::MAP[$class];
+    if (isset(self::MAP[$class])) {
+      include self::DIR.self::MAP[$class];
     }
   }
   function register(): bool
