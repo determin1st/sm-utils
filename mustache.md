@@ -47,7 +47,7 @@ there are two kinds of clauses:
 
 ### indentation
 ***for better appearance***<sup>[◥][readability]</sup>,
-[clause](#clauses) components -
+all [clause](#clauses) components -
 [delimiters](#delimiters), [sigil](#sigils) and [path](#paths)
 ***can align with each other***<sup>[◥][free-form]</sup>
 using ***whitespace***<sup>[◥][whitespace]</sup>.

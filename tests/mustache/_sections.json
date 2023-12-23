@@ -360,7 +360,7 @@
       "data": {
         "boolean": true
       },
-      "template": "|{{ #  boolean }}={{/ boolean }}|",
+      "template": "|{{#   boolean }}={{/ boolean }}|",
       "expected": "|=|"
     },
     {

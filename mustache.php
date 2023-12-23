@@ -443,7 +443,6 @@ class Mustache # {{{
     string $tpl, array $t, ?array $sect=null
   ):array
   {
-    # TODO: exception when variable modifier is applied to a block
     # prepare
     $path = $t[1];
     $esc  = 0;
