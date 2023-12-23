@@ -3,8 +3,8 @@ namespace SM;
 use function define,defined,spl_autoload_register;
 use const DIRECTORY_SEPARATOR;
 ###
-defined('SM\\AUTOLOAD') ||
-define('SM\\AUTOLOAD', new class()
+defined('SM\\BASE') ||
+define('SM\\BASE', new class()
 {
   const DIR=__DIR__.DIRECTORY_SEPARATOR;
   const MAP=[
@@ -43,5 +43,5 @@ define('SM\\AUTOLOAD', new class()
     );
   }
 });
-return (\SM\AUTOLOAD)->register();
+return (\SM\BASE)->register();
 ###

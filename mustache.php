@@ -29,6 +29,7 @@ class Mustache # {{{
 {
   # TODO: more type predictions / re-composition
   # TODO: restore after exception? set dirty? state cleanup?
+  # TODO: all exceptions tests
   # TODO: refactor tokenizer
   # constructor {{{
   static string  $EMPTY='';# hash of empty string

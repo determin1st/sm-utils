@@ -46,6 +46,8 @@ there are two kinds of clauses:
 - ***dependent***<sup>[◥][m-clause-dep]</sup> are composed in [blocks](#blocks).
 
 ### indentation
+[![clause-pads](mm/mustache-clause-pads.jpg)](#indentation)
+
 ***for better appearance***<sup>[◥][readability]</sup>,
 all [clause](#clauses) components -
 [delimiters](#delimiters), [sigil](#sigils) and [path](#paths)
@@ -70,8 +72,8 @@ which look like a ***moustache***<sup>[◥][moustache]</sup>.
 the first delimiter is called ***opening***,
 the second - ***closing***.
 
-***custom delimiters*** may be set at
-[the phase of preparation](#preparation).
+***custom delimiters*** can be
+[set once during instantiation](#custom-delimiters).
 some examples: `{: :}`, `/* */`, `<{ }>`, `<[ ]>`,
 `<% %>`, `[% %]`, `{% %}`, `(( ))`, `[[ ]]`,
 `<!--{ }-->`, `{{{ }}}`.
