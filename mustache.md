@@ -54,10 +54,6 @@ all [clause](#clauses) components -
 ***can align with each other***<sup>[◥][free-form]</sup>
 using ***whitespace***<sup>[◥][whitespace]</sup>.
 
-for example, `{{ & path.to.value }}` equals to `{{&path.to.value}}`,
-but don't forget that [path](#paths) itself
-cannot be indented with whitespace -
-the `{{&path . to . value}}` is incorrect.
 
 ### delimiters
 [![delims](mm/mustache-delims.jpg)](#delimiters)
