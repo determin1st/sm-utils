@@ -20,7 +20,7 @@ use const
 ###
 require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
 # }}}
-class Functions
+class Fn
 {
   const AUTOLOAD=true;
 }

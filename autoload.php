@@ -8,14 +8,14 @@ define('SM\\BASE', new class()
 {
   const DIR=__DIR__.DIRECTORY_SEPARATOR;
   const MAP=[
-    'SM\\Conio'     => 'conio.php',
-    'SM\\Error'     => 'error.php',
-    'SM\\ErrorLog'  => 'error.php',
-    'SM\\Fetch'     => 'fetch.php',
-    'SM\\Functions' => 'functions.php',
-    'SM\\Mustache'  => 'mustache.php',
-    'SM\\Promise'   => 'promise.php',
-    'SM\\Loop'      => 'promise.php',
+    'SM\\Conio'    => 'conio.php',
+    'SM\\Error'    => 'error.php',
+    'SM\\ErrorLog' => 'error.php',
+    'SM\\Fetch'    => 'fetch.php',
+    'SM\\Fn'       => 'functions.php',
+    'SM\\Mustache' => 'mustache.php',
+    'SM\\Promise'  => 'promise.php',
+    'SM\\Loop'     => 'promise.php',
     'SM\\SyncExchange'        => 'sync.php',
     'SM\\SyncBroadcastMaster' => 'sync.php',
     'SM\\SyncBroadcast'       => 'sync.php',

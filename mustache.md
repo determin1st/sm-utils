@@ -94,16 +94,22 @@ a ***sigil*** effectively ***denotes the type*** of [clause](#clauses):
 - `&` - [variable](#variables) (optional modifier)
 - `!` - [commentary](#comments)
 - `#`,`^`,`@` - [primary section](#blocks)
-- `|` - [alternative section](#OR-section)
+- `|` - [alternative section](#or-section)
 - `/` - [terminus](#terminus)
 
 ### paths
 [![path](mm/mustache-path.jpg)](#paths)
 
 a ***path***<sup>[◥][m-path]</sup>
-consists of ***one or multiple names***<sup>[◥][name-value]</sup>
+consists of ***names*** and ***dots***<sup>[◥][dot]</sup>
 that indicate ***the address of a value***<sup>[◥][name-binding]</sup>
 on [the context stack](#the-context-stack).
+
+every ***name*** in the path denotes
+an ***array key***<sup>[◥][name-value]</sup>
+or ***object property***<sup>[◥][property]</sup>
+which should exist within the ***container***<sup>[◥][container]</sup>
+somewhere on [the stack](#the-context-stack).
 
 it is crusial to follow a rigid
 ***naming convention***<sup>[◥][naming]</sup> -
@@ -123,40 +129,32 @@ characters - they have a special meaning.
 a ***path*** that is ***prefixed***<sup>[◥][prefix]</sup>
 with ***one or multiple dots***
 is called ***absolute***<sup>[◥][abs-path]</sup>.
+the number of dots represents a ***backpedal***
+that enables ***explicit value addressing***<sup>[◥][stack-peek]</sup>
+on [the stack](#the-context-stack).
 
-[![path-backpedal](mm/mustache-path-backpedal.jpg)](#absolute-path)
+examples: `.name`, `..name`, `...name`
 
-for example, in the `.name` path,
-a ***single dot***<sup>[◥][dot]</sup>
-points to the ***top of the stack***,
-which must be the ***container***<sup>[◥][container]</sup>
-where the `name` resides.
-in the `..name`, there is a ***double dot***
-pointing downwards (***top to bottom***)
-to the ***second container***<sup>[◥][container]</sup>
-on [the stack](#the-context-stack) and the `name` value inside that container.
-in the `...name`, a ***triple dot*** points to
-the ***third value*** on [the stack](#the-context-stack)
-and so on..
+a ***special case*** of an absolute path
+is when it contains ***no names at all*** -
+the value is simply taken from the stack.
 
-such a prefixed dot notation is called a **backpedal** -
-it requires knowledge of [the stack](#the-context-stack) contents.
-thus, an ***absolute path***<sup>[◥][abs-path]</sup>
-implies an **explicit selection**<sup>[◥][stack-peek]</sup>
-of value.
+examples: `.`, `...`, `.....`
 
 #### relative path
-a [path](#paths) with ***no backpedal***
+a [path](#paths) that is [not absolute](#absolute-path)
+(has no backpedal)
 is called ***relative***<sup>[◥][rel-path]</sup> -
-the first name is ***searched***<sup>[◥][linear-search]</sup>
-on [the stack](#the-context-stack)
-(rather than ***peeked***<sup>[◥][stack-peek]</sup>).
+its first name is ***searched once***<sup>[◥][linear-search]</sup>
+on [the stack](#the-context-stack).
+the ***search***<sup>[◥][linear-search]</sup>
+is conducted ***inside containers***<sup>[◥][container]</sup>,
+starting ***from the top of the stack***.
 
-the ***search*** goes from ***top to bottom***
-only inside of ***container***<sup>[◥][container]</sup>
-values. when the first name is found,
-but [the dot notation](#dot-notation) fails,
-the search does not resume.
+examples: `name`, `name-of-the-city`, `nameOfTheFunction`
+
+relative path ***cannot be empty***,
+it always consists of ***one or multiple names***.
 
 #### dot notation
 [![path-rel](mm/mustache-path-rel.jpg)](#dot-notation)
@@ -165,43 +163,55 @@ the search does not resume.
 ***are joined***<sup>[◥][interfix]</sup>
 with the ***dot***<sup>[◥][dot]</sup> character.
 
-for example, the path consisting of two names - `first.second`
-assumes that the `first` name ***points to the container***<sup>[◥][container]</sup>
-and the `second` name points to ***the value inside*** that container.
-for the `first.second.third` path, the rule extrapolates -
-the `third` value ***must be extracted*** from the `second` container
-which must be extracted from the `first` container.
-that is, the `first.second` value contains the `third` value,
-which is simply a `first.second.third` value.
+examples: `user.name`, `..absolute.path`, `relative-path.to.value`
+
+lets examine how the ***dot notation*** applies
+for the `first.second` path:
+there are two names - the `first` name
+is looked up and found on the stack,
+it points to the container in which
+the `second` name resides.
+the `second` name is associated with
+a value that is returned as the result
+of path resolution.
+for the `first.second.third` path - the rule extrapolates -
+the `third` value must be extracted from the `second` container
+which must be extracted from the `first` container
+which must be found on the stack.
 
 #### lambda path
 [![path-lambda](mm/mustache-path-lambda.jpg)](#lambda-path)
 
 when a ` ` ***space***<sup>[◥][space]</sup> character
-is met ***in the path***,
-it denotes the end of
+is met ***in the path***, it denotes the end of
 [the path that resolves to lambda](#lambdas) and
 the start of the ***argument***<sup>[◥][argument]</sup>
-to that lambda.
+to that ***lambda***<sup>[◥][lambda]</sup>.
+the ***lambda is invoked*** during the rendering process and
+the result of the call is taken as a value the path resolves.
 
-for example in `isEven _index`,
-the `isEven` is [the relative path](#relative-path)
-that should resolve to lambda and
-the `_index` is the argument.
+for example in the `utils.isEven _index` path,
+the `utils.isEven` is the actual [relative path](#relative-path)
+that should resolve to ***lambda function***<sup>[◥][lambda]</sup>
+and the `_index` ***literal***<sup>[◥][literal]</sup>
+will be passed as its argument.
 
 
 ### variables
 [![var](mm/mustache-var.jpg)](#variables)
-> *Make everything as simple as possible, but not simpler.*
-> 
-> **Albert Einstein**
-
 a ***variable***<sup>[◥][m-var]</sup>
 is an ***independent***<sup>[◥][m-clause-ind]</sup>
 [clause](#clauses)
 of ***mustache language***<sup>[◥][m-lang]</sup>
 that consists of [delimiters](#delimiters)
 and [path](#paths).
+
+examples: `{{relative.path}}`, `{{.absolute.path}}`,
+`{{random 1,100}}`, `{{.}}`
+
+> *Make everything as simple as possible, but not simpler.*
+> 
+> **Albert Einstein**
 
 a ***variable***<sup>[◥][m-var]</sup>
 may be ***affixed***<sup>[◥][affix]</sup>
@@ -215,8 +225,18 @@ a common ***post-processing mechanism***
 which ***is disabled by default*** -
 the affix has no effect.
 
+examples: `{{&user-input}}`, `{{&.code.javascript}}`
+
 ### comments
 [![comment](mm/mustache-comment.jpg)](#comments)
+
+a ***comment***<sup>[◥][m-comment]</sup>
+is an ***independent***<sup>[◥][m-clause-ind]</sup>
+[clause](#clauses)
+of ***mustache language***<sup>[◥][m-lang]</sup>
+that consists of [delimiters](#delimiters),
+the **`!`** [sigil](#sigils)
+and ***annotation***<sup>[◥][annotation]</sup>:
 ```
 {{!
 
@@ -230,14 +250,6 @@ the affix has no effect.
 
 }}
 ```
-a ***comment***<sup>[◥][m-comment]</sup>
-is an ***independent***<sup>[◥][m-clause-ind]</sup>
-[clause](#clauses)
-of ***mustache language***<sup>[◥][m-lang]</sup>
-that consists of [delimiters](#delimiters),
-the **`!`** [sigil](#sigils)
-and ***annotation***<sup>[◥][annotation]</sup>.
-
 [upon rendering](#rendering), a comment
 ***is stripped***<sup>[◥][substitution]</sup>
 from the [resulting output](#examples).
@@ -271,13 +283,13 @@ the ***result***<sup>[◥][boolean]</sup>
 influences the way the block renders.
 
 standard ***block types*** ([sigils](#sigils)) are:
-- [**`#`**](#TRUTHY-block),[**`@`**](#ITERATOR-block) - [expects truthy](#truthy-or-falsy)
-- [**`^`**](#FALSY-block) - [expects falsy](#truthy-or-falsy)
+- [**`#`**](#truthy-block),[**`@`**](#iterator-block) - [expects truthy](#truthy-or-falsy)
+- [**`^`**](#falsy-block) - [expects falsy](#truthy-or-falsy)
 
 any ***subsequent section***<sup>[◥][cond-subsequent]</sup>
-is called an [alternative section](#OR-section)
+is called an [alternative section](#or-section)
 and its [clause](#clauses) ***is affixed***<sup>[◥][affix]</sup>
-with [**`|`**](#OR-section) [sigil](#sigils).
+with [**`|`**](#or-section) [sigil](#sigils).
 
 [upon rendering](#rendering), a block is
 ***removed or replaced***<sup>[◥][substitution]</sup>
@@ -296,19 +308,18 @@ when it coerces to ***false*** - its ***falsy***,
 otherwise, it is ***true*** and ***truthy***.
 
 this ***mustache***<sup>[◥][m-lang]</sup> implementation
-defines the following ***falsy*** values:
-- `unfound` - when [path](#paths) resolves to ***nothing***<sup>[◥][null]</sup> (value not found)
-- `false` - ***boolean***<sup>[◥][boolean]</sup> (no coercion)
+defines the following ***falsy values***:
+- `null` - ***value not found*** or ***lambda returns null***
+- `false` - ***boolean***<sup>[◥][boolean]</sup> (without coercion)
 - `0` - ***zero number***<sup>[◥][zero]</sup>
-- ***empty string***<sup>[◥][empty-string]</sup>
-- `[]` - empty ***array***<sup>[◥][php-array]</sup>
-- empty ***countable object***<sup>[◥][php-countable]</sup>
+- `''` - ***empty string***<sup>[◥][empty-string]</sup>
+- `[]` - empty ***array***<sup>[◥][php-array]</sup> or ***countable object***<sup>[◥][php-countable]</sup>
 
-every other value - is ***truthy***.
+every other value - is ***truthy value***.
 
 
 #### FALSY block
-[![block-falsy](mm/mustache-block-falsy.jpg)](#FALSY-block)
+[![block-falsy](mm/mustache-block-falsy.jpg)](#falsy-block)
 
 this block type ***is the simplest*** -
 its primary section is rendered only when [the path](#paths)
@@ -332,7 +343,7 @@ by its ***elements count***:
 ```
 
 #### TRUTHY block
-[![block-truthy](mm/mustache-block-truthy.jpg)](#TRUTHY-block)
+[![block-truthy](mm/mustache-block-truthy.jpg)](#truthy-block)
 
 the primary section of this block
 is rendered only when [the path](#paths)
@@ -340,7 +351,7 @@ resolves to [truthy](#truthy-or-falsy).
 
 for a ***boolean*** value,
 it behaves the ***same as negated***<sup>[◥][negation]</sup>
-[falsy block](#FALSY-block):
+[falsy block](#falsy-block):
 ```
 {{#user.active}}
   user {{user.name}} is active
@@ -375,10 +386,10 @@ as many elements are in the container,
 but the stack expands only for a single value.
 
 #### ITERATOR block
-[![block-iter](mm/mustache-block-iter.jpg)](#ITERATOR-block)
+[![block-iter](mm/mustache-block-iter.jpg)](#iterator-block)
 
 this block improves the ***iteration capability***<sup>[◥][iterator]</sup>
-of the [truthy block](#TRUTHY-block) and
+of the [truthy block](#truthy-block) and
 introduces ***traversion capability***.
 a ***truthy value*** resolved from [the path](#the-path)
 must be a ***countable container***<sup>[◥][php-countable]</sup>,
@@ -416,9 +427,9 @@ while rendering, both ***iteration*** and ***traversal***
 expand [the stack](#the-context-stack) with the current value
 which may be accessed with [`.` backpedal](#absolute-path).
 ***auxiliary variables*** have
-a similar [`_` backpedal](#absolute-path) notation,
+a similar [`_` backpedal](#absolute-path),
 but they live in a separate stack and
-only pertain to [iterator blocks](#ITERATOR-block):
+only pertain to [iterator blocks](#iterator-block):
 ```
 date,time,info;
 {{@events}}
@@ -433,17 +444,23 @@ all ***elements*** in the container
 are ***of the same type***.
 
 #### OR section
-[![or](mm/mustache-or.jpg)](#OR-section)
+[![or](mm/mustache-or.jpg)](#or-section)
 
 every block type may have
 an ***alternative section***<sup>[◥][mutual-exclusion]</sup>
 that ***renders once*** the primary condition is unmet
-and ***does not push anything*** to [the stack](#the-context-stack):
+and ***it does not push anything*** to [the stack](#the-context-stack):
 ```
-{{^array}}
-  array is empty
+{{#number}}
+  the number is {{.}}
 {{|}}
-  array is not empty
+  the number is zero or 0 or null
+{{/}}
+
+{{^number}}
+  the number is zero or 0 or null
+{{|}}
+  the number is non-zero, {{number}}
 {{/}}
 ```
 being the opposite of
@@ -458,12 +475,16 @@ construct allows to save on blocks count:
   array is empty
 {{/}}
 
+VS
+
 {{#array-count}}
   array is not empty
 {{|}}
   array is empty
 {{/}}
-
+```
+a profound application may be found with iterators:
+```
 {{@array}}
   index={{_index}},value={{.}};
 {{|}}
@@ -472,9 +493,9 @@ construct allows to save on blocks count:
 ```
 
 #### SWITCH block
-[![block-switch](mm/mustache-block-switch.jpg)](#SWITCH-block)
+[![block-switch](mm/mustache-block-switch.jpg)](#switch-block)
 
-a [truthy block](#TRUTHY-block) or a [falsy block](#FALSY-block)
+a [truthy block](#truthy-block) or a [falsy block](#falsy-block)
 that contains a ***conditional OR section*** aka ***CASE section***
 is called a ***switch block***<sup>[◥][m-switch]</sup>:
 ```
@@ -506,7 +527,7 @@ which ***is matched*** in the first place:
 {{/}}
 ```
 both ***primary section*** and
-[OR section](#OR-section) without a ***literal***<sup>[◥][literal]</sup>
+[OR section](#or-section) without a ***literal***<sup>[◥][literal]</sup>
 aka ***unconditional CASE section***
 may be represented as ***default cases***
 in an underlying ***metalanguage***<sup>[◥][metalanguage]</sup>:
@@ -595,17 +616,23 @@ to start rendering templates
 an ***instance***<sup>[◥][instance]</sup>
 of `SM\Mustache` must be created:
 ```php
-require_once SM_BASE_PATH.'mustache.php';
-$m = \SM\Mustache::new();# default options
+$m = \SM\Mustache::new();# with default options
 ```
 emperimenting requires only this bare minimum:
 ```php
-echo $m->prepare(
+echo $m->prepare(# outputs: "Hello world!"
 
-  'Hello {{name}}!',  # template
-  ['name'=>'world']   # data
+  'Hello {{name}}!',  # 0: template
+  ['name'=>'world']   # 1: data
 
-);# outputs: "Hello world!"
+);
+echo $m->prepare(# outputs: "Hello world!"
+
+  'Hello {.}!', # 0: template
+  'world',      # 1: data
+  '{ }'         # 2: custom delimiters
+
+);
 ```
 a `prepare` method is used
 either for [preparations](#preparation) or
@@ -614,17 +641,41 @@ with the engine.
 
 ### instance options
 #### custom delimiters
-123
+both opening and closing delimiter is passed as a string,
+separated with a single ` ` space character:
+```php
+$m = \SM\Mustache::new([
+
+  'delims' => '<< >>'
+
+]);
+echo $m->prepare(# outputs: "Hello world!"
+
+  'Hello <<.>>!',
+  'world'
+
+);
+```
 
 #### escaping
-for example, putting `<World>` into:
-```html
-<p>Hello {{&name}}!</p>
+output post-processing is disabled by default,
+to enable simple ***HTML escaping***<sup>[◥][php-htmlspecialchars]</sup>
+pass the `true`:
+```php
+$m = \SM\Mustache::new([
+
+  'escape' => true
+
+]);
+echo $m->prepare(# outputs: "Hello O&#039;Reily!"
+
+  'Hello {{&name}}!',
+  ['name' => "O'Reily"]
+
+);
 ```
-with html escaping results in:
-```html
-<p>Hello &lt;World&gt;</p>
-```
+to do a custom..
+
 
 #### booleans
 by default, ***boolean***<sup>[◥][boolean]</sup>
@@ -634,6 +685,21 @@ values (either `true` or `false`) render to empty.
 
 ### the context stack
 [![stack](mm/mustache-stack.jpg)](#the-context-stack)
+
+for example, in the `.name` path,
+a ***single dot***<sup>[◥][dot]</sup>
+points to the ***top of the stack***,
+which must be the ***container***<sup>[◥][container]</sup>
+where the `name` resides.
+in the `..name`, there is a ***double dot***
+pointing downwards (***top to bottom***)
+to the ***second container***<sup>[◥][container]</sup>
+on [the stack](#the-context-stack) and the `name` value inside that container.
+in the `...name`, a ***triple dot*** points to
+the ***third value*** on [the stack](#the-context-stack)
+and so on..
+
+[![path-backpedal](mm/mustache-path-backpedal.jpg)](#absolute-path)
 
 internally, mustache instance represents
 a ***stack***<sup>[◥](https://en.wikipedia.org/wiki/Stack_(abstract_data_type))</sup>.
@@ -875,6 +941,7 @@ render exceptions
 [value]: https://en.wikipedia.org/wiki/Value_(computer_science)
 [name-binding]: https://en.wikipedia.org/wiki/Name_binding "dynamic name binding"
 [name-value]: https://en.wikipedia.org/wiki/Name%E2%80%93value_pair
+[property]: https://en.wikipedia.org/wiki/Property_(programming)
 [naming]: https://en.wikipedia.org/wiki/Naming_convention_(programming)
 [alnum]: https://en.wikipedia.org/wiki/Alphanumericals "A–Z, a–z, 0–9"
 [hyphen-case]: https://en.wikipedia.org/wiki/Hyphen
@@ -922,5 +989,6 @@ render exceptions
 [php-array]: https://www.php.net/manual/en/language.types.array.php
 [php-mixed]: https://www.php.net/manual/en/language.types.mixed.php
 [php-null]: https://www.php.net/manual/en/language.types.null.php
+[php-htmlspecialchars]: https://www.php.net/manual/en/function.htmlspecialchars
 <!-- }}} -->
 <!--::-->
