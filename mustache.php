@@ -391,7 +391,7 @@ class Mustache # {{{
           }
           $c = ('^#@'[$a[0]]).$a[1];
           throw new Exception(
-            'unterminated block '.$c.' at '.$a[4].
+            'unterminated BLOCK '.$c.' at '.$a[4].
             "\n".$this->_wrap($tpl, $a[4], $a[5])
           );
           # }}}
@@ -454,7 +454,7 @@ class Mustache # {{{
       {
         throw new Exception(
           'the VARIABLE modifier '.
-          'may not apply to the BLOCK'.
+          'cannot apply to the BLOCK'.
           "\n".$this->_wrap($tpl, $t[4], $t[5])
         );
       }

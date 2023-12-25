@@ -199,6 +199,7 @@ will be passed as its argument.
 
 ### variables
 [![var](mm/mustache-var.jpg)](#variables)
+
 a ***variable***<sup>[◥][m-var]</sup>
 is an ***independent***<sup>[◥][m-clause-ind]</sup>
 [clause](#clauses)
@@ -641,8 +642,9 @@ with the engine.
 
 ### instance options
 #### custom delimiters
-both opening and closing delimiter is passed as a string,
-separated with a single ` ` space character:
+both opening/left and closing/right delimiters
+are passed in a single string
+separated with a ` ` space character:
 ```php
 $m = \SM\Mustache::new([
 
@@ -658,8 +660,8 @@ echo $m->prepare(# outputs: "Hello world!"
 ```
 
 #### escaping
-output post-processing is disabled by default,
-to enable simple ***HTML escaping***<sup>[◥][php-htmlspecialchars]</sup>
+post-processing is disabled by default,
+to enable a simple ***HTML escaping***<sup>[◥][php-htmlspecialchars]</sup>
 pass the `true`:
 ```php
 $m = \SM\Mustache::new([
