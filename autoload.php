@@ -12,7 +12,7 @@ define('SM\\BASE', new class()
     'SM\\Error'    => 'error.php',
     'SM\\ErrorLog' => 'error.php',
     'SM\\Fetch'    => 'fetch.php',
-    'SM\\Fn'       => 'functions.php',
+    'SM\\Fx'       => 'functions.php',
     'SM\\Mustache' => 'mustache.php',
     'SM\\Promise'  => 'promise.php',
     'SM\\Loop'     => 'promise.php',

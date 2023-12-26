@@ -4,7 +4,7 @@ require_once
   realpath(__DIR__.DIRECTORY_SEPARATOR.'..').
   DIRECTORY_SEPARATOR.'autoload.php';
 ###
-Fn::AUTOLOAD;
+Fx::AUTOLOAD;
 ###
 function test_info(string $name='', string $text=''): void
 {

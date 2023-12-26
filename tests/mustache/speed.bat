@@ -1,13 +1,18 @@
 @echo off
 set FILE="speed.php"
 ::goto ALL
-goto ONLY
+::goto ONLY
 
 :TOP
 php -f %FILE% 2 %1
-php -f %FILE% 3 %1
 node speed.js 0 %1
 node speed.js 3 %1
+echo.
+echo.
+echo =PRECOMPILED=
+php -f %FILE% 3 %1
+node speed.js 6 %1
+node speed.js 4 %1
 goto END
 
 :ONLY
@@ -21,7 +26,7 @@ goto END
 :: mustache
 php -f %FILE% 0 %1
 :: sm-mustache-old
-php -f %FILE% 4 %1
+::php -f %FILE% 4 %1
 :: sm-mustache (+preset)
 php -f %FILE% 1 %1
 php -f %FILE% 2 %1
