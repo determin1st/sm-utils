@@ -8,17 +8,17 @@ use function
   sys_get_temp_dir,file_exists,touch,preg_match,intval,
   strval,strlen,substr,str_repeat,pack,unpack,ord,hrtime,
   array_shift,array_unshift,is_array,is_int,is_string,
-  is_object;
+  is_object,is_dir;
 use function SM\{
-  class_name,class_basename,dir_exists,dir_file_path,
-  file_persist,file_unlink,file_touch,hrtime_delta_ms,
+  class_name,class_basename,
+  hrtime_delta_ms,
   hrtime_expired, proc_id
 };
 use const
   DIRECTORY_SEPARATOR;
 ###
 require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
-require_once __DIR__.DIRECTORY_SEPARATOR.'functions.php';
+require_once __DIR__.DIRECTORY_SEPARATOR.'promise.php';
 # }}}
 class SyncBuffer # {{{
 {
@@ -235,86 +235,92 @@ class SyncBuffer # {{{
   # }}}
 }
 # }}}
-abstract class ASyncFlag # {{{
+class SyncFlag # {{{
 {
-  # constructor {{{
+  # base {{{
+  static function new(string $id): object
+  {
+    try
+    {
+      return new self(
+        $id, new SyncEvent($id, 1, 0)
+      );
+    }
+    catch (Throwable $e) {
+      return ErrorEx::from($e);
+    }
+  }
   protected function __construct(
     public string $id,
     public object $event,
     public bool   $state = false
-  ) {
-    $this->restruct();
-  }
-  protected function restruct()
-  {}
+  ) {}
   function __destruct() {
     $this->clear();
   }
   # }}}
-  # hlp {{{
-  protected function eventSet(bool $shared): bool # {{{
+  # helpers {{{
+  function eventSet(bool $shared): bool # {{{
   {
-    # check already set
-    if ($this->get()) {
-      return true;
+    # check
+    if ($this->state || $this->event->wait(0)) {
+      return true;# already set
     }
-    # set event
+    # set
     if (!$this->event->fire()) {
       throw ErrorEx::fail('SyncEvent::fire');
     }
-    # set exclusive state
-    if (!$shared) {
-      $this->state = true;
+    if ($shared) {# dont appropriate
+      return true;
     }
-    # success
-    return true;
+    return $this->state = true;
   }
   # }}}
-  protected function eventClear(bool $shared): bool # {{{
+  function eventClear(bool $shared): bool # {{{
   {
-    # check not set by this instance
+    # check
     if (!$this->state)
     {
-      # check not set
       if (!$this->event->wait(0)) {
-        return true;# no need to clear
+        return true;# already clean
       }
-      # set by another instance,
-      # deny exclusive access
       if (!$shared) {
-        return false;
+        return false;# appropriated
       }
     }
     # clear
     if (!$this->event->reset()) {
       throw ErrorEx::fail('SyncEvent::reset');
     }
-    # complete
     $this->state = false;
     return true;
   }
   # }}}
-  protected function _set(# {{{
+  function _set(# {{{
     ?object &$error, bool $shared
   ):bool
   {
     try {
       return $this->eventSet($shared);
     }
-    catch (Throwable $e) {
-      return ErrorEx::set($error, $e)->val(false);
+    catch (Throwable $e)
+    {
+      ErrorEx::set($error, $e);
+      return false;
     }
   }
   # }}}
-  protected function _clear(# {{{
+  function _clear(# {{{
     ?object &$error, bool $shared
   ):bool
   {
     try {
       return $this->eventClear($shared);
     }
-    catch (Throwable $e) {
-      return ErrorEx::set($error, $e)->val(false);
+    catch (Throwable $e)
+    {
+      ErrorEx::set($error, $e);
+      return false;
     }
   }
   # }}}
@@ -344,150 +350,119 @@ abstract class ASyncFlag # {{{
   # }}}
 }
 # }}}
-class SyncFlag extends ASyncFlag # {{{
+class SyncFlagMaster # {{{
 {
-  static function new(string $id): object
-  {
-    try
-    {
-      return new static(
-        $id, new SyncEvent($id, 1, 0)
-      );
-    }
-    catch (Throwable $e)
-    {
-      return ErrorEx::set($e, ErrorEx::fail(
-        class_basename(static::class), __FUNCTION__
-      ));
-    }
-  }
-}
-# }}}
-class SyncFlagMaster extends SyncFlag # {{{
-{
-  protected function restruct(): void
-  {
-    static $E='master has already been set';
-    if ($this->get()) {
-      throw ErrorEx::fail($E);
-    }
-    if (!$this->set($error)) {
-      throw $error;
-    }
-  }
-}
-# }}}
-class SyncFlagFile extends ASyncFlag # {{{
-{
-  public string $file;
-  static function new(string $id, string $dir): object # {{{
-  {
-    try
-    {
-      $file = dir_file_path($dir, $id.'.flag');
-      if (!dir_exists($file)) {
-        throw ErrorEx::fail('incorrect file path', $file);
-      }
-      $flag = new static(
-        $id, new SyncEvent($id, 1, 0)
-      );
-      $flag->file = $file;
-      return $flag;
-    }
-    catch (Throwable $e)
-    {
-      return ErrorEx::set($e, ErrorEx::fail(
-        class_basename(static::class), __FUNCTION__
-      ));
-    }
-  }
-  # }}}
-  protected function _set(# {{{
-    ?object &$error, bool $shared
-  ):bool
-  {
-    try
-    {
-      return (
-        $this->eventSet($shared) &&
-        file_touch($this->file, $error)
-      );
-    }
-    catch (Throwable $e) {
-      return ErrorEx::set($error, $e)->val(false);
-    }
-  }
-  # }}}
-  protected function _clear(# {{{
-    ?object &$error, bool $shared
-  ):bool
-  {
-    try
-    {
-      return (
-        $this->eventClear($shared) &&
-        file_unlink($this->file, $error)
-      );
-    }
-    catch (Throwable $e) {
-      return ErrorEx::set($error, $e)->val(false);
-    }
-  }
-  # }}}
-  # api
-  function persist(): bool {
-    return file_persist($this->file);
-  }
-}
-# }}}
-class SyncFlagFileMaster extends SyncFlagFile # {{{
-{
-  protected function restruct(): void
-  {
-    static $E='master has already been set';
-    # check
-    if ($this->get() && $this->persist()) {
-      throw ErrorEx::fail($E, $this->file);
-    }
-    # set
-    if (!$this->set($error)) {
-      throw $error;
-    }
-  }
-}
-# }}}
-class SyncNum # {{{
-{
-  # constructor {{{
-  const TIMEWAIT=5000;
+  # base {{{
   static function new(
-    string $id, bool $guarded=false,
-    int $count=1, ?object $callback=null
+    string $id, string $dir=''
   ):object
   {
     try
     {
-      $guard = $guarded
-        ? new SyncSemaphore($id.'-sem', 1, 0)
-        : null;
+      # prepare directory
+      if ($dir === '') {
+        $dir = sys_get_temp_dir();
+      }
+      else
+      {
+        $dir = rtrim($dir, '/\\');
+        if (!is_dir($dir))
+        {
+          throw ErrorEx::fail(
+            $id, 'directory not found'.
+            "\n".$dir
+          );
+        }
+      }
+      # determine file path
+      $file =
+        $dir.DIRECTORY_SEPARATOR.
+        $id.'.flag';
+      # complete
       return new self(
-        $id, $count, new SyncSharedMemory($id, 4*$count),
-        $callback, $guard
+        $id, $file, new SyncEvent($id, 1, 0)
       );
     }
-    catch (Throwable $e)
+    catch (Throwable $e) {
+      return ErrorEx::from($e);
+    }
+  }
+  protected function __construct(
+    public string $id,
+    public string $file,
+    public object $event
+  ) {
+    # master flag must auto-set itself
+    # create lockfile
+    if (Fx::file_persist($file))
     {
-      return ErrorEx::set($e, ErrorEx::fail(
-        class_basename(static::class), __FUNCTION__
-      ));
+      throw ErrorEx::fail(
+        $id, 'master flag has been already set'.
+        "\nlockfile: ".$file.
+        "\nremove it manually to override"
+      );
+    }
+    else {
+      Fx::file_touch($file);
+    }
+    # set when necessary
+    if (!$event->wait(0) && !$event->fire())
+    {
+      throw ErrorEx::fail(
+        $id, 'SyncEvent::fire'
+      );
+    }
+  }
+  function __destruct()
+  {
+    # clear
+    Fq::file_unlink($this->file);
+    $this->event->reset();
+  }
+  # }}}
+  # api {{{
+  function get(): bool
+  {
+    return (
+      $this->event->wait(0) &&
+      Fx::file_persist($this->file)
+    );
+  }
+  # }}}
+}
+# }}}
+class SyncNum # {{{
+{
+  const TIMEWAIT=5000;
+  # base {{{
+  static function new(
+    string $id, int $count,
+    bool    $guarded  = false,
+    ?object $callback = null
+  ):object
+  {
+    try
+    {
+      return new self(
+        $id, $count,
+        new SyncSharedMemory($id, 4*$count),
+        ($guarded
+          ? new SyncSemaphore($id.'-sem', 1, 0)
+          : null
+        ),
+        $callback
+      );
+    }
+    catch (Throwable $e) {
+      return ErrorEx::from($e);
     }
   }
   protected function __construct(
     public string  $id,
     public int     $count,
     public object  $mem,
-    public ?object $callback,
     public ?object $guard,
+    public ?object $callback,
     public bool    $guarded = false
   ) {
     if ($mem->first())
@@ -500,8 +475,8 @@ class SyncNum # {{{
     $this->unlock();
   }
   # }}}
-  # hlp {{{
-  protected function guardSet(): bool # {{{
+  # helpers {{{
+  function guardSet(): bool # {{{
   {
     static $E='SyncSemaphore::lock';
     if ($this->guard && !$this->guarded)
@@ -514,7 +489,7 @@ class SyncNum # {{{
     return true;
   }
   # }}}
-  protected function guardClear(): bool # {{{
+  function guardClear(): bool # {{{
   {
     static $E='SyncSemaphore::unlock';
     if ($this->guarded)
@@ -527,7 +502,7 @@ class SyncNum # {{{
     return true;
   }
   # }}}
-  protected function memRead(int $k): int # {{{
+  function memRead(int $k): int # {{{
   {
     static $E0='SyncSharedMemory::read(4)';
     static $E1='unable to unpack';
@@ -548,7 +523,7 @@ class SyncNum # {{{
     return $b[1];
   }
   # }}}
-  protected function memWrite(int $k, int $n): void # {{{
+  function memWrite(int $k, int $n): void # {{{
   {
     static $E0='unable to pack';
     static $E1='SyncSharedMemory::write(4)';
@@ -562,7 +537,7 @@ class SyncNum # {{{
     }
   }
   # }}}
-  protected function memReset(): void # {{{
+  function memReset(): void # {{{
   {
     static $ERR='SyncSharedMemory::write';
     $n = 4 * $this->count;
@@ -573,7 +548,7 @@ class SyncNum # {{{
   }
   # }}}
   # }}}
-  # api
+  # api {{{
   function lock(?object &$error=null): bool # {{{
   {
     try {
@@ -640,7 +615,9 @@ class SyncNum # {{{
       ErrorEx::set($error, $e);
       $n = -1;
     }
-    return $this->unlock($error) ? $n : -1;
+    return $this->unlock($error)
+      ? $n
+      : -1;
   }
   # }}}
   function set(# {{{
@@ -686,6 +663,7 @@ class SyncNum # {{{
     return $ok;
   }
   # }}}
+  # }}}
 }
 # }}}
 class SyncLock # {{{
@@ -702,7 +680,7 @@ class SyncLock # {{{
           ', not in range=[1,1000]'
         );
       }
-      $num = SyncNum::new($id.'-num', ($max > 1));
+      $num = SyncNum::new($id.'-num', 1, $max > 1);
       return new static(
         $id, $max, ErrorEx::peep($num),
         new SyncSemaphore($id, $max, 0)
@@ -874,7 +852,7 @@ class SyncLock # {{{
   # }}}
 }
 # }}}
-# Readers-Writers
+# Readers/Writers
 abstract class SyncReaderWriter # {{{
 {
   # constructor {{{
@@ -992,22 +970,10 @@ abstract class SyncReaderWriter # {{{
     string $id, string $dir='', bool $master=false
   ):object
   {
-    $flag = $dir
-      ? ($master
-        ? SyncFlagFileMaster::new($id, $dir)
-        : SyncFlagFile::new($id, $dir))
-      : ($master
-        ? SyncFlagMaster::new($id)
-        : SyncFlag::new($id));
-    ###
-    return ErrorEx::peep($flag);
-  }
-  # }}}
-  static function getMasterFlag(# {{{
-    string $id, string $dir
-  ):object
-  {
-    return self::getFlag($id, $dir, true);
+    return ErrorEx::peep($master
+      ? SyncFlagMaster::new($id, $dir)
+      : SyncFlag::new($id)
+    );
   }
   # }}}
   static function getLock(string $id): object # {{{
@@ -1080,7 +1046,7 @@ class SyncExchange extends SyncReaderWriter # {{{
         $id, self::getTimeWait($o),
         self::getLock($id1), self::getLock($id2),
         self::getBuffer($id, $size),
-        ErrorEx::peep(SyncNum::new($id3, true, 2))
+        ErrorEx::peep(SyncNum::new($id3, 2, true))
       );
     }
     catch (Throwable $e)
@@ -1432,15 +1398,17 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
       $id   = self::getId($o);
       $dir  = self::getDir($o);
       $size = self::getSize($o);
-      $id0  = $id.'-master';
+      $flag = ErrorEx::peep(SyncFlagMaster::new(
+        $id.'-master', $dir
+      ));
       $info = ErrorEx::peep(SyncExchange::new([
         'id'   => $id.'-info',
         'size' => 200,
       ]));
       # construct
       return new self(
-        $id, self::getMasterFlag($id0, $dir),
-        $info, self::getBuffer($id, $size),
+        $id, $flag, $info,
+        self::getBuffer($id, $size),
         $o['callback'] ?? null
       );
     }
@@ -1453,7 +1421,7 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
   }
   protected function __construct(
     public string  $id,
-    public object  $writer,
+    public ?object $writer,
     public object  $info,
     public object  $data,
     public ?object $callback,
@@ -1738,7 +1706,7 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
   {
     # check empty or closed
     $error = null;
-    if ($data === '' || !$this->writer->state) {
+    if ($data === '' || !$this->writer) {
       return false;
     }
     # write when ready
@@ -1756,7 +1724,7 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
   function flush(?object &$error=null): bool # {{{
   {
     # check closed or not ready
-    if (!$this->writer->state ||
+    if (!$this->writer ||
         !$this->isReady($error))
     {
       return true;
@@ -1771,13 +1739,12 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
   # }}}
   function close(?object &$error=null): bool # {{{
   {
-    # check already closed
-    if (!$this->writer->state) {
+    # check
+    if (!$this->writer) {
       return true;
     }
-    # cleanup
-    $error = null;
-    $this->writer->clear($error);
+    # close
+    $this->writer = $error = null;
     $this->info->pending &&
     $this->info->close($error);
     $this->reader = $this->queue = [];
@@ -2123,10 +2090,11 @@ class SyncAggregateMaster extends SyncReaderWriter # {{{
       $id   = self::getId($o);
       $dir  = self::getDir($o);
       $size = self::getSize($o);
-      $id0  = $id.'-master';
+      $flag = ErrorEx::peep(SyncFlagMaster::new(
+        $id.'-master', $dir
+      ));
       $id1  = $id.'-lock';
-      return new self(
-        $id, self::getMasterFlag($id0, $dir),
+      return new self($id, $flag,
         self::getLock($id1),
         self::getBuffer($id, $size)
       );
@@ -2140,7 +2108,7 @@ class SyncAggregateMaster extends SyncReaderWriter # {{{
   }
   protected function __construct(
     public string  $id,
-    public object  $reader,
+    public ?object $reader,
     public object  $lock,
     public object  $data,
     public string  $store = '',# own writes
@@ -2209,9 +2177,11 @@ class SyncAggregateMaster extends SyncReaderWriter # {{{
   # }}}
   function close(?object &$error=null): bool # {{{
   {
-    return $this->reader->state
-      ? $this->reader->clear($error)
-      : true;
+    if (!$this->reader) {
+      return true;
+    }
+    $this->reader = null;
+    return true;
   }
   # }}}
 }

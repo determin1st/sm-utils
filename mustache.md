@@ -1,13 +1,36 @@
 # mustache
 [![logo](mm/mustache-logo.webp)](#about)
 ## about<!-- {{{ -->
-`SM\Mustache` is a
-***template processor***<sup>[◥][m-engine]</sup>
+`sm-mustache` or `SM\Mustache` is
+a ***template processor***<sup>[◥][m-engine]</sup>
 implementation of ***mustache templates***<sup>[◥][template]</sup>
 written in ***PHP***<sup>[◥](https://www.php.net/)</sup>
 and compatible with
 ***mustache specification***<sup>[◥](https://github.com/mustache/spec)</sup>
 in its reasonable parts.
+the main chapters of this document are
+[syntax definitions](#syntax)
+and [usage instructions](#usage).
+
+
+<details><summary>what is templating language?</summary>
+
+> A templating language is a specific syntax or markup that allows for the creation of templates. It provides ways to define placeholders, variables, conditions, loops, and other elements that can be used to generate dynamic content.
+> 
+> On the other hand, a template processor is a software or tool that takes a template written in a templating language and applies it to specific data to generate an output. It interprets the template using the defined syntax rules and processes the data accordingly. The template processor replaces the placeholders with actual values and executes any logic defined in the template. It can also handle other operations like rendering the template into a final output format, such as HTML, JSON, or plain text.
+> 
+> In summary, a templating language is the language in which templates are written, while a template processor is the software or tool that interprets and processes those templates to generate the desired output. The templating language provides the rules and structure, while the template processor executes those rules to generate the final result.
+</details>
+<details><summary>are template processors relevant these days?</summary>
+
+> Yes, template processors are still relevant these days. Template processors are tools or software libraries that allow you to generate dynamic content by combining static text templates with placeholder variables and logic. They are commonly used in web development, email generation, document generation, and other applications where dynamic content creation is required.
+> 
+> Template processors provide a convenient way to separate the design and presentation of content from the logic or data that drives it, making it easier to manage and maintain. They often support various template languages that offer syntax for conditionals, loops, and other control structures. This allows developers to dynamically generate content based on specific conditions or iterate over data collections.
+> 
+> Many popular programming frameworks and content management systems also incorporate template processors as a core feature. For example, Django uses its own template engine, and PHP has popular template processors like Smarty and Twig.
+> 
+> Overall, template processors continue to be relevant because they simplify dynamic content generation, improve code readability and maintainability, and streamline web development and other related tasks.
+</details>
 
 ### history
 - [the-parable-of-mustache-js](https://writing.jan.io/2013/11/01/the-parable-of-mustache-js.html)

@@ -23,6 +23,43 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
 class Fx
 {
   const AUTOLOAD=true;
+  static function file_persist(string $file): bool # {{{
+  {
+    clearstatcache(true, $file);
+    return file_exists($file);
+  }
+  # }}}
+  static function file_touch(string $file): bool # {{{
+  {
+    if (!touch($file)) {
+      throw ErrorEx::fail('touch', $file);
+    }
+    return true;
+  }
+  # }}}
+  static function file_unlink(string $file): bool # {{{
+  {
+    if (self::file_persist($file) &&
+        !unlink($file))
+    {
+      throw ErrorEx::fail('unlink', $file);
+    }
+    return true;
+  }
+  # }}}
+}
+class Fq extends Fx # quiet
+{
+  static function file_unlink(string $file): bool # {{{
+  {
+    try {
+      return parent::file_unlink($file);
+    }
+    catch (Throwable) {
+      return false;
+    }
+  }
+  # }}}
 }
 function await(object|array $p): object # {{{
 {
@@ -98,61 +135,6 @@ function &array_import_new(array &$to, array $from): array # {{{
 # }}}
 # }}}
 # file {{{
-function file_persist(string &$file): bool # {{{
-{
-  clearstatcache(true, $file);
-  return file_exists($file);
-}
-# }}}
-function file_unlink(string $file, ?object &$error=null): bool # {{{
-{
-  try
-  {
-    if (file_persist($file))
-    {
-      if (!is_file($file))
-      {
-        throw ErrorEx::fail(
-          __FUNCTION__, $file, 'not a file'
-        );
-      }
-      if (!unlink($file))
-      {
-        throw ErrorEx::fail(
-          __FUNCTION__, $file
-        );
-      }
-    }
-    return true;
-  }
-  catch (Throwable $e) {
-    return ErrorEx::set($error, $e)->val(false);
-  }
-}
-# }}}
-function file_touch(string $file, ?object &$error=null): bool # {{{
-{
-  try
-  {
-    if (file_persist($file) && !is_file($file))
-    {
-      throw ErrorEx::fail(
-        __FUNCTION__, $file, 'not a file'
-      );
-    }
-    if (!touch($file))
-    {
-      throw ErrorEx::fail(
-        __FUNCTION__, $file
-      );
-    }
-    return true;
-  }
-  catch (Throwable $e) {
-    return ErrorEx::set($error, $e)->val(false);
-  }
-}
-# }}}
 function &file_get_array(string $file): ?array # {{{
 {
   try
@@ -228,14 +210,6 @@ function dir_check_make(string $dir, int $perms = 0750): bool # {{{
     $res = false;
   }
   return $res;
-}
-# }}}
-function dir_file_path(string ...$path): string # {{{
-{
-  for ($a='', $i=0, $j=count($path) - 1; $i < $j; ++$i) {
-    $a .= rtrim($path[$i], '/\\').DIRECTORY_SEPARATOR;
-  }
-  return $a.$path[$j];
 }
 # }}}
 function dir_path(string $path, int $level = 1): string # {{{
