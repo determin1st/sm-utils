@@ -1,7 +1,7 @@
 # mustache
 [![logo](mm/mustache-logo.webp)](#about)
 ## about<!-- {{{ -->
-`sm-mustache` or `SM\Mustache` is
+`sm-mustache` aka `SM\Mustache` is
 a ***template processor***<sup>[◥][m-engine]</sup>
 implementation of ***mustache templates***<sup>[◥][template]</sup>
 written in ***PHP***<sup>[◥](https://www.php.net/)</sup>
@@ -33,6 +33,37 @@ and [usage instructions](#usage).
 </details>
 
 ### history
+<details><summary>2008/04 CTemplate </summary>
+
+> Welcome to the C++ CTemplate system!  (This project was originally called Google Templates, due to its origin as the template system used for Google search result pages, but now has a more general name matching its community-owned nature.
+> 
+> ## Motivation
+> 
+> A template system can be used to separate output formatting specifications, which govern the appearance and location of output text and data elements, from the executable logic which prepares the data and makes decisions about what appears in the output.
+> 
+> Template systems lie along a continuum of power versus separation. "Powerful" constructs like variable assignment or conditional statements make it easy to modify the look of an application within the template system exclusively, without having to modify any of the underlying "application logic".  They do so, however, at the cost of separation, turning the templates themselves into part of the application logic.
+> 
+> This template system leans strongly towards preserving the separation of logic and presentation.  It is intentionally constrained in the features it supports and, as a result, applications tend to require quite a bit of code to instantiate a template.  This may not be to everybody's tastes.  However, while this design limits the power of the template ***language***, it does not limit the power or flexibility of the template ***system***.  This system supports arbitrarily complex text formatting.  Many Google applications, including the "main" Google web search, use this system for formatting output.
+> 
+> Finally, this system is designed with an eye towards efficiency. Template instantiation is very quick, with an eye towards minimizing both memory use and memory fragmentation.
+> 
+> 
+> 
+- https://github.com/OlafvdSpek/ctemplate
+</details>
+<details><summary>2008/04 Erlang Template Engine (Prototype)</summary>
+
+> Some may argue, that it is pointless to write one's own template engine. But what if there's no suitable one? Common template engines are too heavy, provide enormous functionality, most of which is unnecessary rubbish, if you use templates right. What do I mean by right use of templates? To answer this question, I would like you to answer another one: what templates are intended for? Templates are intended for representation, hence must not include any logic. Logic is for developers, templates are for designers. Only template engines following this concept but still fully-functional I'm aware of are PHPLib's Template and Google CTemplate. Update: Plus Template::Simple for Perl.
+> 
+> Several years ago I wrote a template engine in Perl, which used PHPLib syntax, but had object-oriented approach for templates, so that every template or block inside a template was an object. If I get round to that, I'll clean up the code and post it in this blog later, and perhaps switch to Google CTemplate syntax, which I discovered recently.
+> 
+> If we deal with an object-oriented language, the natural way of representing a template is wrapping it into an object, using object's properties for template's variables and regarding nested templates as nested objects.
+> 
+> Erlang is a functional programming language. What is the natural way to express anything in a functional programming language? Right, wrap it into a function! In this article I present my experiment of creating a template engine using functional paradigm.
+> 
+> My Erlang template engine uses Google CTemplate syntax. Template variables are expressed through function arguments, and nested templates are expressed through descent calls to other functions.
+</details>
+
 - [the-parable-of-mustache-js](https://writing.jan.io/2013/11/01/the-parable-of-mustache-js.html)
 - [mustache-2.0](https://writing.jan.io/mustache-2.0.html)
 
@@ -44,7 +75,7 @@ this implementation is comparable to various JS implementations:
 ### principles
 - `logic-less` - in comparison with other template processors, where data is sliced and diced inside the template, this implementation strives to control the **data flow** through the template. in practice, it looks like **more concise syntax** with selections instead of cryptic expressions. thus, **less mental load** - more templating.
 - `data for template` - template is more important than data, a variety sets of data may fit into a single template. paths used in the **template should look nice**, readable and explanatory. the question of escaping sigils to accommodate data should never arise - avoid `template for data` at all costs, do a preliminary **data massaging** when necessary.
-- `not null` - a **null**<sup>[◥][php-null]</sup> is the absence of data. the absence of data leads to the search for imperative solution in the template, which contradicts the `logic-less` principle. thus, to fill the gaps, the [use of helpers](#preparation) is recommended - replace nulls with special case values.
+- `null-free` - a **null**<sup>[◥][php-null]</sup> is the absence of data. the absence of data leads to the search for imperative solution in the template, which contradicts the `logic-less` principle. thus, to fill the gaps, the [use of helpers](#preparation) is recommended - replace nulls with special case values.
 <!-- }}} -->
 ## syntax<!-- {{{ -->
 ### clauses
@@ -290,15 +321,15 @@ a ***section***<sup>[◥][m-section]</sup>
 consists of a ***dependent***<sup>[◥][m-clause-ind]</sup>
 [clause](#clauses)
 and a ***section's content***<sup>[◥][template]</sup>
-that ends with a [terminus](#terminus) or another ***section***.
+that ends with a [terminus](#terminus) or ***another section***.
 
 > *A dependent clause is like a dependent child: incapable of standing on its own but able to cause a lot of trouble.*
 > 
 > **William Safire**
 
-the ***first section*** of a block,
-or the ***primary section*** -
-determines the ***block type***.
+the ***first section*** of a block
+aka the ***primary section*** -
+denotes the ***block type***.
 its [clause](#clauses)
 represents a ***conditional construct***<sup>[◥][m-conditional]</sup>
 that tests resolved ***value***<sup>[◥][value]</sup>
@@ -306,14 +337,14 @@ for [truthiness or falsiness](#truthy-or-falsy) -
 the ***result***<sup>[◥][boolean]</sup>
 influences the way the block renders.
 
-standard ***block types*** ([sigils](#sigils)) are:
+available ***block types*** ([sigils](#sigils)) are:
 - [**`#`**](#truthy-block),[**`@`**](#iterator-block) - [expects truthy](#truthy-or-falsy)
 - [**`^`**](#falsy-block) - [expects falsy](#truthy-or-falsy)
 
 any ***subsequent section***<sup>[◥][cond-subsequent]</sup>
 is called an [alternative section](#or-section)
 and its [clause](#clauses) ***is affixed***<sup>[◥][affix]</sup>
-with [**`|`**](#or-section) [sigil](#sigils).
+with [**`|`** sigil](#or-section).
 
 [upon rendering](#rendering), a block is
 ***removed or replaced***<sup>[◥][substitution]</sup>
@@ -478,11 +509,11 @@ and ***it does not push anything*** to [the stack](#the-context-stack):
 {{#number}}
   the number is {{.}}
 {{|}}
-  the number is zero or 0 or null
+  the number is zero or 0 or not found
 {{/}}
 
 {{^number}}
-  the number is zero or 0 or null
+  the number is zero or 0 or not found
 {{|}}
   the number is non-zero, {{number}}
 {{/}}

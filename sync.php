@@ -8,7 +8,7 @@ use function
   sys_get_temp_dir,file_exists,touch,preg_match,intval,
   strval,strlen,substr,str_repeat,pack,unpack,ord,hrtime,
   array_shift,array_unshift,is_array,is_int,is_string,
-  is_object,is_dir;
+  is_object,is_callable,is_dir;
 use function SM\{
   class_name,class_basename,
   hrtime_delta_ms,
@@ -939,7 +939,7 @@ abstract class SyncReaderWriter # {{{
     return $i;
   }
   # }}}
-  static function getInstance(array &$o): object # {{{
+  static function getInstanceFlag(array &$o): object # {{{
   {
     static $k0='instance-flag';
     static $k1='instance-id';
@@ -959,46 +959,30 @@ abstract class SyncReaderWriter # {{{
       }
     }
     else {
-      $id = self::getId($o).'-'.proc_id();
+      $id = self::getId($o).'-'.Fx::$PROCESS_ID;
     }
-    return self::getFlag(
-      $id, self::getDir($o), true
+    return ErrorEx::peep(
+      SyncFlagMaster::new($id, self::getDir($o))
     );
   }
   # }}}
-  static function getFlag(# {{{
-    string $id, string $dir='', bool $master=false
-  ):object
+  static function getCallback(array $o): ?object # {{{
   {
-    return ErrorEx::peep($master
-      ? SyncFlagMaster::new($id, $dir)
-      : SyncFlag::new($id)
-    );
-  }
-  # }}}
-  static function getLock(string $id): object # {{{
-  {
-    return ErrorEx::peep(SyncLock::new($id));
-  }
-  # }}}
-  static function getBoolean(# {{{
-    array &$o, string $k, bool $default
-  ):bool
-  {
-    return isset($o[$k])
-      ? !!$o[$k] : $default;
-  }
-  # }}}
-  static function getBuffer(# {{{
-    string $id, int $size
-  ):object
-  {
-    return ErrorEx::peep(SyncBuffer::new($id, $size));
+    static $k='callback';
+    if (!isset($o[$k])) {
+      return null;
+    }
+    if (!is_callable($f = $o[$k])) {
+      throw self::badOption($k);
+    }
+    return $f;
   }
   # }}}
   static function badOption(string $k): object # {{{
   {
-    return ErrorEx::fail('incorrect option', $k);
+    return ErrorEx::fail(
+      'incorrect option', $k
+    );
   }
   # }}}
   static function parseInfo(string &$s, ?object &$e): ?array # {{{
@@ -1035,18 +1019,14 @@ class SyncExchange extends SyncReaderWriter # {{{
   {
     try
     {
-      # prepare
-      $id   = self::getId($o);
+      $id = self::getId($o);
       $size = self::getSize($o);
-      $id1  = $id.'-r';
-      $id2  = $id.'-w';
-      $id3  = $id.'-x';
-      # construct
       return new static(
         $id, self::getTimeWait($o),
-        self::getLock($id1), self::getLock($id2),
-        self::getBuffer($id, $size),
-        ErrorEx::peep(SyncNum::new($id3, 2, true))
+        ErrorEx::peep(SyncLock::new($id.'-r')),
+        ErrorEx::peep(SyncLock::new($id.'-w')),
+        ErrorEx::peep(SyncNum::new($id.'-x', 2, true)),
+        ErrorEx::peep(SyncBuffer::new($id, $size))
       );
     }
     catch (Throwable $e)
@@ -1061,7 +1041,6 @@ class SyncExchange extends SyncReaderWriter # {{{
     public int    $timeWait,
     public object $reader,
     public object $writer,
-    public object $data,
     # shared state structure:
     # [0]: total number of readers reading
     # [1]: data buffer content
@@ -1070,6 +1049,7 @@ class SyncExchange extends SyncReaderWriter # {{{
     #  (2) response
     #  (3) notification
     public object $state,
+    public object $data,
     public bool   $reading = false,
     public int    $pending = 0
   ) {}
@@ -1394,22 +1374,19 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
   {
     try
     {
-      # prepare
       $id   = self::getId($o);
-      $dir  = self::getDir($o);
       $size = self::getSize($o);
       $flag = ErrorEx::peep(SyncFlagMaster::new(
-        $id.'-master', $dir
+        $id.'-master', self::getDir($o)
       ));
       $info = ErrorEx::peep(SyncExchange::new([
         'id'   => $id.'-info',
         'size' => 200,
       ]));
-      # construct
       return new self(
         $id, $flag, $info,
-        self::getBuffer($id, $size),
-        $o['callback'] ?? null
+        ErrorEx::peep(SyncBuffer::new($id, $size)),
+        self::getCallback($o)
       );
     }
     catch (Throwable $e)
@@ -1762,20 +1739,22 @@ class SyncBroadcast extends SyncReaderWriter # {{{
     {
       # prepare
       $id     = self::getId($o);
-      $dir    = self::getDir($o);
-      $reader = self::getInstance($o, $id, $dir);
-      $id0    = $id.'-master';
-      $id1    = $reader->id.'-data';
-      $info   = ErrorEx::peep(SyncExchange::new([
+      $reader = self::getInstanceFlag($o);
+      $writer = ErrorEx::peep(
+        SyncFlag::new($id.'-master')
+      );
+      $info = ErrorEx::peep(SyncExchange::new([
         'id'   => $id.'-info',
         'size' => 200,
       ]));
       # construct
       return new self(
         $id, self::getTimeWait($o),
-        $reader, self::getFlag($id0),
-        $info, self::getFlag($id1),
-        null, $o['callback'] ?? null
+        $reader, $writer, $info,
+        ErrorEx::peep(SyncFlag::new(
+          $reader->id.'-data'
+        )),
+        self::getCallback($o)
       );
     }
     catch (Throwable $e)
@@ -1792,11 +1771,11 @@ class SyncBroadcast extends SyncReaderWriter # {{{
     public object  $writer,
     public object  $info,
     public object  $dataFlag,
-    public ?object $dataBuf,
     public ?object $callback,
-    public array   $queue = [],
-    public array   $store = ['',''],# read,write
-    public int     $state = 0
+    public ?object $dataBuf = null,
+    public array   $queue   = [],
+    public array   $store   = ['',''],# read,write
+    public int     $state   = 0
   ) {
     $dataFlag->clearShared();
   }
@@ -1973,7 +1952,6 @@ class SyncBroadcast extends SyncReaderWriter # {{{
           $info = 'graceful';
         }
       }
-      $this->reader->clear($error);
       break;
     case -1:
       $this->time = hrtime(true);
@@ -2088,15 +2066,14 @@ class SyncAggregateMaster extends SyncReaderWriter # {{{
     try
     {
       $id   = self::getId($o);
-      $dir  = self::getDir($o);
       $size = self::getSize($o);
       $flag = ErrorEx::peep(SyncFlagMaster::new(
-        $id.'-master', $dir
+        $id.'-master', self::getDir($o)
       ));
-      $id1  = $id.'-lock';
-      return new self($id, $flag,
-        self::getLock($id1),
-        self::getBuffer($id, $size)
+      return new self(
+        $id, $flag,
+        ErrorEx::peep(SyncLock::new($id.'-lock')),
+        ErrorEx::peep(SyncBuffer::new($id, $size))
       );
     }
     catch (Throwable $e)
@@ -2193,14 +2170,13 @@ class SyncAggregate extends SyncReaderWriter # {{{
   {
     try
     {
-      $id   = self::getId($o);
+      $id = self::getId($o);
       $size = self::getSize($o);
-      $id0  = $id.'-master';
-      $id1  = $id.'-lock';
       return new static(
         $id, self::getTimeWait($o),
-        self::getFlag($id0), self::getLock($id1),
-        self::getBuffer($id, $size)
+        ErrorEx::peep(SyncFlag::new($id.'-master')),
+        ErrorEx::peep(SyncLock::new($id.'-lock')),
+        ErrorEx::peep(SyncBuffer::new($id, $size))
       );
     }
     catch (Throwable $e)

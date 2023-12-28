@@ -23,6 +23,7 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
 class Fx
 {
   const AUTOLOAD=true;
+  static string $PROCESS_ID='';
   static function file_persist(string $file): bool # {{{
   {
     clearstatcache(true, $file);
@@ -69,6 +70,8 @@ function await(object|array $p): object # {{{
   );
 }
 # }}}
+###
+Fx::$PROCESS_ID = (string)getmypid();
 ###
 # array {{{
 function array_key(array &$a, int $index): int|string|null # {{{
