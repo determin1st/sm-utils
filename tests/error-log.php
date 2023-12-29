@@ -1,7 +1,9 @@
 <?php declare(strict_types=1);
-$DIR = __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR;
-require_once($DIR.'error.php');
-require_once($DIR.'conio.php');
+require_once
+  __DIR__.DIRECTORY_SEPARATOR.
+  '..'.DIRECTORY_SEPARATOR.
+  'conio.php';
+###
 $logs = [
 # top multilines {{{
 [
@@ -207,11 +209,11 @@ if (0)
 }
 if (class_exists('SM\Conio', false))
 {
-  SM\ErrorLog::init([
-    'ansi' => SM\Conio::is_ansi()
+  \SM\ErrorLog::init([
+    'ansi' => \SM\Conio::is_ansi()
   ]);
 }
-$out = SM\ErrorLog::render($logs);
+$out = \SM\ErrorLog::render($logs);
 echo $out;
 if (0)
 {

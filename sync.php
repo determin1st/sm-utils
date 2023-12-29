@@ -11,13 +11,11 @@ use function
   is_object,is_callable,is_dir;
 use function SM\{
   class_name,class_basename,
-  hrtime_delta_ms,
-  hrtime_expired, proc_id
+  hrtime_delta_ms, hrtime_expired
 };
 use const
   DIRECTORY_SEPARATOR;
 ###
-require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
 require_once __DIR__.DIRECTORY_SEPARATOR.'promise.php';
 # }}}
 class SyncBuffer # {{{
@@ -197,7 +195,7 @@ class SyncBuffer # {{{
     }
   }
   # }}}
-  function write(string &$data, ?object &$error=null): int # {{{
+  function write(string $data, ?object &$error=null): int # {{{
   {
     try
     {
@@ -868,23 +866,8 @@ abstract class SyncReaderWriter # {{{
     $this->close();
   }
   # }}}
-  # api {{{
-  function &read(?object &$error=null): ?string
-  {
-    static $NONE=null;
-    return $NONE;
-  }
-  function write(string &$data, ?object &$error=null): bool {
-    return true;
-  }
-  function flush(?object &$error=null): bool {
-    return true;
-  }
-  function close(?object &$error=null): bool {
-    return true;
-  }
-  # }}}
-  static function getId(array &$o): string # {{{
+  # helpers {{{
+  static function getId(array $o): string # {{{
   {
     static $EXP_ID='/^[a-z0-9-]{1,64}$/i';
     static $k='id';
@@ -896,7 +879,7 @@ abstract class SyncReaderWriter # {{{
     return $id;
   }
   # }}}
-  static function getDir(array &$o): string # {{{
+  static function getDir(array $o): string # {{{
   {
     static $k='dir';
     if (!isset($o[$k])) {
@@ -911,7 +894,7 @@ abstract class SyncReaderWriter # {{{
     return $dir;
   }
   # }}}
-  static function getSize(array &$o): int # {{{
+  static function getSize(array $o): int # {{{
   {
     static $k='size';
     if (!isset($o[$k])) {
@@ -925,7 +908,7 @@ abstract class SyncReaderWriter # {{{
     return $i;
   }
   # }}}
-  static function getTimeWait(array &$o): int # {{{
+  static function getTimeWait(array $o): int # {{{
   {
     static $k='time-wait';
     if (!isset($o[$k])) {
@@ -939,7 +922,7 @@ abstract class SyncReaderWriter # {{{
     return $i;
   }
   # }}}
-  static function getInstanceFlag(array &$o): object # {{{
+  static function getInstanceFlag(array $o): object # {{{
   {
     static $k0='instance-flag';
     static $k1='instance-id';
@@ -1007,6 +990,23 @@ abstract class SyncReaderWriter # {{{
     return hrtime_expired(
       $this->timeWait, $this->time
     );
+  }
+  # }}}
+  # }}}
+  # api {{{
+  function &read(?object &$error=null): ?string
+  {
+    static $NONE=null;
+    return $NONE;
+  }
+  function write(string $data, ?object &$error=null): bool {
+    return true;
+  }
+  function flush(?object &$error=null): bool {
+    return true;
+  }
+  function close(?object &$error=null): bool {
+    return true;
   }
   # }}}
 }
@@ -1135,7 +1135,7 @@ class SyncExchange extends SyncReaderWriter # {{{
   }
   # }}}
   # }}}
-  function write(string &$data, ?object &$error=null): bool # {{{
+  function write(string $data, ?object &$error=null): bool # {{{
   {
     # prepare
     static $E1='incorrect invocation';
@@ -1181,7 +1181,7 @@ class SyncExchange extends SyncReaderWriter # {{{
     return false;
   }
   # }}}
-  function notify(string &$data, ?object &$error=null): bool # {{{
+  function notify(string $data, ?object &$error=null): bool # {{{
   {
     $error = null;
     return (
@@ -1190,7 +1190,7 @@ class SyncExchange extends SyncReaderWriter # {{{
     );
   }
   # }}}
-  function signal(string &$data, ?object &$error=null): bool # {{{
+  function signal(string $data, ?object &$error=null): bool # {{{
   {
     if ($this->notify($data, $error))
     {
@@ -1679,7 +1679,7 @@ class SyncBroadcastMaster extends SyncReaderWriter # {{{
   }
   # }}}
   # }}}
-  function write(string &$data, ?object &$error=null): bool # {{{
+  function write(string $data, ?object &$error=null): bool # {{{
   {
     # check empty or closed
     $error = null;
@@ -2012,7 +2012,7 @@ class SyncBroadcast extends SyncReaderWriter # {{{
     return $data;
   }
   # }}}
-  function write(string &$data, ?object &$error=null): bool # {{{
+  function write(string $data, ?object &$error=null): bool # {{{
   {
     # check not ready
     $error = null;
@@ -2146,7 +2146,7 @@ class SyncAggregateMaster extends SyncReaderWriter # {{{
     return $data;
   }
   # }}}
-  function write(string &$data, ?object &$error=null): bool # {{{
+  function write(string $data, ?object &$error=null): bool # {{{
   {
     $this->store .= $data;
     return true;
@@ -2252,7 +2252,7 @@ class SyncAggregate extends SyncReaderWriter # {{{
     );
   }
   # }}}
-  function write(string &$data, ?object &$error=null): bool # {{{
+  function write(string $data, ?object &$error=null): bool # {{{
   {
     # check empty
     if ($data === '') {

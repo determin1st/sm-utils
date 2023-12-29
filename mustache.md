@@ -121,6 +121,14 @@ which look like a ***moustache***<sup>[◥][moustache]</sup>.
 
 the first delimiter is called ***opening***,
 the second - ***closing***.
+<details><summary>what balanced delimiters are?</summary>
+
+> Balanced delimiters refer to a pair of opening and closing symbols, such as parentheses "()," brackets "[]," or curly braces "{}," used in programming languages and mathematical expressions to group and organize elements. They are called balanced because they ensure that the order and nesting of the delimiters are proper and consistent.
+> 
+> The term "balanced" implies that for a set of delimiters to be considered balanced, every opening symbol must have a corresponding closing symbol, and they must match in terms of type (e.g., an opening parenthesis matches with a closing parenthesis). Moreover, the order in which the delimiters appear must follow a hierarchical structure, meaning that each opening delimiter must be closed before a higher-level delimiter can be closed.
+> 
+> For example, the expression "(2 + 3) * [4 / {5 - 1}]" contains balanced delimiters because each opening symbol has a corresponding closing symbol, and the nested order of the delimiters is correct. If any opening or closing symbol is missing, or if the order of the delimiters is incorrect, the expression would be considered unbalanced.
+</details>
 
 ***custom delimiters*** can be
 [set once during instantiation](#custom-delimiters).
@@ -135,6 +143,21 @@ a single character may also be used as a delimiter, but:
 > *There is no such thing as accident; It is fate misnamed.*
 > 
 > **Napoleon Bonaparte**
+
+<details><summary>what is delimiter collision?</summary>
+
+> Delimiter collision refers to a situation where the chosen delimiter used to separate data fields within a dataset appears within the actual data itself, leading to ambiguity and confusion.
+> 
+> This problem often arises in data processing, particularly when dealing with structured data formats such as CSV (comma-separated values) files or plain text documents with delimiters. These delimiters are crucial for software to correctly identify and separate the individual data fields.
+> 
+> When the chosen delimiter is mistakenly present within the data, it can cause issues during parsing or processing the data. For example, if a comma is chosen as the delimiter and a data field contains a comma as part of its value, the software may incorrectly interpret the comma within the field as a delimiter, resulting in the data being split into undesired parts.
+> 
+> Similarly, if a delimiter collision occurs in a plain text document, it may cause problems when extracting or analyzing the data using text mining or natural language processing techniques. This can lead to errors, loss of data integrity, and inaccurate analysis or insights.
+> 
+> To address delimiter collision, various strategies can be employed. One approach is to use a different delimiter or to select more unique and less likely characters as delimiters, such as special characters or combinations of characters. Another approach is to employ escaping techniques, where the delimiter within the data is preceded by an escape character to indicate that it should be treated as part of the data rather than a delimiter.
+> 
+> Overall, delimiter collision is an important consideration when working with datasets and requires careful planning and handling to ensure accurate and reliable data processing.
+</details>
 
 ### sigils
 [![sigil](mm/mustache-sigil.jpg)](#sigils)

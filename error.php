@@ -4,10 +4,10 @@ namespace SM;
 use Error,Throwable;
 use function
   class_alias,set_error_handler,func_num_args,
+  is_object,is_string,array_is_list,
   implode,explode,count,array_reverse,array_pop,
-  array_unshift,array_slice,array_is_list,
-  date,intval,strval,ltrim,is_string,str_repeat,
-  strpos,strrpos,substr;
+  array_unshift,array_slice,date,intval,strval,
+  ltrim,str_repeat,strpos,strrpos,substr;
 use const
   DIRECTORY_SEPARATOR;
 ###
@@ -1290,9 +1290,12 @@ class ErrorLog implements Mustachable # {{{
   }
   # }}}
   static function render(# {{{
-    array $a, bool $ansi=false
+    object|array $a, bool $ansi=false
   ):string
   {
+    if (is_object($a)) {
+      $a = $a->log();
+    }
     if (func_num_args() > 1)
     {
       $I = self::$I;

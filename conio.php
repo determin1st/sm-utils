@@ -5,37 +5,120 @@ use FFI,Throwable;
 use function
   class_exists,function_exists,file_exists,
   class_alias,chr,ord,mb_chr,mb_ord,
-  strlen,strval,substr,strpos;
+  strlen,strval,substr,strpos,usleep;
 use const
   PHP_OS_FAMILY,DIRECTORY_SEPARATOR;
 ###
-require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
+require_once __DIR__.DIRECTORY_SEPARATOR.'promise.php';
 # }}}
-abstract class ConioBase
+class Conio # {{{
 {
-  # common {{{
-  static ?object $ERROR=null;
+  # base {{{
+  static ?object $I=null,$ERROR=null;
+  static int     $ANSI=0,$HRTIME=0;
   static string  $LAST_CHAR='';
-  static int     $IS_ANSI=-1;
-  protected static $con,$ready=false;
-  protected function __construct() {}
-  abstract static function check(): bool;
-  abstract static function init(): bool;
-  abstract static function kbhit(): bool;
-  abstract static function getch(): string;
-  abstract static function getch_wait(): string;
-  abstract static function putch(string $c): bool;
-  abstract static function is_ansi(): bool;
+  static function init(): bool
+  {
+    if (self::$I) {
+      return !self::$ERROR;
+    }
+    try
+    {
+      if (!class_exists('FFI'))
+      {
+        throw ErrorEx::fail(
+          'extension required: FFI'
+        );
+      }
+      if (!function_exists('mb_ord'))
+      {
+        throw ErrorEx::fail(
+          'extension required: mbstring'
+        );
+      }
+      self::$I = (PHP_OS_FAMILY === 'Windows')
+        ? new ConioWin()
+        : new ConioNop();
+    }
+    catch (Throwable $e)
+    {
+      self::$ERROR = ErrorEx::from($e);
+      self::$I = ConioNop::new();
+    }
+    return !self::$ERROR;
+  }
+  private function __construct()
+  {}
   # }}}
-  # hlp {{{
+  # api {{{
+  static function is_ansi(): bool # {{{
+  {
+    if (!self::$ANSI)
+    {
+      if (self::$I->is_ansi()) {self::$ANSI++;}
+      else {self::$ANSI--;}
+    }
+    return self::$ANSI > 0;
+  }
+  # }}}
   static function is_keycode(string $c): bool # {{{
   {
     return (
-      strlen($c) === 2 &&
+      (strlen($c) === 2) &&
       ($c[0] === "\x00" || $c[0] === "\xE0")
     );
   }
   # }}}
+  static function kbhit(): bool # {{{
+  {
+    return self::$I->kbhit();
+  }
+  # }}}
+  static function getch(): object # {{{
+  {
+    $I = self::$I;
+    return Promise::Func(function($A) use ($I) {
+      ###
+      if (($ch = $I->getch()) === '')
+      {
+        # repeat mode
+        ###
+        # common maximal performance (keyboard repeat):
+        # rate  = 32cps = 1000ms/32 = 31ms
+        # delay = 250ms
+        ###
+        # fast?
+        if ($t = $I->hrtime)
+        {
+          if ($A::$HRTIME - $t < 1001000000) {
+            return $A->repeat(30);
+          }
+          $I->hrtime = 0;
+        }
+        # slow
+        return $A->repeat(200);
+      }
+      # update time of the last input
+      $I->hrtime = $A::$HRTIME;
+      # complete
+      $A->result->value = $ch;
+      self::$LAST_CHAR  = $ch;
+      return null;
+    });
+  }
+  # }}}
+  static function putch(string $c): bool # {{{
+  {
+    return self::$I->putch($c);
+  }
+  # }}}
+  # }}}
+}
+# }}}
+class ConioNop # dummy {{{
+{
+  public int $hrtime=0;
+  # helpers {{{
   static function to_keycode(string $c): array # {{{
   {
     return [ord($c[0]), ord($c[1])];
@@ -71,155 +154,105 @@ abstract class ConioBase
   }
   # }}}
   # }}}
+  # api {{{
+  function kbhit(): bool {
+    return false;
+  }
+  function getch(): string {
+    return '';
+  }
+  function getch_wait(): string {
+    return '';
+  }
+  function putch(string $c): bool {
+    return false;
+  }
+  function is_ansi(): bool {
+    return false;
+  }
+  # }}}
 }
-class ConioWin extends ConioBase
+# }}}
+class ConioWin extends ConioNop # {{{
 {
-  const FILE = __DIR__.DIRECTORY_SEPARATOR.'conio_win.h';
-  static function check(): bool # {{{
+  # base {{{
+  const FILE = 'conio-win.h';
+  public object $con;
+  function __construct()
   {
-    if (!class_exists('FFI'))
+    $file = __DIR__.DIRECTORY_SEPARATOR.self::FILE;
+    if (!file_exists($file))
     {
-      self::$ERROR = ErrorEx::fail('extension required: FFI');
+      throw ErrorEx::fail(
+        'file not found: '.$file
+      );
+    }
+    $this->con = FFI::load($file);
+  }
+  # }}}
+  # api {{{
+  function kbhit(): bool {
+    return $this->con->_kbhit() !== 0;
+  }
+  function getch(): string
+  {
+    if (!$this->con->_kbhit()) {
+      return '';
+    }
+    $i = $this->con->_getwch();
+    return ($i === 0 || $i === 224)
+      ? chr($i).chr($this->con->_getwch())
+      : self::int2ch($i);
+  }
+  function getch_wait(): string
+  {
+    $i = $this->con->_getwch();
+    return ($i === 0 || $i === 224)
+      ? chr($i).chr($this->con->_getwch())
+      : self::int2ch($i);
+  }
+  function putch(string $c): bool
+  {
+    return ~($i = self::ch2int($c))
+      ? ($this->con->_putwch($i) === $i)
+      : false;
+  }
+  function is_ansi(): bool
+  {
+    # detect ANSI console
+    # flush input
+    while ($this->getch() !== '')
+    {}
+    # request cursor position
+    if ($this->con->_cputs("\033[6n")) {
+      throw ErrorEx::fail('_cputs');
+    }
+    # check no reply
+    usleep(1);
+    if (!$this->con->_kbhit())
+    {
+      $this->con->_cputs("\r\t\r");# cleanup
       return false;
     }
-    if (!function_exists('mb_ord'))
-    {
-      self::$ERROR = ErrorEx::fail('extension required: mbstring');
-      return false;
+    # read the reply
+    $r = '';
+    do {
+      $r .= $this->getch_wait();
     }
-    if (!file_exists(self::FILE))
+    while ($this->con->_kbhit());
+    # match the reply as ESC[#;#R
+    if (($i = strlen($r)) < 6 ||
+        substr($r, 0, 2) !== "\033[" ||
+        ($i = strpos($r, ';', 2)) === false ||
+        strpos($r, 'R', $i) === false)
     {
-      self::$ERROR = ErrorEx::fail('file not found: '.self::FILE);
+      $this->con->_cputs("\r\t\r");# erase garbage
       return false;
     }
     return true;
   }
   # }}}
-  static function init(): bool # {{{
-  {
-    if (self::$ready || !self::check()) {
-      return false;
-    }
-    try
-    {
-      self::$ready = true;
-      self::$con   = FFI::load(self::FILE);
-    }
-    catch (Throwable $e)
-    {
-      self::$ERROR = ErrorEx::from($e);
-      self::$con   = null;
-    }
-    return self::$con && class_alias(
-      '\SM\ConioWin',
-      '\SM\Conio', false
-    );
-  }
-  # }}}
-  static function kbhit(): bool # {{{
-  {
-    return self::$con->_kbhit() !== 0;
-  }
-  # }}}
-  static function getch(): string # {{{
-  {
-    return self::$con->_kbhit()
-      ? self::getch_wait()
-      : (self::$LAST_CHAR = '');
-  }
-  # }}}
-  static function getch_wait(): string # {{{
-  {
-    try
-    {
-      $i = self::$con->_getwch();
-      $c = ($i === 0 || $i === 224)
-        ? chr($i).chr(self::$con->_getwch())
-        : self::int2ch($i);
-      ###
-      return self::$LAST_CHAR = $c;
-    }
-    catch (Throwable $e)
-    {
-      self::$ERROR = ErrorEx::from($e);
-      return self::$LAST_CHAR = '';
-    }
-  }
-  # }}}
-  static function putch(string $c): bool # {{{
-  {
-    try
-    {
-      return ~($i = self::ch2int($c))
-        ? (self::$con->_putwch($i) === $i)
-        : false;
-    }
-    catch (Throwable $e)
-    {
-      self::$ERROR = ErrorEx::from($e);
-      return false;
-    }
-  }
-  # }}}
-  static function is_ansi(): bool # {{{
-  {
-    try
-    {
-      # check cache
-      switch (self::$IS_ANSI) {
-      case 0:
-        return false;
-      case 1:
-        return true;
-      }
-      # detect ANSI console
-      # https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
-      ###
-      # flush current input
-      while (self::getch() !== '')
-      {}
-      # request cursor position
-      if (self::$con->_cputs("\033[6n"))
-      {
-        # TODO: set ERROR
-        return false;
-      }
-      # check no reply
-      usleep(1);
-      if (!self::$con->_kbhit())
-      {
-        self::$con->_cputs("\r\t\r");# erase garbage
-        self::$IS_ANSI = 0;
-        return false;
-      }
-      # read the reply
-      $r = '';
-      do {
-        $r .= self::getch_wait();
-      }
-      while (self::$con->_kbhit());
-      # match the reply as ESC[#;#R
-      if (($i = strlen($r)) < 6 ||
-          substr($r, 0, 2) !== "\033[" ||
-          ($i = strpos($r, ';', 2)) === false ||
-          strpos($r, 'R', $i) === false)
-      {
-        self::$con->_cputs("\r\t\r");# erase garbage
-        self::$IS_ANSI = 0;
-        return false;
-      }
-      self::$IS_ANSI = 1;
-      return true;
-    }
-    catch (Throwable $e)
-    {
-      self::$ERROR = ErrorEx::from($e);
-      return false;
-    }
-  }
-  # }}}
 }
-return (PHP_OS_FAMILY === 'Windows')
-  ? ConioWin::init()
-  : false;
+# }}}
+return Conio::init();
 ###

@@ -9,7 +9,7 @@ define('SM\\BASE', new class()
   const DIR=__DIR__.DIRECTORY_SEPARATOR;
   const MAP=[
     'SM\\Conio'    => 'conio.php',
-    'SM\\Error'    => 'error.php',
+    'SM\\ErrorEx'  => 'error.php',
     'SM\\ErrorLog' => 'error.php',
     'SM\\Fetch'    => 'fetch.php',
     'SM\\Fx'       => 'functions.php',

@@ -55,7 +55,7 @@ function error_dump(?object $e): void
     echo "\n> ERRORLEVEL=".$e->errorlevel()."\n";
     var_dump($e);
     echo "\n> press any key to quit..";
-    Conio::getch_wait();
+    await(Conio::getch());
   }
 }
 ###

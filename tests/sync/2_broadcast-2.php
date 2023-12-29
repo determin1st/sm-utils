@@ -25,20 +25,15 @@ if (ErrorEx::is($o))
   var_dump($o);
   exit(1);
 }
-cli_set_process_title(
-  $I = 'SyncBroadcast•'.proc_id()
+test_info(
+  $I = 'SyncBroadcast',
+  "[1] retransmission\n".
+  "[2] signal"
 );
-echo $I." started\n";
-echo "[1] retransmission\n";
-echo "[2] signal\n";
-echo "[q] quit\n\n";
 while (1)
 {
   $e = null;
   switch (Conio::getch()) {
-  case 'q':
-    echo "> quit\n";
-    break 2;
   case '1':
     while (!$o->write($I, $e))
     {
@@ -72,20 +67,19 @@ while (1)
     }
     echo $I."\n";
     break;
-  case '':
-    if (($a = $o->read($e)) === null)
+  default:
+    if (($a = $o->read($e)) !== null)
     {
-      if ($e) {
-        break 2;
-      }
-      usleep(100000);# 100ms
+      echo "> read: ".$a."\n";
       break;
     }
-    echo "> read: ".$a."\n";
+    if ($e) {
+      break 2;
+    }
+    test_cooldown();
     break;
   }
 }
-# terminate
 $o->close($e);
 error_dump($e);
-
+###

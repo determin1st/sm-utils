@@ -8,36 +8,21 @@ if (ErrorEx::is($o))
   var_dump($o);
   exit(1);
 }
-$I = 'SyncExchange•'.proc_id();
-cli_set_process_title($I);
-echo $I." started\n";
-echo "[1] send request: write()+read()+close()\n";
-echo "[2] send chain of requests: (write()+read())*N + close()\n";
-echo "[3] send notification: notify()+flush()\n";
-echo "[4] send signal: signal() or notify()+close()\n";
-echo "[5] disable/enable reader: read()+write()+flush()\n";
-echo "[q] to quit\n\n";
+test_info(
+  'SyncExchange',
+  "[1] send request: write()+read()+close()\n".
+  "[2] send chain of requests: (write()+read())*N + close()\n".
+  "[3] send notification: notify()+flush()\n".
+  "[4] send signal: signal() or notify()+close()\n".
+  "[5] disable/enable reader: read()+write()+flush()"
+);
 $req = 'hello world!';
-$res = $I.' got "'.$req.'"';
+$res = 'instance #'.Fx::$PROCESS_ID.' got "'.$req.'"';
 $srv = true;
-$e = null;
 while (1)
 {
   $e = null;
   switch (Conio::getch()) {
-  case 'q':# {{{
-    echo "> quit\n";
-    break 2;
-  # }}}
-  case 'i':# {{{
-    echo '> info: state='.$o->state->get();
-    echo ' reader='.$o->reader->get();
-    echo ' writer='.$o->writer->get();
-    echo ' role='.$o->role;
-    echo ' reading='.$o->reading;
-    echo "\n";
-    break;
-  # }}}
   case '1':# {{{
     echo "CLIENT> write/request: ";
     while (!$o->write($req, $e) && !$e) {
@@ -182,11 +167,20 @@ while (1)
     }
     break;
   # }}}
-  case '':# {{{
+  case '?':# {{{
+    echo '> info: state='.$o->state->get();
+    echo ' reader='.$o->reader->get();
+    echo ' writer='.$o->writer->get();
+    echo ' role='.$o->role;
+    echo ' reading='.$o->reading;
+    echo "\n";
+    break;
+  # }}}
+  default:# {{{
     # skip reading when disabled
     if (!$srv)
     {
-      usleep(100000);# 100ms
+      test_cooldown();
       break;
     }
     # SERVER protocol: read=>write=>flush
@@ -194,7 +188,7 @@ while (1)
     {
       if (($a = $o->read($e)) === null && !$e)
       {
-        usleep(100000);# 100ms
+        test_cooldown();
         break;
       }
       echo "SERVER> read/";
@@ -242,4 +236,4 @@ while (1)
 }
 $o->close($e);
 error_dump($e);
-
+###
