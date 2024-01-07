@@ -1,7 +1,8 @@
 # state machine base
 
-- [mustache](mustache.md)
-- [promise](promise.md)
+- :finnadie: [fetch](fetch.md)
+- :suspect: [mustache](mustache.md)
+- :feelsgood: [promise](promise.md)
 
 ## autoload<sup>[◥][autoload]</sup>
 ```php

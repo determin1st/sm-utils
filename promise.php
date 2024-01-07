@@ -37,72 +37,38 @@ abstract class Completable # {{{
 # }}}
 abstract class Reversible extends Completable # {{{
 {
-  function undo(): void {
-    $this->result->warn('not implemented');
-  }
+  abstract function undo(): void;
 }
 # }}}
-class Promise extends Reversible # {{{
+class Promise extends Completable # {{{
 {
+  # TODO: composition guards
+  # TODO: object tests
   # base {{{
-  public ?array $reverse=null;
-  public int    $pending=-1,$idle=0;
-  public object $actions;
+  public ?array  $_reverse=null;
+  public ?object $_done=null;
+  public int     $_idle=0,$pending=-1;
+  public object  $_queue;
   ###
   function __construct(object $action)
   {
-    $q = new SplDoublyLinkedList();
+    $this->_queue = $q = new SplDoublyLinkedList();
     $q->push($action);
-    $this->actions = $q;
   }
-  function reverseAdd(object $action): void # {{{
+  function _reverseAdd(object $action): void
   {
-    if (!($q = &$this->reverse)) {
+    if (!($q = &$this->_reverse)) {
       $q = [];
     }
-    if (!($action instanceof PromiseGroup))
+    if ($action instanceof PromiseGroup)
     {
-      if (!in_array($action, $q, true)) {
-        $q[] = $action;# one
-      }
+      $action->_reverse &&
+      array_push($q, ...$action->_reverse);
     }
-    elseif ($action->reverse) {# many
-      array_push($q, ...$action->reverse);
+    elseif (!in_array($action, $q, true)) {
+      $q[] = $action;
     }
   }
-  # }}}
-  static function expand(# {{{
-    object $q, object $x
-  ):int
-  {
-    if ($x instanceof self)
-    {
-      $q->shift();
-      $x = $x->actions;
-      $i = $n = $x->count();
-      while (--$i >= 0) {
-        $q->unshift($x->offsetGet($i));
-      }
-      return $n - 1;
-    }
-    $q->offsetSet(0, Completable::from($x));
-    return 0;
-  }
-  # }}}
-  static function fuse(# {{{
-    object &$q, object $x
-  ):int
-  {
-    if ($x instanceof self)
-    {
-      $q = $x->actions;# replace
-      return $q->count();
-    }
-    $q = new SplDoublyLinkedList();# recreate
-    $q->push(Completable::from($x));
-    return 1;
-  }
-  # }}}
   # }}}
   # construction {{{
   static function from(object|array|null $x): self # {{{
@@ -111,6 +77,11 @@ class Promise extends Reversible # {{{
       ? self::Column($x)
       : (($x instanceof self)
         ? $x : new self(Completable::from($x)));
+  }
+  # }}}
+  static function Context(object $o): self # {{{
+  {
+    return new self(new PromiseContext($o));
   }
   # }}}
   static function Value(...$v): self # {{{
@@ -179,14 +150,14 @@ class Promise extends Reversible # {{{
   # composition {{{
   function then(object $x, ...$a): self # {{{
   {
-    $q = $this->actions;
+    $q = $this->_queue;
     if ($a) {# assume callable
       $q->push(new PromiseFunc($x, $a));
     }
     elseif ($x instanceof self)
     {
       # append all
-      foreach ($x->actions as $action) {
+      foreach ($x->_queue as $action) {
         $q->push($action);
       }
     }
@@ -198,7 +169,7 @@ class Promise extends Reversible # {{{
   # }}}
   function thenCall(object $f, ...$a): self # {{{
   {
-    $this->actions->push(new PromiseCall($f, $a));
+    $this->_queue->push(new PromiseCall($f, $a));
     return $this;
   }
   # }}}
@@ -206,7 +177,7 @@ class Promise extends Reversible # {{{
     int $ms, object $x, ...$a
   ):self
   {
-    $this->actions->push(new PromiseTimeout($ms, $a
+    $this->_queue->push(new PromiseTimeout($ms, $a
       ? new PromiseFunc($x, $a)
       : Completable::from($x)
     ));
@@ -217,7 +188,7 @@ class Promise extends Reversible # {{{
     array $group, int $break=1
   ):self
   {
-    $this->actions->push(new PromiseColumn(
+    $this->_queue->push(new PromiseColumn(
       $group, $break
     ));
     return $this;
@@ -227,16 +198,22 @@ class Promise extends Reversible # {{{
     array $group, int $break=0, int $first=0
   ):self
   {
-    $this->actions->push(new PromiseRow(
+    $this->_queue->push(new PromiseRow(
       $group, $break, $first
     ));
+    return $this;
+  }
+  # }}}
+  function done(object $f): self # {{{
+  {
+    $this->_done = $f;
     return $this;
   }
   # }}}
   # positive
   function okay(object $x, ...$a): self # {{{
   {
-    $this->actions->push(new PromiseWhen(true, $a
+    $this->_queue->push(new PromiseWhen(true, $a
       ? new PromiseFunc($x, $a)
       : Completable::from($x)
     ));
@@ -245,7 +222,7 @@ class Promise extends Reversible # {{{
   # }}}
   function okayCall(object $f, ...$a): self # {{{
   {
-    $this->actions->push(new PromiseWhen(true,
+    $this->_queue->push(new PromiseWhen(true,
       new PromiseCall($f, $a)
     ));
     return $this;
@@ -255,7 +232,7 @@ class Promise extends Reversible # {{{
     int $ms, object $x, ...$a
   ):self
   {
-    $this->actions->push(new PromiseWhen(true,
+    $this->_queue->push(new PromiseWhen(true,
       new PromiseTimeout($ms, $a
         ? new PromiseFunc($x, $a)
         : Completable::from($x)
@@ -268,7 +245,7 @@ class Promise extends Reversible # {{{
     array $group, int $break=1
   ):self
   {
-    $this->actions->push(new PromiseWhen(true,
+    $this->_queue->push(new PromiseWhen(true,
       new PromiseColumn($group, $break)
     ));
     return $this;
@@ -278,7 +255,7 @@ class Promise extends Reversible # {{{
     array $group, int $break=0, int $first=0
   ):self
   {
-    $this->actions->push(new PromiseWhen(true,
+    $this->_queue->push(new PromiseWhen(true,
       new PromiseRow($group, $break, $first)
     ));
     return $this;
@@ -286,7 +263,7 @@ class Promise extends Reversible # {{{
   # }}}
   function okayFuse(object $x): self # {{{
   {
-    $this->actions->push(new PromiseWhen(true,
+    $this->_queue->push(new PromiseWhen(true,
       new PromiseFuse($x)
     ));
     return $this;
@@ -295,7 +272,7 @@ class Promise extends Reversible # {{{
   # negative
   function fail(object $x, ...$a): self # {{{
   {
-    $this->actions->push(new PromiseWhen(false, $a
+    $this->_queue->push(new PromiseWhen(false, $a
       ? new PromiseFunc($x, $a)
       : Completable::from($x)
     ));
@@ -304,7 +281,7 @@ class Promise extends Reversible # {{{
   # }}}
   function failCall(object $f, ...$a): self # {{{
   {
-    $this->actions->push(new PromiseWhen(false,
+    $this->_queue->push(new PromiseWhen(false,
       new PromiseCall($f, $a)
     ));
     return $this;
@@ -314,7 +291,7 @@ class Promise extends Reversible # {{{
     int $ms, object $x, ...$a
   ):self
   {
-    $this->actions->push(new PromiseWhen(false,
+    $this->_queue->push(new PromiseWhen(false,
       new PromiseTimeout($ms, $a
         ? new PromiseFunc($x, $a)
         : Completable::from($x)
@@ -327,7 +304,7 @@ class Promise extends Reversible # {{{
     array $group, int $break=0
   ):self
   {
-    $this->actions->push(new PromiseWhen(false,
+    $this->_queue->push(new PromiseWhen(false,
       new PromiseColumn($group, $break)
     ));
     return $this;
@@ -337,7 +314,7 @@ class Promise extends Reversible # {{{
     array $group, int $break=0, int $first=0
   ):self
   {
-    $this->actions->push(new PromiseWhen(false,
+    $this->_queue->push(new PromiseWhen(false,
       new PromiseRow($group, $break, $first)
     ));
     return $this;
@@ -345,7 +322,7 @@ class Promise extends Reversible # {{{
   # }}}
   function failFuse(object $x): self # {{{
   {
-    $this->actions->push(new PromiseWhen(false,
+    $this->_queue->push(new PromiseWhen(false,
       new PromiseFuse($x)
     ));
     return $this;
@@ -354,20 +331,12 @@ class Promise extends Reversible # {{{
   # }}}
   function complete(): ?object # {{{
   {
-    # check idle timeout (I/O resource polling)
-    if ($this->idle)
-    {
-      if ($this->idle > self::$HRTIME) {
-        return null;# skip this time
-      }
-      $this->idle = 0;# activate
-    }
     # prepare
-    $q = &$this->actions;
+    $q = $this->_queue;
     if (($i = &$this->pending) <= 0)
     {
-      # check finished
-      if (!$i) {
+      # check complete
+      if ($i === 0) {
         return $this->result;
       }
       # initialize self
@@ -376,7 +345,7 @@ class Promise extends Reversible # {{{
       }
       $i = $q->count();
     }
-    # initialize current action
+    # initialize action
     if (!($a = $q->offsetGet(0))->result) {
       $a->result = $this->result;
     }
@@ -391,71 +360,116 @@ class Promise extends Reversible # {{{
       if ($x === self::$THEN)
       {
         switch ($x->getId()) {
-        case 1:# lazy repetition
-          $this->idle = $x->time;
+        case 1:# lazy repetition {{{
+          $this->_idle = $x->time;
           return null;
-        case 2:# immediate recursion
+          # }}}
+        case 2:# immediate recursion {{{
           $q->shift();
           return --$i
             ? $this->complete()
-            : $this->result->_end();
-        case 3:# immediate expansive recursion
-          $i += self::expand($q, $x->getAction());
+            : $this->result->_done($this->_done);
+          # }}}
+        case 3:# immediate expansive recursion {{{
+          if (($x = $x->getAction()) instanceof self)
+          {
+            # remove current
+            $q->shift();
+            # expand
+            $x = $x->_queue;
+            $j = $x->count();
+            $i = $i - 1 + $j;
+            while (--$j >= 0) {
+              $q->unshift($x->offsetGet($j));
+            }
+          }
+          else
+          {
+            # current action replacement
+            $q->offsetSet(0, Completable::from($x));
+          }
           return $this->complete();
-        case 4:# fusion
-          $i = self::fuse($q, $x->getAction());
+          # }}}
+        case 4:# fusion {{{
+          if (($x = $x->getAction()) instanceof self)
+          {
+            # many
+            $this->_queue = $q = $x->_queue;
+            $i = $q->count();
+          }
+          else
+          {
+            # one
+            $this->_queue = $q = new SplDoublyLinkedList();
+            $q->push(Completable::from($x));
+            $i = 1;
+          }
           return null;
-        case 5:# immediate cancellation
+          # }}}
+        case 5:# immediate self-cancellation {{{
           return $this->cancel();
-        case 6:# immediate completion
+          # }}}
+        case 6:# immediate self-completion {{{
           $i = 0;
-          return $this->result->_end();
-        default:# skip unknown
+          return $this->result->_done($this->_done);
+          # }}}
+        default:# unknown
           $q->shift();
           return --$i
-            ? null : $this->result->_end();
+            ? null
+            : $this->result->_done($this->_done);
         }
       }
       # collect reversible
       if ($a instanceof Reversible) {
-        $this->reverseAdd($a);
+        $this->_reverseAdd($a);
       }
-      # handle expansive continuation
-      $i += self::expand($q, $x);
+      # expansive continuation
+      if ($x instanceof self)
+      {
+        # remove current
+        $q->shift();
+        # expand
+        $x = $x->_queue;
+        $j = $x->count();
+        $i = $i - 1 + $j;
+        while (--$j >= 0) {
+          $q->unshift($x->offsetGet($j));
+        }
+      }
+      else
+      {
+        # current action replacement
+        $q->offsetSet(0, Completable::from($x));
+      }
       return null;
     }
     # collect reversible
     if ($a instanceof Reversible) {
-      $this->reverseAdd($a);
+      $this->_reverseAdd($a);
     }
     # one complete, eject and finish
     $q->shift();
     return --$i
-      ? null : $this->result->_end();
+      ? null : $this->result->_done($this->_done);
   }
   # }}}
   function cancel(): ?object # {{{
   {
-    # check not started
-    if ($this->pending < 0) {
+    # check did not start or finished
+    if ($this->pending <= 0) {
       return null;
     }
-    # cancel one unfinished
-    if ($this->pending > 0)
+    # get current action and
+    # cancel it if it was initialized
+    $a = $this->_queue->offsetGet(0);
+    $a->result && $a->cancel();
+    # set cancelled
+    $this->pending = 0;
+    $r = $this->result->_cancel();
+    # undo finished reversible actions
+    if ($q = &$this->_reverse)
     {
-      $this->pending = 0;
-      $this->actions[0]->cancel();
-    }
-    # undo all finished and complete
-    $this->undo();
-    return $this->result->_end();
-  }
-  # }}}
-  function undo(): void # {{{
-  {
-    if ($q = &$this->reverse)
-    {
-      $r = $this->result->_undo();
       $i = count($q);
       while (--$i >= 0)
       {
@@ -464,6 +478,8 @@ class Promise extends Reversible # {{{
       }
       $q = null;
     }
+    # complete
+    return $r->_done($this->_done);
   }
   # }}}
 }
@@ -471,142 +487,20 @@ class Promise extends Reversible # {{{
 class Loop # {{{
 {
   # TODO: performance measuring mode
-  # TODO: cancellation/stop
+  # TODO: cancellation/stop on shutdown
   # constructor {{{
   const MAX_TIMEOUT = 24*60*60*1000000000;# nanosec
   static ?object $ERROR=null;
   private static ?self $I=null;
   private function __construct(
-    public int    $timeout = 0,
-    public object $row = new SplObjectStorage(),
+    public object $row     = new SplObjectStorage(),
     public int    $rowCnt  = 0,
     public array  $columns = [],
     public int    $colCnt  = 0,
     public int    $added   = 0,
     public int    $pending = 0
   ) {}
-  # }}}
-  # core {{{
-  function add(object $p, string $id=''): self # {{{
-  {
-    if ($id === '')
-    {
-      $this->row->attach($p);
-      $this->rowCnt++;
-      $this->added++;
-    }
-    elseif (isset($this->columns[$id])) {
-      $this->columns[$id]->push($p);
-    }
-    else
-    {
-      $q = new SplDoublyLinkedList();
-      $q->push($p);
-      $this->columns[$id] = $q;
-      $this->colCnt++;
-      $this->added++;
-    }
-    return $this;
-  }
-  # }}}
-  function spin(): int # {{{
-  {
-    # check idle
-    if ($z = &$this->timeout)
-    {
-      self::cooldown($z);
-      return $z;
-    }
-    # when new promises added,
-    # update low resolution timestamp
-    # which is used upon result construction
-    if ($this->added)
-    {
-      $this->added = 0;
-      Completable::$TIME = time();
-    }
-    # update high resolution timestamp and
-    # determine maximal idle timestamp
-    Completable::$HRTIME = $t = hrtime(true);
-    $idleTime = $t + self::MAX_TIMEOUT;
-    $idleCnt  = 0;
-    # spin columns
-    $q0 = &$this->columns;
-    if ($n0 = &$this->colCnt)
-    {
-      foreach ($q0 as $id => $q)
-      {
-        if (($p = $q->offsetGet(0))->complete())
-        {
-          $q->shift();
-          if ($q->isEmpty())
-          {
-            unset($q0[$id]);
-            $n0--;
-          }
-        }
-        elseif ($i = $p->idle)
-        {
-          $idleCnt++;
-          if ($idleTime > $i) {
-            $idleTime = $i;
-          }
-        }
-      }
-    }
-    # spin the row
-    $q1 = $this->row;
-    if ($n1 = &$this->rowCnt)
-    {
-      $q1->rewind(); $j = $n1;
-      while ($j--)
-      {
-        if (($p = $q1->current())->complete())
-        {
-          $q1->detach($p);
-          $n1--;
-        }
-        else
-        {
-          $q1->next();
-          if ($i = $p->idle)
-          {
-            $idleCnt++;
-            if ($idleTime > $i) {
-              $idleTime = $i;
-            }
-          }
-        }
-      }
-    }
-    # update and check total
-    switch ($this->pending = $n0 + $n1) {
-    case 0:# all exhausted
-      break;
-    case $idleCnt:# all idle
-      # convert nano=>micro and set timeout
-      $t = (int)(($idleTime - $t) / 1000);
-      $z = $t ?: 1;
-      # discharge
-      self::cooldown($z);
-    }
-    return $z;
-  }
-  # }}}
-  # }}}
-  static function cooldown(int &$t): void # {{{
-  {
-    if ($t > 1000000)
-    {
-      usleep(500000);$t -= 500000;
-      usleep(500000);$t -= 500000;
-    }
-    else {
-      usleep($t);$t = 0;
-    }
-  }
-  # }}}
-  static function init(): bool # {{{
+  static function init(): bool
   {
     if (self::$ERROR) {return false;}
     if (self::$I)     {return true;}
@@ -622,13 +516,218 @@ class Loop # {{{
     }
   }
   # }}}
+  function spin(): int # {{{
+  {
+    # update low resolution timestamp
+    # when new promises added,
+    # it is used in their result construction
+    if ($this->added)
+    {
+      $this->added = 0;
+      Completable::$TIME = time();
+    }
+    # update high resolution timestamp and
+    # determine maximal idle from now on
+    Completable::$HRTIME = $t = hrtime(true);
+    $idleTime = $t + self::MAX_TIMEOUT;
+    $idleCnt  = 0;
+    # spin columns
+    # {{{
+    $q0 = &$this->columns;
+    if ($n0 = &$this->colCnt)
+    {
+      $q1 = end($q0);
+      do
+      {
+        # get the first/current promise
+        $p = $q1->offsetGet(0);
+        # check idle
+        if ($z = &$p->_idle)
+        {
+          # skip for this time?
+          if ($z > $t)
+          {
+            $idleCnt++;
+            if ($idleTime > $z) {
+              $idleTime = $z;
+            }
+            continue;
+          }
+          # reset
+          $z = 0;
+        }
+        # execute
+        if ($p->complete())
+        {
+          # remove complete promise
+          $q->shift();
+          # remove column?
+          if ($q->isEmpty())
+          {
+            unset($q0[key($q0)]);
+            $n0--;
+          }
+        }
+        elseif ($z)
+        {
+          # became idle
+          $idleCnt++;
+          if ($idleTime > $z) {
+            $idleTime = $z;
+          }
+        }
+      }
+      while ($q1 = prev($q0));
+    }
+    # }}}
+    # spin the row
+    # {{{
+    $q1 = $this->row;
+    if ($n1 = &$this->rowCnt)
+    {
+      $q1->rewind(); $j = $n1;
+      while ($j--)
+      {
+        # get the next promise
+        $p = $q1->current();
+        # check idle
+        if ($z = &$p->_idle)
+        {
+          # skip for this time?
+          if ($z > $t)
+          {
+            $q1->next();
+            $idleCnt++;
+            if ($idleTime > $z) {
+              $idleTime = $z;
+            }
+            continue;
+          }
+          # reset
+          $z = 0;
+        }
+        # execute
+        if ($p->complete())
+        {
+          # remove complete promise
+          $q1->detach($p);
+          $n1--;
+        }
+        else
+        {
+          # march to the next
+          $q1->next();
+          # check became idle
+          if ($z)
+          {
+            $idleCnt++;
+            if ($idleTime > $z) {
+              $idleTime = $z;
+            }
+          }
+        }
+      }
+    }
+    # }}}
+    # cooldown?
+    if (($k = $n0 + $n1) && $k === $idleCnt)
+    {
+      # determine projected sleep time
+      $i = $idleTime - $t;
+      # update high resolution timestamp and
+      # determine cycle execution time
+      Completable::$HRTIME = $j = hrtime(true);
+      $j -= $t;
+      # substract cycle execution and
+      # convert into microseconds
+      $i = (int)(($i - $j) / 1000);
+      # sleep in big chunks
+      while ($i > 500000)
+      {
+        usleep(500000);
+        $i -= 500000;
+      }
+      # sleep the remaining chunk
+      if ($i > 0) {
+        usleep($i);
+      }
+    }
+    return $k;
+  }
+  # }}}
+  function add_TODO(object $p, string $id): self # {{{
+  {
+    if (isset($this->columns[$id])) {
+      $this->columns[$id]->push($p);
+    }
+    else
+    {
+      $q = new SplDoublyLinkedList();
+      $q->push($p);
+      $this->columns[$id] = $q;
+      $this->colCnt++;
+      $this->added++;
+    }
+    return $this;
+  }
+  # }}}
   static function await(object $p): object # {{{
   {
-    $I = self::$I->add($p);
-    while ($p->pending) {
+    $I = self::$I;
+    if (!$I->row->contains($p))
+    {
+      $I->row->attach($p);
+      $I->rowCnt++; $I->added++;
+    }
+    do {
       $I->spin();
     }
+    while ($p->pending);
     return $p->result;
+  }
+  # }}}
+  static function await_any(array $a): int # {{{
+  {
+    # count pending and filter any finished
+    for ($i=0,$j=0,$k=count($a); $i < $k; ++$i)
+    {
+      if ($a[$i])
+      {
+        if ($a[$i]->pending) {
+          $j++;
+        }
+        else {
+          return $i;
+        }
+      }
+    }
+    # check nothing is pending
+    if (!$j) {
+      return -1;
+    }
+    # add to the loop
+    $I = self::$I;
+    for ($o=$I->row,$i=0; $i < $k; ++$k)
+    {
+      if ($a[$i] && !$o->contains($a[$i]))
+      {
+        $o->attach($a[$i]);
+        $I->rowCnt++; $I->added++;
+      }
+    }
+    # execute
+    while (1)
+    {
+      $I->spin();
+      for ($i=0; $i < $j; ++$i)
+      {
+        if ($a[$i] && !$a[$i]->pending) {
+          return $i;
+        }
+      }
+    }
+    # never, TODO: maybe throw?
+    return -1;
   }
   # }}}
 }
@@ -644,6 +743,11 @@ abstract class PromiseAction extends Completable # {{{
     return $ms
       ? self::$THEN->delay($ms)
       : $this;
+  }
+  function __call(string $m, array $a): mixed
+  {
+    # TODO: ?
+    return $this->result->context->$m(...$a);
   }
 }
 # }}}
@@ -667,7 +771,7 @@ class PromiseFunc extends PromiseAction # {{{
 {
   function __construct(
     public object $func,
-    public array  &$arg,
+    public array  $arg,
   ) {}
   function complete(): ?object
   {
@@ -717,10 +821,32 @@ class PromiseError extends PromiseNop # {{{
   }
 }
 # }}}
+class PromiseContext extends PromiseNop # {{{
+{
+  function __construct(
+    public object $context
+  ) {}
+  function complete(): ?object
+  {
+    # check current
+    if (($r = $this->result)->context)
+    {
+      # check equal (no switch)
+      if ($r->context === $this->context) {
+        return self::$THEN->hop();
+      }
+      # switch
+      $r->context->done();
+    }
+    # continue
+    return $r->context = $this->context;
+  }
+}
+# }}}
 class PromiseValue extends PromiseNop # {{{
 {
   function __construct(
-    public mixed &$value
+    public mixed $value
   ) {}
   function complete(): ?object
   {
@@ -799,7 +925,7 @@ class PromiseTimeout extends PromiseNop # {{{
 # action groups {{{
 abstract class PromiseGroup extends Reversible # {{{
 {
-  public ?array $reverse=null;
+  public ?array $_reverse=null;
   public int    $idx=-1,$cnt=0;
   function __construct(
     public array &$group,
@@ -820,13 +946,17 @@ abstract class PromiseGroup extends Reversible # {{{
       $this->break = 1;# one
     }
   }
-  function reverseAdd(object $promise): void
+  function _reverseAdd(object $promise): void
   {
-    if (!($q = &$this->reverse)) {
-      $q = [];
+    if ($q = &$this->_reverse) {
+      array_push($q, ...$promise->_reverse);
     }
-    array_push($q, ...$promise->reverse);
+    else {
+      $q = $promise->_reverse;
+    }
   }
+  function undo(): void
+  {}
 }
 # }}}
 class PromiseColumn extends PromiseGroup # {{{
@@ -852,13 +982,13 @@ class PromiseColumn extends PromiseGroup # {{{
     # execute
     if (!($r = $p->complete()))
     {
-      return $p->idle
-        ? self::$THEN->idle($p->idle)
+      return $p->_idle
+        ? self::$THEN->idle($p->_idle)
         : $this;
     }
     # one complete,
     # collect reversible
-    $p->reverse && $this->reverseAdd($p);
+    $p->_reverse && $this->_reverseAdd($p);
     # check all complete
     if (++$i >= $j)
     {
@@ -943,11 +1073,11 @@ class PromiseRow extends PromiseGroup # {{{
       # execute
       if (!($r = $p->complete()))
       {
-        if ($p->idle)
+        if ($p->_idle)
         {
           $idleCnt++;
-          if ($idleTime > $p->idle) {
-            $idleTime = $p->idle;
+          if ($idleTime > $p->_idle) {
+            $idleTime = $p->_idle;
           }
         }
         continue;
@@ -956,7 +1086,7 @@ class PromiseRow extends PromiseGroup # {{{
       $q[$k] = $this->result->_rowDone($r, $k, ++$i);
       $idleCnt++;
       # collect reversibles
-      $p->reverse && $this->reverseAdd($p);
+      $p->_reverse && $this->_reverseAdd($p);
       # check break condition
       if ($this->break && !$r->ok)
       {
@@ -1015,21 +1145,21 @@ class PromiseResult
     IS_ERROR   = 3,# ErrorEx object
     IS_COLUMN  = 4,# column group
     IS_ROW     = 5,# row group
-    IS_FUSION  = 6,# all => one track
-    IS_UNDO    = 8;# all => cancellation track
+    IS_FUSION  = 6,# all => fuse track
+    IS_CANCELLATION = 9;# all => cancellation track
   ###
-  public int    $time;
-  public object $track;
-  public bool   $ok;
-  public array  $store;
-  public mixed  $value;
+  public ?object $context=null;
+  public int     $time;
+  public object  $track;
+  public bool    $ok;
+  public array   $store=[null];
+  public mixed   $value;
   ###
   function __construct(?array &$x=null)
   {
     $this->time  = Completable::$TIME;
     $this->track = new PromiseResultTrack();
     $this->ok    = &$this->track->ok;
-    $this->store = [null];
     $this->setRef($x);
   }
   # }}}
@@ -1060,9 +1190,9 @@ class PromiseResult
       self::IS_ROW
         => ['ROW: '.$a[2].'/'.$a[3], $a[1]],
       self::IS_FUSION
-        => ['FUSE', $a[1]],
-      self::IS_UNDO
-        => ['UNDO', $a[1]],
+        => ['FUSION', $a[1]],
+      self::IS_CANCELLATION
+        => ['CANCELLATION', $a[1]],
       default
         => '?',
       };
@@ -1192,7 +1322,7 @@ class PromiseResult
         $x += $t[$i][4];
         break;
       case self::IS_FUSION:
-      case self::IS_UNDO:
+      case self::IS_CANCELLATION:
         $x += self::track_span($t[$i][1]);
         break;
       }
@@ -1277,11 +1407,11 @@ class PromiseResult
           'logs'  => $b
         ];
         break;
-      case self::IS_UNDO:
+      case self::IS_CANCELLATION:
         $trk = $t[1];
         $a[] = [
           'level' => $t[1]->ok ? 0 : 2,
-          'msg'   => ['UNDO'],
+          'msg'   => ['CANCELLATION'],
           'span'  => self::track_span($trk),
           'logs'  => self::track_logs($trk)
         ];
@@ -1293,19 +1423,19 @@ class PromiseResult
   # }}}
   # }}}
   # value setters {{{
-  function extend(): self
-  {
-    array_unshift($this->store, null);
-    $this->value = &$this->store[0];
-    return $this;
+  function set(mixed $value): void {
+    $this->extend()->setRef($value);
   }
   function setRef(mixed &$value): void
   {
     $this->store[0] = &$value;
     $this->value    = &$this->store[0];
   }
-  function set(mixed $value): void {
-    $this->extend()->setRef($value);
+  function extend(): self
+  {
+    array_unshift($this->store, null);
+    $this->value = &$this->store[0];
+    return $this;
   }
   # }}}
   # track setters {{{
@@ -1401,7 +1531,7 @@ class PromiseResult
     return $this;
   }
   # }}}
-  function _undo(): self # {{{
+  function _cancel(): self # {{{
   {
     $t0 = $this->track;
     $t1 = new PromiseResultTrack(
@@ -1409,13 +1539,21 @@ class PromiseResult
     );
     $this->track = $t1;
     $this->ok    = &$t1->ok;
-    $t0->trace[] = [self::IS_UNDO, $t0];
+    $t0->trace[] = [self::IS_CANCELLATION, $t0];
     return $this;
   }
   # }}}
-  function _end(): self # {{{
+  function _done(object $callback): self # {{{
   {
-    $this->track->title || $this->confirm('{}');
+    if (!$this->track->title) {
+      $this->confirm('{}');
+    }
+    if ($this->context)
+    {
+      $this->context->done();
+      $this->context = null;
+    }
+    $callback && $callback($this);
     return $this;
   }
   # }}}

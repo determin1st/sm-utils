@@ -12,7 +12,6 @@ the main chapters of this document are
 [syntax definitions](#syntax)
 and [usage instructions](#usage).
 
-
 <details><summary>what is templating language?</summary>
 
 > A templating language is a specific syntax or markup that allows for the creation of templates. It provides ways to define placeholders, variables, conditions, loops, and other elements that can be used to generate dynamic content.
@@ -32,12 +31,12 @@ and [usage instructions](#usage).
 > Overall, template processors continue to be relevant because they simplify dynamic content generation, improve code readability and maintainability, and streamline web development and other related tasks.
 </details>
 
-### history
+### history<!--{{{-->
 <details><summary>2008/04 CTemplate </summary>
 
 > Welcome to the C++ CTemplate system!  (This project was originally called Google Templates, due to its origin as the template system used for Google search result pages, but now has a more general name matching its community-owned nature.
 > 
-> ## Motivation
+> **Motivation**
 > 
 > A template system can be used to separate output formatting specifications, which govern the appearance and location of output text and data elements, from the executable logic which prepares the data and makes decisions about what appears in the output.
 > 
@@ -46,9 +45,7 @@ and [usage instructions](#usage).
 > This template system leans strongly towards preserving the separation of logic and presentation.  It is intentionally constrained in the features it supports and, as a result, applications tend to require quite a bit of code to instantiate a template.  This may not be to everybody's tastes.  However, while this design limits the power of the template ***language***, it does not limit the power or flexibility of the template ***system***.  This system supports arbitrarily complex text formatting.  Many Google applications, including the "main" Google web search, use this system for formatting output.
 > 
 > Finally, this system is designed with an eye towards efficiency. Template instantiation is very quick, with an eye towards minimizing both memory use and memory fragmentation.
-> 
-> 
-> 
+
 - https://github.com/OlafvdSpek/ctemplate
 </details>
 <details><summary>2008/04 Erlang Template Engine (Prototype)</summary>
@@ -63,19 +60,159 @@ and [usage instructions](#usage).
 > 
 > My Erlang template engine uses Google CTemplate syntax. Template variables are expressed through function arguments, and nested templates are expressed through descent calls to other functions.
 </details>
+<details><summary>2009/09 mustache.rb</summary>
 
-- [the-parable-of-mustache-js](https://writing.jan.io/2013/11/01/the-parable-of-mustache-js.html)
-- [mustache-2.0](https://writing.jan.io/mustache-2.0.html)
+> Inspired by ctemplate and et, Mustache is a framework-agnostic way to render logic-free views.
+> 
+> As ctemplates says, "It emphasizes separating logic from presentation: it is impossible to embed application logic in this template language."
+> 
+> For a list of implementations (other than Ruby) and tips, see http://mustache.github.io/.
+> 
+> **Overview**
+> 
+> Think of Mustache as a replacement for your views. Instead of views consisting of ERB or HAML with random helpers and arbitrary logic, your views are broken into two parts: a Ruby class and an HTML template.
+> 
+> We call the Ruby class the "view" and the HTML template the "template."
+> 
+> All your logic, decisions, and code is contained in your view. All your markup is contained in your template. The template does nothing but reference methods in your view.
+> 
+> This strict separation makes it easier to write clean templates, easier to test your views, and more fun to work on your app's front end.
+> 
+> **Why?**
+> 
+> I like writing Ruby. I like writing HTML. I like writing JavaScript.
+> 
+> I don't like writing ERB, Haml, Liquid, Django Templates, putting Ruby in my HTML, or putting JavaScript in my HTML.
+
+- https://github.com/mustache/mustache
+- https://youtu.be/CxT-IVdhIRU
+</details>
+<details><summary>2009/10 mustache.js</summary>
+
+> mustache.js is a zero-dependency implementation of the mustache template system in JavaScript.
+> 
+> Mustache is a logic-less template syntax. It can be used for HTML, config files, source code - anything. It works by expanding tags in a template using values provided in a hash or object.
+> 
+> We call it "logic-less" because there are no if statements, else clauses, or for loops. Instead there are only tags. Some tags are replaced with a value, some nothing, and others a series of values.
+> 
+> **The Parable of Mustache.js**
+> 
+> In October 2009 Defunkt released mustache.rb. It looked useful to me at the time, but I needed it in JavaScript. The code was just under 200 lines and simple enough that I thought I could port it over on a lazy Sunday, or Saturday, I forget.
+> 
+> So I did, and to this day, I believe my biggest contribution to mustache.js was not all the fancy stuff that happened since, but the initial transliteration of Ruby to JavaScript. Yes, transliteration, Ruby and JavaScript are close enough that I did a more or less line by line port of the original code. I can’t claim I did any programming myself there.
+> 
+> If you look at the early versions of both projects, they look remarkably similar
+> 
+> mustache.rb was a huge hit in Ruby land right away and soon after I did my port a number of very smart people came around and rewrote the existing RegEx based “parser” (eugh) into a proper parser and compiler combination to make sure all proper computer science theory is applied and things run most efficient.
+> 
+> I looked back at the code then and couldn’t find my way around, things were split over dozens of files and I am sure it all made sense to a very organised brain, but I couldn’t even begin to start to understand what the whole thing did. And I remember distinctly that I was happy that I found mustache.rb in the before state so that I had a chance to port it. I would never have begun to try if I had found the “more optimal” solution.
+> 
+> The realisation there though made me also a bit sad. I am all for doing the right thing and executing things faster and everything, but it bugged me that the clarity of the code was all gone now.
+> 
+> Then other smart people came and wanted to do the same for mustache.js and I was hesitant. But instead of trying to argue with clarity, because fuck that if we can make it 10x faster, my argument was that these parsers & compilers are way too long for a JavaScript implementation that was targeted at the browser. My tagline was “by the time your compiler is finally done downloading, my RegEx parser has already produced a result”. It was of course a bit of a cop-out, but I got quite far with it.
+> 
+> Until Nate showed up and wrote a parser/compiler in ~350 lines of code (that was roughly the acceptable limit for me then) and I finally lost that argument too. But it took a while until mustache.js finally got its well needed superpowers, with huge help from Michael.
+> 
+> Meanwhile, I met Yehuda Katz at a conference and someone introduced me as “Jan, he does CouchDB and mustache.js” and Yehuda just said “Oh boy, I’m going to upset you soon.” and then avoided me for the rest of the conference (or it was just coincidence, I don’t know :). A week later he released handlebars.js, a mustache.js-inspired templating engine with some extra features that were really useful. But it wasn’t according to spec, just close enough, that a lot of people started using it. I thought “good for them”, but I secretly (or not so secretly) wanted to steal the best ideas and get people to use mustache.js instead. That didn’t really go anywhere because people stopped working on the spec in a sensible manner and we couldn’t agree on more features. And eventually, I spent more time with CouchDB again.
+> 
+> In the meantime many more mustache implementations in other languages appeared and one implicit design goal between was it to allow sharing of templates between them and produce compatible output. There is even a spec.
+> 
+> Around the same time Twitter started using mustache.js in the frontend and it was a great honour. But they too preferred a proper parser/compiler implementation so @fat & team went ahead and wrote Hogan, a mustache.js-compatible implementation with a faster load and runtime. @fat talked about this at his 2012 JSConf US talk, he got asked why he didn’t submit a pull request to mustache.js instead of making a new project. He said that a Pull Request that consists of “Hey, I threw away all your code and replaced it with mine” isn’t such a good idea. I agree, it wouldn’t have left the best impression.
+> 
+> He praised though, that they were able to build a compatible implementation that could compete on its own merits while still being compatible with a spec and he said that all library development should be done that way. Too often we conflate a great idea with its implementation and we would be better of allowing different ones and let users pick and choose their poison.
+> 
+> While watching @fat speak, it dawned on me that if I look at things this way, then the RegEx implementation of mustache.js is just another implementation of the same spec and its merits are tight and accessible code. And I could have hugged him for it. In fact I ran up on stage during the talk and nearly ran him over (22m:15s). My beloved implementation still had a reason to exist and that made me very happy. Until today, the 0.4 branch of mustache.js is still around.
+> 
+> **Lessons Learned:**
+> 
+> Accessible code has merit over optimised code, even if the optimised code should be used most of the time.
+> 
+> Build libraries with a spec, encourage competing implementations. (We plan to do this for Hoodie)
+> 
+> Hugs win.
+> 
+> The state of mustache today is alright, the implementations are all reasonably mature projects and people just use them. But there are a few that want to move it forward but are hindered by the complacency of the early adopters who have moved on to other things (including me). I hope we can get that resolved eventually.
+> 
+> On that note, mustache.js has a number of interesting Pull Requests and issues open and if anyone is interested in taking over maintainership, please make yourself heard in on the GitHub project.
+
+- https://writing.jan.io/2013/11/01/the-parable-of-mustache-js.html
+- https://writing.jan.io/mustache-2.0.html
+</details>
+<details><summary>2010/03 mustache.php</summary>
+
+> A Mustache implementation in PHP.
+
+- https://github.com/bobthecow/mustache.php
+</details>
+<details><summary>2010/07 handlebars.js</summary>
+
+> Handlebars provides the power necessary to let you build semantic templates effectively with no frustration. Handlebars is largely compatible with Mustache templates. In most cases it is possible to swap out Mustache with Handlebars and continue using your current templates.
+> 
+> Checkout the official Handlebars docs site at handlebarsjs.com and try our live demo.
+> 
+> **Precompiling Templates**
+> 
+> Handlebars allows templates to be precompiled and included as javascript code rather than the handlebars template allowing for faster startup time. Full details are located here.
+> 
+> **Differences Between Handlebars.js and Mustache**
+> 
+> Handlebars.js adds a couple of additional features to make writing templates easier and also changes a tiny detail of how partials work.
+> 
+> - Nested Paths
+> - Helpers
+> - Block Expressions
+> - Literal Values
+> - Delimited Comments
+> 
+> Block expressions have the same syntax as mustache sections but should not be confused with one another. Sections are akin to an implicit each or with statement depending on the input data and helpers are explicit pieces of code that are free to implement whatever behavior they like. The mustache spec defines the exact behavior of sections. In the case of name conflicts, helpers are given priority.
+> 
+> **Compatibility**
+> 
+> There are a few Mustache behaviors that Handlebars does not implement.
+> 
+> - Handlebars deviates from Mustache slightly in that it does not perform recursive lookup by default. The compile time compat flag must be set to enable this functionality. Users should note that there is a performance cost for enabling this flag. The exact cost varies by template, but it's recommended that performance sensitive operations should avoid this mode and instead opt for explicit path references.
+> - The optional Mustache-style lambdas are not supported. Instead Handlebars provides its own lambda resolution that follows the behaviors of helpers.
+> - Handlebars does not allow space between the opening {{ and a command character such as #, / or >. The command character must immediately follow the braces, so for example {{> partial }} is allowed but {{ > partial }} is not.
+> - Alternative delimiters are not supported.
+> 
+
+- https://github.com/handlebars-lang/handlebars.js
+</details>
+<details><summary>2011/12 hogan.js</summary>
+
+> **Features**
+> 
+> Hogan is fast--try it on your workload.
+> 
+> Hogan has separate scanning, parsing and code generation phases. This way it's possible to add new features without touching the scanner at all, and many different code generation techniques can be tried without changing the parser.
+> 
+> Hogan exposes scan and parse methods. These can be useful for pre-processing templates on the server.
+> 
+> It's also possible to use HoganTemplate objects without the Hogan compiler present. That means you can pre-compile your templates on the server, and avoid shipping the compiler. However, the optional lambda features from the Mustache spec require the compiler and the original template source to be present.
+> 
+> Hogan also supports template inheritance, and maintains compatibility with other implementations like mustache.java, mustache.php, and GRMustache
+> 
+> **Why Hogan.js?**
+> 
+> Why another templating library?
+> 
+> Hogan.js was written to meet three templating library requirements: good performance, standalone template objects, and a parser API.
+
+- https://github.com/twitter/hogan.js
+- https://youtu.be/zwoiwoVNaCQ
+</details>
+<!--}}}-->
+
+### principles
+- `logic-less` - in comparison with other template processors, where data is sliced and diced inside the template, this implementation strives to control ***the data flow*** through the template. in practice, it looks like ***more concise syntax*** with selections instead of cryptic expressions. thus, ***less mental load*** - more templating.
+- `data for template` - template is more important than data, a variety sets of data may fit into a single template. paths used in the ***template should look nice***, readable and explanatory. the question of escaping sigils to accommodate data should never arise - avoid `template for data` at all costs, do a preliminary ***data massaging*** when necessary.
+- `null-free` - a **null**<sup>[◥][php-null]</sup> is the absence of data. the absence of data leads to the search for imperative solution in the template, which contradicts the `logic-less` principle. thus, to fill the gaps, the [use of helpers](#preparation) is recommended - replace nulls with special case values.
 
 ### performance
 running in ***the JIT mode***<sup>[◥](https://php.watch/versions/8.0/JIT)</sup>,
 this implementation is comparable to various JS implementations:
 [![perf](mm/mustache-perf.jpg)](#performance)
 
-### principles
-- `logic-less` - in comparison with other template processors, where data is sliced and diced inside the template, this implementation strives to control the **data flow** through the template. in practice, it looks like **more concise syntax** with selections instead of cryptic expressions. thus, **less mental load** - more templating.
-- `data for template` - template is more important than data, a variety sets of data may fit into a single template. paths used in the **template should look nice**, readable and explanatory. the question of escaping sigils to accommodate data should never arise - avoid `template for data` at all costs, do a preliminary **data massaging** when necessary.
-- `null-free` - a **null**<sup>[◥][php-null]</sup> is the absence of data. the absence of data leads to the search for imperative solution in the template, which contradicts the `logic-less` principle. thus, to fill the gaps, the [use of helpers](#preparation) is recommended - replace nulls with special case values.
 <!-- }}} -->
 ## syntax<!-- {{{ -->
 ### clauses

@@ -1,29 +1,31 @@
 <?php declare(strict_types=1);
 namespace SM;
 require_once
-  realpath(__DIR__.DIRECTORY_SEPARATOR.'..').
+  __DIR__.DIRECTORY_SEPARATOR.'..'.
   DIRECTORY_SEPARATOR.'autoload.php';
 ###
-Fx::AUTOLOAD;
-###
-function test_info(string $name='', string $text=''): void
+function test_info(# {{{
+  string $name='', string $text=''
+):void
 {
-  static $TITLE='',$INFO='';
+  static $INFO='';
   if ($text && $INFO === '')
   {
-    $TITLE = $name.'•'.proc_id();
-    cli_set_process_title($TITLE);
+    cli_set_process_title(
+      $name = $name.'•'.Fx::$PROCESS_ID
+    );
     $INFO  = trim($text)."\n";
     $INFO .= "[i] print this information\n";
     $INFO .= "[z] opcache_reset()\n";
     $INFO .= "[q] quit\n\n";
     echo "=================\n";
-    echo $TITLE." started\n";
+    echo $name." started\n";
     echo "=================\n";
   }
   echo $INFO;
 }
-function test_cooldown(): void
+# }}}
+function test_key(): void # {{{
 {
   switch (Conio::$LAST_CHAR) {
   case 'i':
@@ -46,9 +48,15 @@ function test_cooldown(): void
     echo "> quit\n";
     exit(0);
   }
+}
+# }}}
+function test_cooldown(): void # {{{
+{
+  test_key();
   usleep(100000);# 100ms
 }
-function error_dump(?object $e): void
+# }}}
+function error_dump(?object $e): void # {{{
 {
   if ($e)
   {
@@ -58,4 +66,5 @@ function error_dump(?object $e): void
     await(Conio::getch());
   }
 }
+# }}}
 ###

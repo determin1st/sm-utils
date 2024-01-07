@@ -22,8 +22,13 @@ require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
 # }}}
 class Fx
 {
-  const AUTOLOAD=true;
   static string $PROCESS_ID='';
+  static function init(): bool # {{{
+  {
+    self::$PROCESS_ID = (string)getmypid();
+    return true;
+  }
+  # }}}
   static function file_persist(string $file): bool # {{{
   {
     clearstatcache(true, $file);
@@ -48,13 +53,27 @@ class Fx
     return true;
   }
   # }}}
-}
-class Fq extends Fx # quiet
-{
-  static function file_unlink(string $file): bool # {{{
+  static function hrtime_delta_ms(int $t0, int $t1=0): int # {{{
+  {
+    if ($t1 < 1) {
+      $t1 = hrtime(true);
+    }
+    if (($t0 -= $t1) < 0) {
+      $t0 = -$t0;
+    }
+    return (int)($t0 / 1000000);
+  }
+  # }}}
+  static function hrtime_expired(int $ms, int $t0, int $t1=0): bool # {{{
+  {
+    return self::hrtime_delta_ms($t0, $t1) > $ms;
+  }
+  # }}}
+  ### quiet
+  static function try_file_unlink(string $file): bool # {{{
   {
     try {
-      return parent::file_unlink($file);
+      return self::file_unlink($file);
     }
     catch (Throwable) {
       return false;
@@ -70,9 +89,31 @@ function await(object|array $p): object # {{{
   );
 }
 # }}}
-###
-Fx::$PROCESS_ID = (string)getmypid();
-###
+function await_any(?object ...$p): int # {{{
+{
+  if (($n = count($p)) < 2)
+  {
+    throw ErrorEx::fail(__FUNCTION__,
+      'insufficient number of arguments'
+    );
+  }
+  for ($i=0,$j=0; $i < $n; ++$i)
+  {
+    if ($o = $p[$i])
+    {
+      if (!$o->pending) {
+        return $i;
+      }
+      $j++;
+    }
+  }
+  if (!$j) {
+    return -1;
+  }
+  return Loop::await_any($p);
+}
+# }}}
+# ? {{{
 # array {{{
 function array_key(array &$a, int $index): int|string|null # {{{
 {
@@ -366,38 +407,12 @@ function try_json_decode(# {{{
 # }}}
 # }}}
 # other {{{
-function hrtime_delta_ms(int $t0, int $t1=0): int # {{{
-{
-  if ($t1 < 1) {
-    $t1 = hrtime(true);
-  }
-  $t0 = ($t1 > $t0)
-    ? $t1 - $t0
-    : $t0 - $t1;
-  return (int)($t0 / 1000000);
-}
-# }}}
-function hrtime_expired(int $ms, int $t0, int $t1=0): bool # {{{
-{
-  return hrtime_delta_ms($t0, $t1) > $ms;
-}
-# }}}
 function hrtime_add_ms(int $t, int $ms): int # {{{
 {
   return $t + $ms * 1000000; # milli => nano
 }
 # }}}
-function proc_id(): string # {{{
-{
-  static $id=null;
-  if ($id === null)
-  {
-    $id = ($i = getmypid())
-      ? strval($i)
-      : '';
-  }
-  return $id;
-}
 # }}}
 # }}}
+return Fx::init();
 ###

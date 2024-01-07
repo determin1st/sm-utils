@@ -43,14 +43,13 @@ class Conio # {{{
     catch (Throwable $e)
     {
       self::$ERROR = ErrorEx::from($e);
-      self::$I = ConioNop::new();
+      self::$I = new ConioNop();
     }
     return !self::$ERROR;
   }
   private function __construct()
   {}
   # }}}
-  # api {{{
   static function is_ansi(): bool # {{{
   {
     if (!self::$ANSI)
@@ -77,32 +76,33 @@ class Conio # {{{
   static function getch(): object # {{{
   {
     $I = self::$I;
-    return Promise::Func(function($A) use ($I) {
-      ###
+    self::$LAST_CHAR = '';
+    return Promise::Func(static function($A) use ($I) {
+      # probe
       if (($ch = $I->getch()) === '')
       {
         # repeat mode
         ###
-        # common maximal performance (keyboard repeat):
+        # common maximal performance for keyboard:
         # rate  = 32cps = 1000ms/32 = 31ms
         # delay = 250ms
         ###
         # fast?
         if ($t = $I->hrtime)
         {
-          if ($A::$HRTIME - $t < 1001000000) {
+          if ($A::$HRTIME - $t < 1001000000)
+          {
+            $I->hrtime = $A::$HRTIME;# prolong
             return $A->repeat(30);
           }
-          $I->hrtime = 0;
+          $I->hrtime = 0;# slowdown
         }
         # slow
         return $A->repeat(200);
       }
-      # update time of the last input
-      $I->hrtime = $A::$HRTIME;
       # complete
-      $A->result->value = $ch;
-      self::$LAST_CHAR  = $ch;
+      $I->hrtime = $A::$HRTIME;
+      $A->result->value = self::$LAST_CHAR = $ch;
       return null;
     });
   }
@@ -111,7 +111,6 @@ class Conio # {{{
   {
     return self::$I->putch($c);
   }
-  # }}}
   # }}}
 }
 # }}}

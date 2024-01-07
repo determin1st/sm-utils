@@ -2,20 +2,16 @@
 namespace SM;
 use function define,defined,spl_autoload_register;
 use const DIRECTORY_SEPARATOR;
+require_once __DIR__.DIRECTORY_SEPARATOR.'functions.php';
 ###
 defined('SM\\BASE') ||
 define('SM\\BASE', new class()
 {
   const DIR=__DIR__.DIRECTORY_SEPARATOR;
   const MAP=[
-    'SM\\Conio'    => 'conio.php',
-    'SM\\ErrorEx'  => 'error.php',
-    'SM\\ErrorLog' => 'error.php',
-    'SM\\Fetch'    => 'fetch.php',
-    'SM\\Fx'       => 'functions.php',
-    'SM\\Mustache' => 'mustache.php',
-    'SM\\Promise'  => 'promise.php',
-    'SM\\Loop'     => 'promise.php',
+    'SM\\Conio'   => 'conio.php',
+    'SM\\Fetch'   => 'fetch.php',
+    'SM\\Promise' => 'promise.php',
     'SM\\SyncExchange'        => 'sync.php',
     'SM\\SyncBroadcastMaster' => 'sync.php',
     'SM\\SyncBroadcast'       => 'sync.php',
