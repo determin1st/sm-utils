@@ -5,10 +5,10 @@ use
   SyncSharedMemory,SyncSemaphore,SyncEvent,
   Throwable,ArrayAccess;
 use function
-  sys_get_temp_dir,file_exists,touch,preg_match,intval,
-  strval,strlen,substr,str_repeat,pack,unpack,ord,hrtime,
-  array_shift,array_unshift,is_array,is_int,is_string,
-  is_object,is_callable,is_dir;
+  is_bool,is_int,is_string,is_object,is_callable,
+  is_dir,sys_get_temp_dir,intval,strval,preg_match,
+  strlen,substr,str_repeat,pack,unpack,rtrim,
+  array_shift;
 use const
   DIRECTORY_SEPARATOR;
 ###
@@ -67,7 +67,7 @@ class SyncBuffer # {{{
     return $size;
   }
   # }}}
-  function get(int &$n=0): string # {{{
+  function get(?int &$n=0): string # {{{
   {
     # read content size
     if (!($n = $this->sizeGet())) {
@@ -645,19 +645,15 @@ abstract class SyncReaderWriter # {{{
   const
     DEF_SIZE = 1000,# bytes
     MAX_SIZE = 1000000,# bytes
-    TIMEOUT_TRANSFER = 100,# ms
-    TIMEOUT_RESPONSE = 1000,# ms
-    TIMEOUT_MAX      = 300*1000;# ms
+    RESPONSE_TIMEOUT = 100;# ms
   ###
   abstract static function new(array $o): object;
-  abstract function read(): object;
-  abstract function write(string $data): object;
 }
 # }}}
 class SyncExchange extends SyncReaderWriter # {{{
 {
   # Exchange: one reader, one writer
-  # constructor {{{
+  # base {{{
   static function new(array $o): object
   {
     try
@@ -665,18 +661,18 @@ class SyncExchange extends SyncReaderWriter # {{{
       return new self(
         $id = self::o_id($o),
         self::o_int(
-          $o, 'timeout', self::TIMEOUT_RESPONSE,
-          [self::TIMEOUT_TRANSFER, self::TIMEOUT_MAX]
+          $o, 'timeout', self::RESPONSE_TIMEOUT,
+          [10, 100*self::RESPONSE_TIMEOUT]
         ),
-        self::o_bool(
-          $o, 'shared', false
-        ),
+        self::o_bool($o, 'share-read', false),
+        self::o_bool($o, 'share-write', false),
+        self::o_bool($o, 'boost', false),
         ErrorEx::peep(SyncBuffer::new(
           $id, self::o_size($o)
         )),
         ErrorEx::peep(SyncLock::new($id.'-r')),
         ErrorEx::peep(SyncLock::new($id.'-w')),
-        ErrorEx::peep(SyncNums::new($id.'-x')),
+        ErrorEx::peep(SyncNums::new($id.'-x'), 2),
       );
     }
     catch (Throwable $e)
@@ -689,7 +685,9 @@ class SyncExchange extends SyncReaderWriter # {{{
   protected function __construct(
     public string  $id,
     public int     $timeout,# response timeout
-    public bool    $shared,# multiple readers/writers
+    public bool    $shareRead,# multiple readers
+    public bool    $shareWrite,# multiple writers
+    public bool    $boost,# accelerate when possible
     public object  $data,# buffer
     public object  $reader,
     public object  $writer,
@@ -697,7 +695,7 @@ class SyncExchange extends SyncReaderWriter # {{{
     public ?object $action = null
   ) {}
   # }}}
-  function read(): object # {{{
+  function read(int $timeout=-1): object # {{{
   {
     if ($this->action)
     {
@@ -706,358 +704,511 @@ class SyncExchange extends SyncReaderWriter # {{{
         'previous action is not finished'
       );
     }
-    return Promise::Context(
-      $this->action =
-      new SyncExchangeRead($this)
-    );
+    $this->action = $a = $this->shareRead
+      ? new SyncExchangeReads($this, $timeout)
+      : ($this->boost
+        ? new SyncExchangeReadFast($this)
+        : new SyncExchangeRead($this));
+    #####
+    return Promise::Context($a);
   }
   # }}}
-  function write(string $data): object # {{{
+  function write(int $timeout=-2): object # {{{
   {
-    if ($a = $this->action)
+    if ($timeout < -1) {# response timeout
+      $timeout = $this->timeout;
+    }
+    if ($this->action)
     {
       throw ErrorEx::fail(
         __CLASS__, __FUNCTION__,
         'previous action is not finished'
       );
     }
-    return Promise::Context(
-      $this->action =
-      new SyncExchangeWrite($this, $data)
-    );
+    $this->action = $a = $this->shareWrite
+      ? new SyncExchangeWrites($this, $timeout)
+      : ($this->boost
+        ? new SyncExchangeWriteFast($this)
+        : new SyncExchangeWrite($this));
+    #####
+    return Promise::Context($a);
   }
   # }}}
 }
 # }}}
-class SyncExchangeRead extends Completable # {{{
+abstract class SyncExchangeOp extends Completable # {{{
 {
-  const STAGE = [# {{{
-    1=>'request entry',
-    2=>'request expect',
-    3=>'request read',
-    4=>'response entry',
-    5=>'response write',
-    6=>'response write chunk',
-    7=>'response confirmation',
-    8=>'exchange completion'
-  ];
-  # }}}
   function __construct(# {{{
     public object $base,
-    public string $value = '',
-    public int    $stage = 1,
-    public int    $time  = 0,
-    public int    $cycle = 0
+    public int    $timeout = 0,# entry/locking
+    public string $value   = '',# to write
+    public int    $size    = 0,# value size
+    public int    $stage   = 1,
+    public int    $dirty   = 0,
+    public int    $waits   = 0,
+    public int    $time    = 0
   ) {}
   # }}}
-  # helpers {{{
-  function readChunk(): int # {{{
+  function _wait(int $timeout=0): ?object # {{{
   {
-    $data = $this->base->data;
-    $this->value .= $data->get($size);
-    if ($size)
-    {
-      $this->time = self::$HRTIME;
-      $data->clear();
-    }
-    return $size;
-  }
-  # }}}
-  function writeFirst(int $next): self # {{{
-  {
-    # update the time
-    $this->time = self::$HRTIME;
-    # write and check bytes written
-    $n = $this->base->data->set($this->value);
-    if ($n < strlen($this->value))
-    {
-      # more chunks to write,
-      # cut the value for the next write
-      $this->value = substr($this->value, $n);
-      $this->stage = $next;
-    }
-    else {
-      $this->stage = $next + 1;
-    }
-    return $this;
-  }
-  # }}}
-  function writeNext(): ?object # {{{
-  {
-    # check buffer is dirty
-    $data = $this->base->data;
-    if ($data->sizeGet()) {
-      return $this->checkTimeout();
-    }
-    # write the next chunk
-    $n = $data->set($this->value);
-    if ($n < strlen($this->value)) {
-      $this->value = substr($this->value, $n);
-    }
-    else {
-      $this->stage++;
-    }
-    $this->time = self::$HRTIME;
-    return $this;
-  }
-  # }}}
-  function checkTimeout(int $ms=0): ?object # {{{
-  {
-    $expired = Fx::hrtime_expired(
-      $ms ?: $this->base::TIMEOUT_TRANSFER,
+    # check expired
+    $x = Fx::hrtime_expired(
+      $timeout ?: 10,
       self::$HRTIME, $this->time
     );
-    if (!$expired) {
-      return self::$THEN->delay();
+    if ($x)
+    {
+      # detect and restart upon
+      # high CPU utilization or fluctuation
+      $y = $timeout ? (int)(0.5 * $timeout) : 5;
+      if ($this->waits < $y)
+      {
+        $this->_waitInit();
+        return self::$THEN->delay(1);
+      }
+      return $this->_errTimeout();
     }
-    $this->result->fail(static::class,
-      'timed out ('.static::STAGE[$this->stage].')'
-    );
+    # active waiting
+    $this->waits++;
+    return self::$THEN->delay(1);
+  }
+  # }}}
+  function _waitInit(): self # {{{
+  {
+    $this->waits = 0;
+    $this->time = self::$HRTIME;
+    return $this;
+  }
+  # }}}
+  function _enter(): object # {{{
+  {
+    $this->stage++;
+    return $this->_waitInit();
+  }
+  # }}}
+  function _enterClean(): object # {{{
+  {
+    $this->result->value = '';
+    $this->stage++;
+    return $this->_waitInit();
+  }
+  # }}}
+  function _stateSet(int $x): object # {{{
+  {
+    $this->base->state->set($x);
+    $this->dirty = $x;
+    $this->stage++;
+    return $this->_waitInit();
+  }
+  # }}}
+  function _stateWait(int $x, int $y): ?object # {{{
+  {
+    switch ($n = $this->base->state->get()) {
+    case $x:
+      return $x
+        ? $this->_wait($this->base->timeout)
+        : $this->_waitRequest();
+    case $y:
+      # state is changed as expected
+      $this->dirty = 0;
+      $this->stage++;
+      return $this->_waitInit();
+    }
+    return $this->_errState($n);
+  }
+  # }}}
+  function _dataSetFirst(): ?object # {{{
+  {
+    $n = $this->base->data->set($this->value);
+    if ($n < $this->size)
+    {
+      # more chunks to write
+      $this->value = substr($this->value, $n);
+      $this->size -= $n;
+    }
+    else {
+      $this->size = 0;
+    }
+    $this->stage++;
+    return $this->_waitInit();
+  }
+  # }}}
+  function _dataSetLast(bool $stop=false): ?object # {{{
+  {
+    # check buffer is dirty (not read yet)
+    if (($data = $this->base->data)->sizeGet()) {
+      return $this->_wait();
+    }
+    # check nothing left to write
+    if (!($size = &$this->size))
+    {
+      $this->stage++;
+      return $stop ? null : $this->_waitInit();
+    }
+    # write the next chunk
+    if (($n = $data->set($this->value)) < $size)
+    {
+      $this->value = substr($this->value, $n);
+      $size -= $n;
+    }
+    else {
+      $size = 0;
+    }
+    return $this->_waitInit();
+  }
+  # }}}
+  function _dataGet(int $stage): ?object # {{{
+  {
+    # read and accumulate
+    $data = $this->base->data;
+    $this->result->value .= $data->get($n);
+    # check nothing was written and read
+    if (!$n) {
+      return $this->_wait();
+    }
+    # clear buffer (data is read)
+    $data->clear();
+    # check more to read
+    if ($n < 0) {
+      return $this->_waitInit();
+    }
+    # complete at this point
+    $this->stage = $stage;
     return null;
   }
   # }}}
-  function badState(int $n): void # {{{
+  function _errLockEx(): void # {{{
   {
     $this->result->fail(static::class,
-      'incorrect state='.$n.' of the exchange'
+      "unable to acquire an instant lock\n".
+      "incorrect exchange protocol or\n".
+      "third party collision (instances of the same id)\n".
+      "make sure shared read/write options match and\n".
+      "restart all instances with the id=".$this->base->id
     );
   }
   # }}}
-  # }}}
-  function complete(): ?object # {{{
+  function _errLockSh(): void # {{{
   {
-    $base = $this->base;
-    switch ($this->stage) {
-    ### request
-    case 1:# aquire the lock {{{
-      if (!$base->reader->set()) {
-        return self::$THEN->delay();
-      }
-      $this->time = self::$HRTIME;
+    $this->result->fail(static::class,
+      "unable to acquire an instant lock\n".
+      "make sure the timeout is not required or\n".
+      "specify a reasonable (non-zero) timeout"
+    );
+  }
+  # }}}
+  function _errState(int $n): void # {{{
+  {
+    $this->result->fail(
+      static::class, $this->base->id,
+      "exchange protocol desynchronization\n".
+      "unexpected state=".$n
+    );
+  }
+  # }}}
+  function _errTimeout(): void # {{{
+  {
+    $this->result->fail(
+      static::class, $this->base->id,
+      'timed out (stage='.$this->stage.')'
+    );
+  }
+  # }}}
+  ###
+  function cancel(): ?object {
+    return $this->_done();
+  }
+  abstract function write(string $data): object;
+  abstract function read(): object;
+  abstract function _lock(): ?object;
+  abstract function _done(): void;
+}
+# }}}
+class SyncExchangeRead extends SyncExchangeOp # {{{
+{
+  function _lock(): ?object # {{{
+  {
+    if ($this->base->reader->set())
+    {
       $this->stage++;
-      return $this;
-      # }}}
-    case 2:# wait for the first request {{{
-      # check current state
-      switch ($n = $base->state->get()) {
-      case 0:# nothing
-        # check standalone
-        if (!$base->shared) {
-          return self::$THEN->delay();
-        }
-        # give other readers a chance
-        $expired = Fx::hrtime_expired(
-          2000, self::$HRTIME, $this->time
-        );
-        if (!$expired) {
-          return self::$THEN->delay();
-        }
-        $base->reader->clear();
-        $this->stage--;
-        return self::$THEN->delay(100);
-      case 1:# request
-        # move to the next stage
-        $this->time = self::$HRTIME;
-        $this->stage++;
-        return $this;
-      }
-      return $this->badState($n);
-      # }}}
-    case 3:# read the request {{{
-      # read and check
-      if (!($n = $this->readChunk())) {
-        return $this->checkTimeout();
-      }
-      if ($n < 0) {# more to read
-        return $this;
-      }
-      # complete at this point
-      $this->stage++;
-      return null;
-      # }}}
-    ### response
-    case 4:# neutral entry {{{
-      $this->time = self::$HRTIME;
-      $this->stage++;
-      return $this;
-      # }}}
-    case 5:# write the response (first) {{{
-      # check current state
-      switch ($n = $base->state->get()) {
-      case 0:
-        $this->result->fail(__CLASS__,
-          "response is not expected,\n".
-          "the writer has finished the exchange.\n".
-          "please, revise the exchange protocol!"
-        );
-        return null;
-      case 1:# request (previous state)
-        return $this->checkTimeout();
-      case 2:# response
-        return $this->writeFirst(6);
-      }
-      return $this->badState($n);
-      # }}}
-    case 6:# write the response (next) {{{
-      return $this->writeNext();
-      # }}}
-    case 7:# wait the data is read {{{
-      # check buffer is dirty
-      if ($base->data->sizeGet()) {
-        return $this->checkTimeout();
-      }
-      # move to the next stage
-      $this->stage++;
-      return $this;
-      # }}}
-    case 8:# wait complete {{{
-      # check current state
-      switch ($n = $base->state->get()) {
-      case 0:# nothing
-        # complete the exchange
-        return $this->done();
-      case 1:# request (a new cycle)
-        # continue the exchange
-        $this->value = '';
-        $this->stage = 3;
-        $this->time  = self::$HRTIME;
-        $this->cycle++;
-        return $this;
-      case 2:# response (the previous state)
-        return $this->checkTimeout();
-      }
-      return $this->badState($n);
-      # }}}
+      return $this->_waitInit();
     }
-    return self::$THEN->abort();
+    return $this->_errLockEx();
   }
   # }}}
-  function cancel(): ?object # {{{
+  function _waitRequest(): ?object # {{{
   {
-    return $this->done();
+    # this method is invoked in _stateWait
+    # check idle threshold
+    if ($this->waits > 3000) {
+      return self::$THEN->delay();
+    }
+    # active waiting
+    $this->waits++;
+    return self::$THEN->delay(1);
   }
   # }}}
-  function done(): void # {{{
+  function _waitComplete(): ?object # {{{
+  {
+    switch ($n = $this->base->state->get()) {
+    case 0:# complete (hold)
+      $this->result->value = '';
+      $this->dirty = 0;
+      $this->stage = 3;
+      return null;
+    case 1:# continue (repeat)
+      $this->result->value = '';
+      $this->dirty = 0;
+      $this->stage = 5;
+      return $this;
+    case 3:# the previous state
+      return $this->_wait();
+    }
+    return $this->_errState($n);
+  }
+  # }}}
+  function _done(): void # {{{
   {
     if ($this->stage)
     {
       $base = $this->base;
       $base->action = null;
-      if ($this->stage > 1) {
-        $base->reader->clear();
-      }
+      $this->dirty && $base->state->set(0);
+      $base->reader->clear();
       $this->stage = 0;
     }
+  }
+  # }}}
+  function complete(): ?object # {{{
+  {
+    return match ($this->stage) {
+      ### request
+      1  => $this->_enterClean(),
+      2  => $this->_lock(),
+      3  => $this->_enter(),
+      4  => $this->_stateWait(0, 1),
+      5  => $this->_stateSet(2),
+      6  => $this->_dataGet(7),
+      ### response
+      7  => $this->_enter(),
+      8  => $this->_dataSetFirst(),
+      9  => $this->_stateSet(3),
+      10 => $this->_dataSetLast(),
+      11 => $this->_waitComplete(),
+      default => $this->_done()
+    };
   }
   # }}}
   function write(string $data): object # {{{
   {
+    if ($this->stage !== 6)
+    {
+      throw ErrorEx::fatal(
+        static::class, $this->base->id,
+        "unable to write a response\n".
+        "incorrect stage=".$this->stage
+      );
+    }
     $this->value = $data;
-    $this->time  = self::$HRTIME;
-    return Promise::Context($this);
+    $this->size  = strlen($data);
+    return Promise::from($this);
+  }
+  # }}}
+  function read(): object # {{{
+  {
+    if ($this->stage !== 3)
+    {
+      throw ErrorEx::fatal(
+        static::class, $this->base->id,
+        "unable to read a request\n".
+        "incorrect stage=".$this->stage
+      );
+    }
+    $this->result->value = '';
+    return Promise::from($this);
   }
   # }}}
 }
 # }}}
-class SyncExchangeWrite extends SyncExchangeRead # {{{
+class SyncExchangeReadFast extends SyncExchangeRead # {{{
 {
-  const STAGE = [# {{{
-    1=>'request entry',
-    2=>'request lock',
-    3=>'request write',
-    4=>'request chunk write',
-    5=>'request confirmation',
-    6=>'response accept',
-    7=>'response read'
-  ];
-  # }}}
-  function complete(): ?object # {{{
+  function _enterClean(): object
   {
+    # locking is not required - skip it
+    $this->result->value = '';
+    $this->stage = 3;
+    return $this;
+  }
+}
+# }}}
+class SyncExchangeReads extends SyncExchangeRead # {{{
+{
+  public bool $shareAppeal=false;
+  function _lock(): ?object # {{{
+  {
+    # try to acquire the lock
     $base = $this->base;
-    switch ($this->stage) {
-    ### request
-    case 1:# entry {{{
-      $this->time = self::$HRTIME;
-      $this->stage++;
-      return $this;
-      # }}}
-    case 2:# lock {{{
-      if (!$base->writer->set()) {
-        return $this->checkTimeout();
+    if ($base->reader->set())
+    {
+      # check and revoke own appeal
+      if ($this->shareAppeal)
+      {
+        $base->state->set(0, 1);
+        $this->shareAppeal = false;
       }
+      # move to the next stage
       $this->stage++;
-      return $this;
-      # }}}
-    case 3:# write first {{{
-      # write and set the state
-      $this->writeFirst(4);
-      $base->state->set(1);
-      return $this;
-      # }}}
-    case 4:# write next {{{
-      return $this->writeNext();
-      # }}}
-    case 5:# confirm {{{
-      # check buffer is dirty
-      if ($base->data->sizeGet()) {
-        return $this->checkTimeout();
-      }
-      # shift to the next stage and
-      # complete at this point
-      $this->stage++;
-      return null;
-      # }}}
-    ### response
-    case 6:# entry {{{
-      $base->state->set(2);
-      $this->time = self::$HRTIME;
-      $this->stage++;
-      return $this;
-      # }}}
-    case 7:# read {{{
-      # read and check
-      if (!($n = $this->readChunk())) {
-        return $this->checkTimeout($base->timeout);
-      }
-      if ($n < 0) {# more to read
-        return $this;
-      }
-      # complete at this point
-      $this->stage = 3;
-      $this->cycle++;
-      return null;
-      # }}}
+      return $this->_waitInit();
     }
-    return self::$THEN->abort();
+    # check no wait
+    if (!($timeout = $this->timeout)) {
+      return $this->_errLockSh();
+    }
+    # appeal to share
+    if (!$base->state->get(1))
+    {
+      $base->state->set(1, 1);
+      $this->shareAppeal = true;
+    }
+    # wait
+    return ($timeout < 0)
+      ? self::$THEN->delay(10)
+      : $this->_wait($timeout);
   }
   # }}}
-  function cancel(): ?object # {{{
+  function _waitRequest(): ?object # {{{
   {
-    return $this->done();
+    # check no appeals
+    if (!($base = $this->base)->state->get(1))
+    {
+      $this->time = self::$HRTIME;
+      return parent::_waitRequest();
+    }
+    # when multiple readers appeal to share,
+    # idle timeout activates for the reader
+    # that is holding the lock..
+    $x = Fx::hrtime_expired(
+      3000, self::$HRTIME, $this->time
+    );
+    if ($x)
+    {
+      $base->reader->clear();
+      $this->stage = 1;
+    }
+    return self::$THEN->delay();
   }
   # }}}
-  function done(): void # {{{
+  function _done(): void # {{{
+  {
+    if ($this->shareAppeal)
+    {
+      $this->base->state->set(0, 1);
+      $this->shareAppeal = false;
+    }
+    parent::_done();
+  }
+  # }}}
+}
+# }}}
+class SyncExchangeWrite extends SyncExchangeOp # {{{
+{
+  function _lock(): ?object # {{{
+  {
+    if ($this->base->writer->set())
+    {
+      $this->stage++;
+      return null;
+    }
+    return $this->_errLockEx();
+  }
+  # }}}
+  function _done(): void # {{{
   {
     if ($this->stage)
     {
       $base = $this->base;
       $base->action = null;
-      if ($this->stage > 2)
-      {
-        $base->state->set(0);
-        $base->writer->clear();
-      }
+      $this->dirty && $base->state->set(0);
+      $base->writer->clear();
       $this->stage = 0;
     }
   }
   # }}}
-  function read(): object # {{{
+  function complete(): ?object # {{{
   {
-    $this->value = $data;
-    $this->time  = self::$HRTIME;
-    return Promise::Context($this);
+    return match ($this->stage) {
+      ### request
+      1 => $this->_enter(),
+      2 => $this->_lock(),
+      3 => $this->_stateSet(1),
+      4 => $this->_stateWait(1, 2),
+      5 => $this->_dataSetFirst(),
+      6 => $this->_dataSetLast(true),
+      ### response
+      7 => $this->_enterClean(),
+      8 => $this->_stateWait(2, 3),
+      9 => $this->_dataGet(3),
+      default => $this->_done()
+    };
   }
   # }}}
+  function write(string $data): object # {{{
+  {
+    if ($this->stage !== 3)
+    {
+      throw ErrorEx::fatal(
+        static::class, $this->base->id,
+        "unable to write a request\n".
+        "incorrect stage=".$this->stage
+      );
+    }
+    $this->value = $data;
+    $this->size  = strlen($data);
+    return Promise::from($this);
+  }
+  # }}}
+  function read(): object # {{{
+  {
+    if ($this->stage !== 7)
+    {
+      throw ErrorEx::fatal(
+        static::class, $this->base->id,
+        "unable to read a response\n".
+        "incorrect stage=".$this->stage
+      );
+    }
+    $this->result->value = '';
+    return Promise::from($this);
+  }
+  # }}}
+}
+# }}}
+class SyncExchangeWriteFast extends SyncExchangeWrite # {{{
+{
+  function _enter(): object
+  {
+    # skip locking, hop straight to the handler
+    $this->stage = 3;
+    return self::$THEN->hop();
+  }
+}
+# }}}
+class SyncExchangeWrites extends SyncExchangeWrite # {{{
+{
+  function _lock(): ?object
+  {
+    if ($this->base->writer->set())
+    {
+      $this->_waitInit();
+      $this->stage++;
+      return null;
+    }
+    return ($t = $this->timeout)
+      ? (($t < 0)
+        ? self::$THEN->delay()  # infinite waiting
+        : $this->_wait($t))     # active waiting
+      : $this->_errLockSh();    # no waiting
+  }
 }
 # }}}
 /***

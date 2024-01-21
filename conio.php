@@ -16,7 +16,7 @@ class Conio # {{{
   # base {{{
   static ?object $I=null,$ERROR=null;
   static int     $ANSI=0,$HRTIME=0;
-  static string  $LAST_CHAR='';
+  static string  $LAST_READ='';
   static function init(): bool
   {
     if (self::$I) {
@@ -73,10 +73,20 @@ class Conio # {{{
     return self::$I->kbhit();
   }
   # }}}
-  static function getch(): object # {{{
+  static function getch(): string # {{{
+  {
+    return self::$I->getch();
+  }
+  # }}}
+  static function putch(string $c): bool # {{{
+  {
+    return self::$I->putch($c);
+  }
+  # }}}
+  static function readch(): object # {{{
   {
     $I = self::$I;
-    self::$LAST_CHAR = '';
+    self::$LAST_READ = '';
     return Promise::Func(static function($A) use ($I) {
       # probe
       if (($ch = $I->getch()) === '')
@@ -102,14 +112,9 @@ class Conio # {{{
       }
       # complete
       $I->hrtime = $A::$HRTIME;
-      $A->result->value = self::$LAST_CHAR = $ch;
+      $A->result->value = self::$LAST_READ = $ch;
       return null;
     });
-  }
-  # }}}
-  static function putch(string $c): bool # {{{
-  {
-    return self::$I->putch($c);
   }
   # }}}
 }

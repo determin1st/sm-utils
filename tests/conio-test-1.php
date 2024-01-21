@@ -11,6 +11,6 @@ while (!Conio::kbhit())
   Conio::putch('.');
   usleep(100000);# 100ms
 }
-await(Conio::getch());
-echo "\nchar: ".Conio::$LAST_CHAR."\n";
+await(Conio::readch());
+echo "\nchar: ".Conio::$LAST_READ."\n";
 ###

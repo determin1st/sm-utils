@@ -1,162 +1,154 @@
 <?php declare(strict_types=1);
 namespace SM;
 require_once
-  __DIR__.DIRECTORY_SEPARATOR.'..'.
-  DIRECTORY_SEPARATOR.'help.php';
+  __DIR__.DIRECTORY_SEPARATOR.
+  '..'.DIRECTORY_SEPARATOR.
+  '..'.DIRECTORY_SEPARATOR.
+  'autoload.php';
 ###
 ErrorLog::init(['ansi' => Conio::is_ansi()]);
-for ($p0=$p1=$p2=$p3=null;;)
+for ($p0=$p1=$p2=null;;)
 {
-  switch (await_any($p0,$p1,$p2,$p3)) {
-  default:# initialize {{{
-    # create exchange
-    $SE = SyncExchange::new([
+  switch (await_any($p0,$p1,$p2)) {
+  default:# {{{
+    # create exchange object
+    $IPC = SyncExchange::new([
       'id' => 'sync-exchange-test'
     ]);
-    if (ErrorEx::is($SE))
+    if (ErrorEx::is($IPC))
     {
-      echo ErrorLog::render($SE);
+      echo ErrorLog::render($IPC);
       exit(1);
     }
-    # initialize
-    $p0 = Conio::getch();
-    $rq = 'hello world!';
-    $rs = 'instance #'.Fx::$PROCESS_ID.' got "'.$rq.'"';
-    # show info
-    test_info('SyncExchange',
-      "[1] enable reading\n".
-      "[2] notification: a single write()\n".
-      "[3] ...\n".
-      "[4] ..."
-    );
+    # simulate console input - show info
+    $p0 = Promise::Value('i');
     break;
   # }}}
-  case 0:# console input {{{
-    # get the result
-    if (!($r = $p0->result)->ok)
-    {
-      ErrorLog::render($r);
-      exit(1);
-    }
+  case 0:# console command {{{
     # handle
-    switch ($a = $r->value) {
-    case '1':# {{{
-      if ($p1)
-      {
-        $p1->cancel();
-        $p1 = null;
-        echo "> reading off\n";
-      }
-      else
-      {
-        $p1 = Promise::Value();
-        echo "> reading on\n";
-      }
+    switch ($k = $p0->result->value) {
+    case 'i':
+      echo "> info\n\n";
+      echo "SyncExchange•".Fx::$PROCESS_ID."\n";
+      echo " [1] write(): notification - a single write\n";
+      echo " [2] write()+read(): echo\n";
+      echo " [3] ...\n";
+      echo " [9] read()\n";
+      echo " [0] cancel read()/write()\n";
+      echo " --- \n";
+      echo " [i] information\n";
+      echo " [q] quit\n";
+      echo "\n";
       break;
-    # }}}
-    case '2':# {{{
-      ###
+    case 'q':
       $p1 && $p1->cancel();
-      #$p2 && $p2->cancel();
-      if ($p2)
-      {
-        $p2->cancel();
-        echo "[cancel]";
-        #var_dump($p2->result);
+      $p2 && $p2->cancel();
+      echo "> quit\n";
+      exit(0);
+    case '1':
+    case '2':
+      # skip when there's already a reading/writing
+      if ($p1 || $p2) {
+        break;
       }
-      $p3 = Promise::Func(function() use ($SE,&$p2) {
+      # create basic write
+      $p2 = Promise::Func(function () use ($IPC) {
         echo "> write: ";
-        $p2 = $SE->write('hello');
-      });
-      break;
-    # }}}
-    case '222':# {{{
-      $i = rand(2, 9);
-      echo "CLIENT> N=".$i."\n";
-      while ($i--)
-      {
-        echo "CLIENT> write/request: ";
-        while (!$o->write($req, $e) && !$e) {
-          usleep(50000);# 50ms
+        return $IPC->write();
+      })
+      ->okay(function($A) use ($k) {
+        # handle protocol
+        $s = $k.':hello from PID='.Fx::$PROCESS_ID;
+        switch ($k) {
+        case '1':
+          echo "notification: ";
+          return $A->write($s);
+        case '2':
+          echo "request: ";
+          return $A
+          ->write($s)
+          ->okay(function($A) {
+            echo "response: ";
+            return $A->read();
+          })
+          ->okay(function($A) {
+            echo $A->result->value;
+          });
         }
-        if ($e)
-        {
-          if ($e->level)
-          {
-            echo "FAIL\n";
-            break 3;
-          }
-          echo "SKIP\n";
-          break;
-        }
-        echo $req."\n";
-        echo "CLIENT> read/response: ";
-        while (($a = $o->read($e)) === null && !$e) {
-          usleep(50000);# 50ms
-        }
-        if ($e)
-        {
-          echo "FAIL\n";
-          break 3;
-        }
-        echo $a."\n";
-      }
-      if ($o->pending)
-      {
-        echo "CLIENT> close: ";
-        if ($o->close($e)) {
+        return null;
+      })
+      ->done(function($r) {
+        if ($r->ok) {
           echo "OK\n";
         }
         else
         {
-          echo "FAIL\n";
-          break 2;
+          echo "FAILED\n";
+          echo ErrorLog::render($r);
         }
+      });
+      break;
+    case '9':
+      # reading: create recharge dummy
+      if (!$p1 && !$p2) {
+        $p1 = Promise::Value();
       }
       break;
-    # }}}
-    default:
-      test_key();
+    case '0':
+      # cancel reading/writing
+      if (!$p1 && !$p2) {
+        echo "> nothing to cancel\n";
+      }
+      $p1 && $p1->cancel();
+      $p2 && $p2->cancel();
       break;
     }
     # recharge
-    $p0 = Conio::getch();
+    $p0 = Conio::readch();
     break;
   # }}}
-  case 1:# exchange reader {{{
-    # show error
-    if (!($r = $p1->result)->ok)
-    {
-      echo "> read() error: ";
-      echo ErrorLog::render($r);
-      echo "\n";
-    }
+  case 1:# exchange read {{{
     # recharge
-    $p1 = $SE->read()
-    ->then(function ($A) {
-      ###
-      if (!($r = $A->result)->ok) {
-        return null;
+    $p1 && $p1 = Promise::Func(function($A) use ($IPC) {
+      # startup
+      echo "> read: ";
+      return $IPC->read();
+    })
+    ->okay(function ($A) {
+      # select protocol
+      $v = explode(':', $A->result->value, 2);
+      $p = null;
+      switch ($v[0]) {
+      case '1':
+        echo 'notification: '.$v[1];
+        break;
+      case '2':
+        echo 'echo: '.$v[1];
+        $p = $A->write('you say '.$v[1]);
+        break;
+      default:
+        echo 'unknown: '.$v[0];
+        break;
       }
-      echo "> read(): ".$r->context->value."\n";
+      return $p;
+    })
+    ->done(function ($r) use (&$p1) {
+      # check the result
+      if ($r->ok) {
+        echo "OK\n";
+      }
+      else
+      {
+        echo "ERROR\n";
+        echo ErrorLog::render($r);
+        $p1 = null;
+      }
     });
     break;
   # }}}
-  case 2:# exchange writer {{{
-    # show error
-    if (!($r = $p2->result)->ok)
-    {
-      echo "FAILED\n";
-      echo ErrorLog::render($r);
-      echo "\n";
-    }
+  case 2:# exchange write {{{
     # cleanup
     $p2 = null;
-    break;
-  # }}}
-  case 3:# operation {{{
-    # cleanup
-    $p3 = null;
     break;
   # }}}
   }

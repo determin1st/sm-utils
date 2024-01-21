@@ -9,7 +9,7 @@ echo "press [q] to quit\n";
 while (1)
 {
   # get a character
-  $r = await(Conio::getch());
+  $r = await(Conio::readch());
   if (!$r->ok)
   {
     echo "\n".ErrorLog::render($r, true);

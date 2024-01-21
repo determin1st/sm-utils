@@ -827,13 +827,16 @@ is to ***terminate the block***<sup>[◥][boundary-marker]</sup>.
 
 <!-- }}} -->
 ## usage<!-- {{{ -->
-to start rendering templates
+to start rendering templates -
 an ***instance***<sup>[◥][instance]</sup>
 of `SM\Mustache` must be created:
 ```php
 $m = \SM\Mustache::new();# with default options
 ```
-emperimenting requires only this bare minimum:
+a `prepare` method is used
+either for [preparations](#preparation) or
+for ***experimenting***<sup>[◥][experiment]</sup>
+with the engine:
 ```php
 echo $m->prepare(# outputs: "Hello world!"
 
@@ -849,15 +852,11 @@ echo $m->prepare(# outputs: "Hello world!"
 
 );
 ```
-a `prepare` method is used
-either for [preparations](#preparation) or
-for ***experimenting***<sup>[◥][experiment]</sup>
-with the engine.
 
 ### instance options
 #### custom delimiters
-both opening/left and closing/right delimiters
-are passed in a single string
+both opening and closing delimiters
+are passed as a single string
 separated with a ` ` space character:
 ```php
 $m = \SM\Mustache::new([

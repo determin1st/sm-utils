@@ -668,6 +668,9 @@ class ErrorLog implements Mustachable # {{{
       {{|2}}
         {{#assign level-color-0}}{:red:}{{/}}
         {{#assign level-color-1}}{:red-bright:}{{/}}
+      {{|3}}
+        {{#assign level-color-0}}{:cyan:}{{/}}
+        {{#assign level-color-1}}{:cyan-bright:}{{/}}
       {{/}}
       {{#assign joiner-0}}{{level-color-1}}│{:end-color:}{{/}}
       {{#assign joiner-1}}{{level-color-1}}└{:end-color:}{{/}}
@@ -683,8 +686,10 @@ class ErrorLog implements Mustachable # {{{
 
       {{^msg-type}}
         {{level-color-1}}●{:end-color:}
-        {:BR:}
-        {{insert logs}}
+        {{#has-logs}}
+          {:BR:}
+          {{insert logs}}
+        {{/}}
       {{|}}
         {{level-color-1}}▪{:end-color:}
         {{insert message}}
@@ -919,9 +924,11 @@ class ErrorLog implements Mustachable # {{{
       {{/}}
 
       {{^msg-type}}
-        ■{{level-tag}}
-        {:BR:}
-        {{insert logs}}
+        {{#has-logs}}
+          ■{{level-tag}}
+          {:BR:}
+          {{insert logs}}
+        {{/}}
       {{|}}
         >{{level-tag}}
         {{insert message}}
@@ -1017,8 +1024,7 @@ class ErrorLog implements Mustachable # {{{
     # helpers
     'has-logs'=>false,'has-trace'=>false,
     'has-msg-block'=>false,
-    'msg-type'=>0,'msg-path'=>[],
-    'msg-title'=>'','msg-block'=>[],
+    'msg-type'=>0,'msg-path'=>[],'msg-title'=>'','msg-block'=>[],
   ];
   # }}}
   # singleton constructor {{{
@@ -1161,7 +1167,7 @@ class ErrorLog implements Mustachable # {{{
     $t = $this->template[$this->index][$a];
     switch ($a) {
     case 'item':
-      self::h_item(
+      self::set_helper(
         $m->value('..'),
         $m->value('.')
       );
@@ -1216,14 +1222,16 @@ class ErrorLog implements Mustachable # {{{
   }
   # }}}
   # }}}
-  static function h_item(array &$h, array $item): array # {{{
+  static function set_helper(# {{{
+    array &$h, array $item
+  ):array
   {
     # determine message count
     $n = isset($item['msg'])
       ? count($item['msg'])
       : 0;
     # set easy flags
-    $h['has-logs']  = (
+    $h['has-logs'] = (
       isset($item['logs']) &&
       count($item['logs']) > 0
     );
@@ -1242,7 +1250,59 @@ class ErrorLog implements Mustachable # {{{
     $s = $m[$n - 1];
     if (($i = strpos($s, "\n")) === false)
     {
-      # path only or with the trace
+      # not multiline,
+      # a path or a path with the trace
+      $h['has-msg-block'] = false;
+      $h['msg-type'] = $hasTrace ? 3 : 1;
+      $h['msg-path'] = $m;
+      return $item;
+    }
+    # multiline!
+    $h['has-msg-block'] = true;
+    if ($n < 2)
+    {
+      $h['msg-type']  = 2;
+      $h['msg-path']  = [];
+    }
+    else
+    {
+      $h['msg-type'] = 3;
+      $h['msg-path'] = array_slice($m, 0, $n - 1);
+    }
+    $h['msg-block'] = explode("\n", trim($s));
+    return $item;
+  }
+  # }}}
+  static function set_helper_OLD(# {{{
+    array &$h, array $item
+  ):array
+  {
+    # determine message count
+    $n = isset($item['msg'])
+      ? count($item['msg'])
+      : 0;
+    # set easy flags
+    $h['has-logs'] = (
+      isset($item['logs']) &&
+      count($item['logs']) > 0
+    );
+    $h['has-trace'] = $hasTrace =
+      isset($item['trace']);
+    # check no message
+    if (!$n)
+    {
+      # trace as message?
+      $h['has-msg-block'] = false;
+      $h['msg-type'] = $hasTrace ? 2 : 0;
+      return $item;
+    }
+    # analyze the message
+    $m = $item['msg'];
+    $s = $m[$n - 1];
+    if (($i = strpos($s, "\n")) === false)
+    {
+      # not multiline,
+      # a path or a path with the trace
       $h['has-msg-block'] = false;
       $h['msg-type'] = $hasTrace ? 3 : 1;
       $h['msg-path'] = $m;
@@ -1313,13 +1373,13 @@ class ErrorLog implements Mustachable # {{{
       : self::one($a);
   }
   # }}}
-  static function one(array $a): string # {{{
+  static function one(array $item): string # {{{
   {
     $I = self::$I;
     $m = $I->mustache;
     return $m->get(
       $I->template[$I->index]['root'],
-      self::h_item($m->value('.'), $a)
+      self::set_helper($m->value('.'), $item)
     );
   }
   # }}}
@@ -1330,7 +1390,7 @@ class ErrorLog implements Mustachable # {{{
     $m = $I->mustache;
     $h = &$m->value('.');
     for ($x='',$i=0,$j=count($a); $i < $j; ++$i) {
-      $x .= $m->get($t, self::h_item($h, $a[$i]));
+      $x .= $m->get($t, self::set_helper($h, $a[$i]));
     }
     return $x;
   }

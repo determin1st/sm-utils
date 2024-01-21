@@ -91,25 +91,6 @@ function await(object|array $p): object # {{{
 # }}}
 function await_any(?object ...$p): int # {{{
 {
-  if (($n = count($p)) < 2)
-  {
-    throw ErrorEx::fail(__FUNCTION__,
-      'insufficient number of arguments'
-    );
-  }
-  for ($i=0,$j=0; $i < $n; ++$i)
-  {
-    if ($o = $p[$i])
-    {
-      if (!$o->pending) {
-        return $i;
-      }
-      $j++;
-    }
-  }
-  if (!$j) {
-    return -1;
-  }
   return Loop::await_any($p);
 }
 # }}}

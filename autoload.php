@@ -12,6 +12,7 @@ define('SM\\BASE', new class()
     'SM\\Conio'   => 'conio.php',
     'SM\\Fetch'   => 'fetch.php',
     'SM\\Promise' => 'promise.php',
+    'SM\\Loop'    => 'promise.php',
     'SM\\SyncExchange'        => 'sync.php',
     'SM\\SyncBroadcastMaster' => 'sync.php',
     'SM\\SyncBroadcast'       => 'sync.php',

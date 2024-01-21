@@ -1,33 +1,36 @@
 <?php declare(strict_types=1);
 namespace SM;
-use SyncSemaphore;
-require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
+require_once
+  __DIR__.DIRECTORY_SEPARATOR.
+  '..'.DIRECTORY_SEPARATOR.
+  '..'.DIRECTORY_SEPARATOR.
+  'autoload.php';
 ###
-$o = new SyncSemaphore('sem-lock-unlock', 1, 0);
+$o = new \SyncSemaphore('sem-lock-unlock', 1, 0);
 echo "locking.. ";
-if (!$o->lock(-1)) {
-  echo "failed!\n";
-}
-echo "ok, waiting\n";
-while (1)
+if (!$o->lock(-1))
 {
-  # check for termination
-  if (Conio::getch() === 'q') {
-    break;
-  }
-  # take a rest
-  echo '.';
-  usleep(250000);# 100ms
+  echo "failed!\n";
+  exit(1);
 }
+echo "ok\n";
+echo "press any key to unlock..";
+while (!await(Conio::readch())->value)
+{}
+echo "\n";
+echo "unlocking.. ";
 if ($o->unlock($i)) {
-  echo "ok($i)\n";
+  echo "ok($i)";
 }
-else {
-  echo "failed($i)\n";
+else
+{
+  echo "failed($i)";
+  exit(1);
 }
 echo "\n";
 echo "press any key to quit..";
-Conio::getch_wait();
+while (!await(Conio::readch())->value)
+{}
 echo "\n";
 exit(0);
 
