@@ -619,6 +619,7 @@ class ErrorLog implements Mustachable # {{{
       {:SP:}{:black-bright:}
       ~{{time}}
       {{^unit}}
+      {{|s }}s
       {{|ns}}㎱
       {{|us}}㎲
       {{|ms}}㎳
@@ -1136,8 +1137,13 @@ class ErrorLog implements Mustachable # {{{
       if (!($n = $m->value('.span'))) {
         return '';
       }
-      # prepare time value and unit
-      if ($n > 1000000)# nano => milli
+      # prepare value and unit
+      if ($n > 9000000000)# whole seconds
+      {
+        $n = (int)($n / 1000000000);
+        $s = 's';
+      }
+      elseif ($n > 1000000)# nano => milli
       {
         $n = (int)($n / 1000000);
         $s = 'ms';
@@ -1270,82 +1276,6 @@ class ErrorLog implements Mustachable # {{{
       $h['msg-path'] = array_slice($m, 0, $n - 1);
     }
     $h['msg-block'] = explode("\n", trim($s));
-    return $item;
-  }
-  # }}}
-  static function set_helper_OLD(# {{{
-    array &$h, array $item
-  ):array
-  {
-    # determine message count
-    $n = isset($item['msg'])
-      ? count($item['msg'])
-      : 0;
-    # set easy flags
-    $h['has-logs'] = (
-      isset($item['logs']) &&
-      count($item['logs']) > 0
-    );
-    $h['has-trace'] = $hasTrace =
-      isset($item['trace']);
-    # check no message
-    if (!$n)
-    {
-      # trace as message?
-      $h['has-msg-block'] = false;
-      $h['msg-type'] = $hasTrace ? 2 : 0;
-      return $item;
-    }
-    # analyze the message
-    $m = $item['msg'];
-    $s = $m[$n - 1];
-    if (($i = strpos($s, "\n")) === false)
-    {
-      # not multiline,
-      # a path or a path with the trace
-      $h['has-msg-block'] = false;
-      $h['msg-type'] = $hasTrace ? 3 : 1;
-      $h['msg-path'] = $m;
-      return $item;
-    }
-    # multiline
-    $h['has-msg-block'] = true;
-    if ($i)
-    {
-      if ($n < 2)
-      {
-        # multiline only
-        $h['msg-type']  = 2;
-        $h['msg-path']  = [];
-      }
-      else
-      {
-        # path + multiline
-        $m[$n - 1] = substr($s, 0, $i);
-        $s = substr($s, $i + 1);
-        $h['msg-type'] = 3;
-        $h['msg-path'] = $m;
-      }
-      $h['msg-title'] = '';
-      $h['msg-block'] = explode("\n", $s);
-      return $item;
-    }
-    if ($n <= 2)
-    {
-      # multiline only
-      $h['msg-type']  = 2;
-      $h['msg-path']  = [];
-      $h['msg-title'] = ($n < 2)
-        ? '' : $m[$n - 2];
-    }
-    else
-    {
-      # path + multiline
-      $h['msg-type']  = 3;
-      $h['msg-path']  = array_slice($m, 0, $n - 2);
-      $h['msg-title'] = $m[$n - 2];
-    }
-    $h['msg-block'] = explode("\n", ltrim($s));
     return $item;
   }
   # }}}

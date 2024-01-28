@@ -8,23 +8,22 @@ use function
   curl_multi_init,curl_multi_setopt,curl_multi_errno,
   curl_multi_strerror,curl_multi_exec,curl_multi_select,
   curl_multi_add_handle,curl_multi_remove_handle,
-  curl_multi_info_read,curl_multi_getcontent,curl_multi_close,
+  curl_multi_info_read,curl_multi_getcontent,
+  curl_multi_close,
   ###
-  is_scalar,is_array,is_object,is_string,is_int,is_bool,is_file,
-  min,pow,strpos,substr,rtrim,ltrim,strtolower,http_build_query,
-  strtoupper,ctype_upper,basename,array_search,array_splice,
-  array_is_list,array_shift,explode,count;
-use function SM\{
-  array_import,array_import_new,array_import_all,file_unlink,
-  try_json_decode,try_json_encode
-};
+  is_scalar,is_array,is_object,is_string,is_int,
+  is_bool,is_file,min,pow,strpos,substr,rtrim,ltrim,
+  strtolower,strtoupper,ctype_upper,basename,
+  json_encode,json_decode,json_last_error_msg,
+  array_search,array_splice,array_is_list,array_shift,
+  explode,count,http_build_query;
 use const
   CURLOPT_POST,CURLOPT_URL,CURLOPT_HTTPHEADER,
   CURLOPT_HEADER,CURLOPT_POSTFIELDS,CURLOPT_TIMEOUT_MS,
-  CURLOPT_RETURNTRANSFER,CURLOPT_CUSTOMREQUEST,CURLMSG_DONE,
-  PHP_QUERY_RFC3986,JSON_UNESCAPED_UNICODE,DIRECTORY_SEPARATOR;
+  CURLOPT_RETURNTRANSFER,CURLOPT_CUSTOMREQUEST,
+  CURLMSG_DONE,PHP_QUERY_RFC3986,JSON_UNESCAPED_UNICODE,
+  DIRECTORY_SEPARATOR;
 ###
-require_once __DIR__.DIRECTORY_SEPARATOR.'functions.php';
 require_once __DIR__.DIRECTORY_SEPARATOR.'promise.php';
 # }}}
 class Fetch # {{{
@@ -52,7 +51,7 @@ class Fetch # {{{
   private function __construct(# {{{
     public array  &$headers,
     public array  &$options,
-    public array  &$retry,
+    public array  $retry,
     public string $baseUrl,
     public bool   $mounted
   ) {
@@ -153,7 +152,7 @@ class FetchGear # {{{
   const HEADERS = [
     'accept' => 'application/json',
   ];
-  const  RETRY = [
+  const RETRY = [
     'callback' => null,
     'fast'     => 0,# fast retry count (0:none,-1:unlimited)
     'slow'     => 0,# slow retry count (0:none,-1:unlimited)
@@ -179,20 +178,17 @@ class FetchGear # {{{
   }
   # }}}
   # hlp {{{
-  static function &o_array(# {{{
-    array &$o, string $k, array $defs=[]
+  static function o_array(# {{{
+    array $o, string $k
   ):array
   {
     if (!isset($o[$k])) {
-      return $defs;
+      return [];
     }
     if (!is_array($o[$k])) {
       throw self::o_error($k, 'not an array');
     }
-    if (!$defs) {
-      return $o[$k];
-    }
-    return array_import_new($o[$k], $defs);
+    return $o[$k];
   }
   # }}}
   static function o_string(# {{{
@@ -272,120 +268,152 @@ class FetchGear # {{{
     return $base.$url;
   }
   # }}}
-  static function &o_headers(# {{{
-    array &$o, array $def=self::HEADERS
+  static function o_headers(# {{{
+    array $o, array $def=self::HEADERS
   ):array
   {
+    # fetch option
     if (!($a = self::o_array($o, 'headers'))) {
       return $def;
     }
+    # convert into hashmap representation
     if (array_is_list($a)) {
       $a = self::headers_unpack($a);
     }
-    return array_import_new($a, $def);
+    # complement with defaults
+    foreach ($def as $k => $v)
+    {
+      if (!isset($a[$k])) {
+        $a[$k] = $v;
+      }
+    }
+    return $a;
   }
   # }}}
-  static function &o_options(array &$o, array &$h): array # {{{
+  static function &o_options(array $o, array &$h): array # {{{
   {
-    # get options
-    $a = &self::o_array(
-      $o, 'options', self::CURLOPT
-    );
-    # move options.headers => headers
+    # compose CURL options
+    $a = self::CURLOPT;# start with defaults
+    if (isset($o['options']))
+    {
+      foreach ($o['options'] as $k => $v) {
+        $a[$k] = $v;
+      }
+    }
+    # in case headers were issued in CURL format,
+    # convert and move them into separate hashmap
     if (isset($a[CURLOPT_HTTPHEADER]))
     {
-      array_import_all($h, self::headers_unpack(
+      # convert
+      $b = self::headers_unpack(
         $a[CURLOPT_HTTPHEADER]
-      ));
-      unset($a[CURLOPT_HTTPHEADER]);
+      );
+      # move (replace)
+      foreach ($b as $k => $v) {
+        $h[$k] = $v;
+      }
+      # cleanup
+      unset($a[CURLOPT_HTTPHEADER], $b);
     }
-    # set options.timeout
+    # always establish timeout
     if ($i = self::o_int($o, 'timeout')) {
       $a[CURLOPT_TIMEOUT_MS] = $i;
     }
     return $a;
   }
   # }}}
-  static function &o_retry(# {{{
-    array &$o, array $defs=self::RETRY
+  static function o_retry(# {{{
+    array $o, array $defs=self::RETRY
   ):array
   {
-    if (!($a = self::o_array($o, 'retry'))) {
-      return $defs;
+    if ($a = self::o_array($o, 'retry'))
+    {
+      # update default set with specifics
+      foreach ($defs as $k => &$v)
+      {
+        if (isset($a[$k])) {
+          $v = $a[$k];
+        }
+      }
     }
-    return array_import($defs, $a);
+    return $defs;
   }
   # }}}
-  static function &o_content(# {{{
-    array &$o, array &$h
-  ):string|array
+  static function a_request(array $o, object $x): array # {{{
   {
     static $k0='content',$k1='content-type';
-    static $T0='text/plain';
-    static $T1='multipart/form-data';
-    static $T2='application/x-www-form-urlencoded';
-    static $T3='application/json';
+    # compose headers
+    $a = self::o_headers($o, $x->headers);
+    # compose body/content
     if (!isset($o[$k0]))
     {
-      $x = '';
-      if (isset($h[$k1])) {
-        unset($h[$k1]);
+      # no content provided,
+      # body is empty - remove any type hint
+      $b = '';
+      if (isset($a[$k1])) {
+        unset($a[$k1]);
       }
     }
-    elseif (is_string($x = &$o[$k0]))
+    elseif (is_string($b = $o[$k0]))
     {
-      if (!isset($h[$k1])) {
-        $h[$k1] = $T0;
+      # could be a custom encoding..
+      if (!isset($a[$k1])) {
+        $a[$k1] = 'text/plain';
       }
     }
-    elseif (!is_array($x)) {
-      throw self::o_error($k0, 'not an array');
+    elseif (!is_array($b))
+    {
+      throw ErrorEx::fail(
+        'incorrect type of content: '.gettype($b)
+      );
     }
-    elseif (self::has_file($x)) {
-      $h[$k1] = $T1;
+    elseif (self::has_file($b)) {
+      $a[$k1] = 'multipart/form-data';
     }
     elseif (isset($o['formenc']))
     {
-      $h[$k1] = $T2;
-      $x = http_build_query($x, '', null, PHP_QUERY_RFC3986);
+      $a[$k1] = 'application/x-www-form-urlencoded';
+      $b = http_build_query($b, '', null,
+        PHP_QUERY_RFC3986
+      );
     }
     else
     {
-      $h[$k1] = $T3;
-      $x = try_json_encode($x, $e);
-      $e && throw $e;
+      $a[$k1] = 'application/json';
+      $b = json_encode($b,
+        JSON_INVALID_UTF8_IGNORE
+        |JSON_UNESCAPED_UNICODE
+      );
+      if ($b === false)
+      {
+        throw ErrorEx::fail('json_encode',
+          json_last_error_msg()
+        );
+      }
     }
-    return $x;
-  }
-  # }}}
-  static function &o_request(array &$o, object $x): array # {{{
-  {
-    # compose headers and body
-    $head = &self::o_headers($o, $x->headers);
-    $body = &self::o_content($o, $head);
-    # compose request
-    $q = $x->options;# copy
-    $q[CURLOPT_URL] = self::o_url($o, $x->baseUrl);
-    $q[CURLOPT_HTTPHEADER] = self::headers_pack($head);
+    # compose CURL request
+    $c = $x->options;# copy
+    $c[CURLOPT_URL] = self::o_url($o, $x->baseUrl);
+    $c[CURLOPT_HTTPHEADER] = self::headers_pack($a);
     if ($method = self::o_method($o))
     {
-      $q[CURLOPT_CUSTOMREQUEST] = $method;
-      if ($body) {
-        $q[CURLOPT_POSTFIELDS] = &$body;
+      $c[CURLOPT_CUSTOMREQUEST] = $method;
+      if ($b !== '') {
+        $c[CURLOPT_POSTFIELDS] = $b;
       }
-      elseif (isset($q[CURLOPT_POSTFIELDS])) {
-        unset($q[CURLOPT_POSTFIELDS]);
+      elseif (isset($c[CURLOPT_POSTFIELDS])) {
+        unset($c[CURLOPT_POSTFIELDS]);
       }
     }
-    elseif ($body)
+    elseif ($b !== '')
     {
-      $q[CURLOPT_POST] = true;
-      $q[CURLOPT_POSTFIELDS] = &$body;
+      $c[CURLOPT_POST] = true;
+      $c[CURLOPT_POSTFIELDS] = $b;
     }
     else {# post with empty body
-      $q[CURLOPT_CUSTOMREQUEST] = 'POST';
+      $c[CURLOPT_CUSTOMREQUEST] = 'POST';
     }
-    return $q;
+    return $c;
   }
   # }}}
   static function has_file(array &$data): bool # {{{
@@ -408,17 +436,17 @@ class FetchGear # {{{
     return $list;
   }
   # }}}
-  static function headers_unpack(array &$a): array # {{{
+  static function headers_unpack(array $a): array # {{{
   {
     $map = [];
     for ($i=0,$j=count($a); $i < $j; ++$i)
     {
-      if (!($b = explode(':', $a[$i], 2)) ||
-          count($b) !== 2)
+      $b = $a[$i];
+      if ($k = strpos($b, ':', 1))
       {
-        continue;
+        $map[strtolower(rtrim(substr($b, 0, $k)))] =
+          ltrim(substr($b, $k + 1));
       }
-      $map[strtolower(rtrim($b[0]))] = ltrim($b[1]);
     }
     return $map;
   }
@@ -649,21 +677,30 @@ class FetchGear # {{{
     else {
       $v['headers'] = [];
     }
-    # parse content
-    $v['content'] = &$s;
+    # set content
     switch ($v['content_type']) {
     case 'application/json':
-      $a = try_json_decode($s, $e);
-      if ($e)
+      # try decoding
+      $a = json_decode($s, true, 128,
+        JSON_INVALID_UTF8_IGNORE
+      );
+      # check failed
+      if ($a === null)
       {
+        $a = ErrorEx::fail('json_decode',
+          json_last_error_msg(), "\n".$s
+        );
         return $this
           ->detach($action)
-          ->reject($e, $v);
+          ->reject($a, $v);
       }
-      $v['content'] = &$a;
+      $v['content'] = $a;
+      break;
+    default:
+      $v['content'] = $s;
       break;
     }
-    # successful
+    # complete
     return $this
       ->detach($action)
       ->resolve($v);
@@ -785,24 +822,32 @@ class FetchGear # {{{
   }
   # }}}
   static function promise(# {{{
-    object $x, array &$o
+    object $x, array $o
   ):object
   {
-    return Promise::from(new FetchAction(
+    return new Promise(new FetchAction(
       self::$I, $x,
-      self::o_request($o, $x),
+      self::a_request($o, $x),
       self::o_retry($o, $x->retry)
     ));
   }
   # }}}
   static function promise_easy(# {{{
-    object $x, array &$o
+    object $x, array $o
   ):object
   {
-    $s = try_json_encode($o, $e);
-    $e && throw $e;
-    $x->options[CURLOPT_POSTFIELDS] = &$s;
-    return Promise::from(new FetchAction(
+    $s = json_encode($o,
+      JSON_INVALID_UTF8_IGNORE
+      |JSON_UNESCAPED_UNICODE
+    );
+    if ($s === false)
+    {
+      throw ErrorEx::fail('json_encode',
+        json_last_error_msg()
+      );
+    }
+    $x->options[CURLOPT_POSTFIELDS] = $s;
+    return new Promise(new FetchAction(
       self::$I, $x, $x->options, $x->retry
     ));
   }
@@ -814,8 +859,8 @@ class FetchAction extends Completable # {{{
   function __construct(# {{{
     public object  $gear,
     public object  $master,
-    public array   &$request,
-    public array   &$retry,
+    public array   $request,
+    public array   $retry,
     public int     $step  = 0,
     public ?object $curl  = null,
     public int     $fails = 0,
@@ -951,11 +996,12 @@ class FetchFile extends CURLFile # {{{
     # remove temporary file
     if ($this->isTmp && $this->name)
     {
-      file_unlink($this->name);
+      Fx::try_file_unlink($this->name);
       $this->name = '';
     }
   }
 }
 # }}}
+# TODO: object that could be sent as content
 return FetchGear::init();
 ###

@@ -9,15 +9,13 @@ define('SM\\BASE', new class()
 {
   const DIR=__DIR__.DIRECTORY_SEPARATOR;
   const MAP=[
-    'SM\\Conio'   => 'conio.php',
-    'SM\\Fetch'   => 'fetch.php',
-    'SM\\Promise' => 'promise.php',
-    'SM\\Loop'    => 'promise.php',
-    'SM\\SyncExchange'        => 'sync.php',
-    'SM\\SyncBroadcastMaster' => 'sync.php',
-    'SM\\SyncBroadcast'       => 'sync.php',
-    'SM\\SyncAggregateMaster' => 'sync.php',
-    'SM\\SyncAggregate'       => 'sync.php',
+    'SM\\Conio'        => 'conio.php',
+    'SM\\ErrorEx'      => 'error.php',
+    'SM\\ErrorLog'     => 'error.php',
+    'SM\\Fetch'        => 'fetch.php',
+    'SM\\Promise'      => 'promise.php',
+    'SM\\Loop'         => 'promise.php',
+    'SM\\SyncExchange' => 'sync.php',
   ];
   public object $callback;
   public bool   $ready=false;

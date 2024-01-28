@@ -6,14 +6,18 @@ require_once
   '..'.DIRECTORY_SEPARATOR.
   'autoload.php';
 ###
-ErrorLog::init(['ansi' => Conio::is_ansi()]);
+ErrorLog::init([
+  'ansi' => Conio::is_ansi()
+]);
 for ($p0=$p1=$p2=null;;)
 {
   switch (await_any($p0,$p1,$p2)) {
   default:# {{{
+    # initialize
     # create exchange object
     $IPC = SyncExchange::new([
-      'id' => 'sync-exchange-test'
+      'id'   => 'sync-exchange-test',
+      'size' => 2,
     ]);
     if (ErrorEx::is($IPC))
     {
@@ -30,11 +34,13 @@ for ($p0=$p1=$p2=null;;)
     case 'i':
       echo "> info\n\n";
       echo "SyncExchange•".Fx::$PROCESS_ID."\n";
-      echo " [1] write(): notification - a single write\n";
-      echo " [2] write()+read(): echo\n";
-      echo " [3] ...\n";
-      echo " [9] read()\n";
-      echo " [0] cancel read()/write()\n";
+      echo " [1] write - notification, w\n";
+      echo " [2] write - echo, w/r\n";
+      echo " [3] write - w/r/w\n";
+      echo " [4] write - w/...\n";
+      echo " [5] ...\n";
+      echo " [9] read\n";
+      echo " [0] cancel\n";
       echo " --- \n";
       echo " [i] information\n";
       echo " [q] quit\n";
@@ -47,13 +53,15 @@ for ($p0=$p1=$p2=null;;)
       exit(0);
     case '1':
     case '2':
+    case '3':
+    case '4':
       # skip when there's already a reading/writing
       if ($p1 || $p2) {
         break;
       }
       # create basic write
-      $p2 = Promise::Func(function () use ($IPC) {
-        echo "> write: ";
+      $p2 = Promise::Func(function () use ($IPC,$k) {
+        echo "> write(".$k."): ";
         return $IPC->write();
       })
       ->okay(function($A) use ($k) {
@@ -61,29 +69,64 @@ for ($p0=$p1=$p2=null;;)
         $s = $k.':hello from PID='.Fx::$PROCESS_ID;
         switch ($k) {
         case '1':
-          echo "notification: ";
           return $A->write($s);
         case '2':
-          echo "request: ";
           return $A
           ->write($s)
           ->okay(function($A) {
-            echo "response: ";
             return $A->read();
           })
           ->okay(function($A) {
-            echo $A->result->value;
+            echo $A->result->value.' ';
+          });
+        case '3':
+          return $A
+          ->write($s)
+          ->okay(function($A) {
+            return $A->read();
+          })
+          ->okay(function($A) {
+            echo $A->result->value."\n";
+            echo "> write(*): ";
+            return $A->write('THE END');
+          });
+        case '4':
+          $n = rand(1, 1000);
+          #$n = 100000;
+          $s = '4:'.$n;
+          return $A
+          ->write($s)
+          ->okay(function($A) {
+            return $A->read();
+          })
+          ->okay(function($A) {
+            $s = $A->result->value;
+            $n = (int)($s);
+            echo $n."\n";
+            echo "> write(*): ";
+            $n--;
+            $s = (string)$n;
+            if (!$n) {
+              return $A->write($s);
+            }
+            return $A
+            ->write($s)
+            ->okay(function($A) {
+              return $A->read();
+            })
+            ->okay($A);# repeats current routine
           });
         }
         return null;
       })
       ->done(function($r) {
         if ($r->ok) {
-          echo "OK\n";
+          echo "ok\n";
         }
         else
         {
-          echo "FAILED\n";
+          echo ~$r->status?'fail':'cancel';
+          echo "\n";
           echo ErrorLog::render($r);
         }
       });
@@ -118,16 +161,49 @@ for ($p0=$p1=$p2=null;;)
       # select protocol
       $v = explode(':', $A->result->value, 2);
       $p = null;
+      echo "protocol=".$v[0].": ".$v[1]." ";
       switch ($v[0]) {
       case '1':
-        echo 'notification: '.$v[1];
         break;
       case '2':
-        echo 'echo: '.$v[1];
-        $p = $A->write('you say '.$v[1]);
+        $p = $A->write($v[1].' + '.$v[1]);
         break;
-      default:
-        echo 'unknown: '.$v[0];
+      case '3':
+        $p = $A
+        ->write($v[1].' + '.$v[1])
+        ->okay(function($A) {
+          echo "\n> read: ";
+          return $A->read();
+        })
+        ->okay(function($A) {
+          echo $A->result->value." ";
+        });
+        break;
+      case '4':
+        $p = $A
+        ->write($v[1])
+        ->okay(function($A) {
+          ###
+          static $X=1;# switch read/write
+          if ($X)
+          {
+            $X = 0;
+            return $A
+            ->read()
+            ->okay($A);
+          }
+          echo "\n> read: ";
+          $X = 1;
+          $s = $A->result->value;
+          $n = (int)($s);
+          echo $s." ";
+          if (!$n) {
+            return null;
+          }
+          return $A
+          ->write($s)
+          ->okay($A);
+        });
         break;
       }
       return $p;
@@ -135,11 +211,12 @@ for ($p0=$p1=$p2=null;;)
     ->done(function ($r) use (&$p1) {
       # check the result
       if ($r->ok) {
-        echo "OK\n";
+        echo "ok\n";
       }
       else
       {
-        echo "ERROR\n";
+        echo ~$r->status?'fail':'cancel';
+        echo "\n";
         echo ErrorLog::render($r);
         $p1 = null;
       }

@@ -12,42 +12,14 @@ use const
   DIRECTORY_SEPARATOR;
 ###
 require_once __DIR__.DIRECTORY_SEPARATOR.'error.php';
-require_once __DIR__.DIRECTORY_SEPARATOR.'functions.php';
 # }}}
-abstract class Completable # {{{
-{
-  public ?object $result=null;
-  abstract function complete(): ?object;
-  abstract function cancel(): ?object;
-  ###
-  static object $THEN;# dynamic continuator
-  static int    $TIME=0,$HRTIME=0;# current time
-  static function from(?object $x): object
-  {
-    return $x
-      ? (($x instanceof self)
-        ? $x
-        : (($x instanceof Closure)
-          ? new PromiseOp($x)
-          : (($x instanceof Error)
-            ? new PromiseError($x)
-            : new PromiseValue($x))))
-      : new PromiseNop();
-  }
-}
-# }}}
-abstract class Reversible extends Completable # {{{
-{
-  abstract function undo(): void;
-}
-# }}}
-class Promise extends Completable # {{{
+class Promise # {{{
 {
   # TODO: composition guards
   # TODO: object tests
   # base {{{
   public ?array  $_reverse=null;
-  public ?object $_done=null;
+  public ?object $_done=null,$result=null;
   public int     $_idle=0,$pending=-1;
   public object  $_queue;
   ###
@@ -358,7 +330,7 @@ class Promise extends Completable # {{{
         return null;
       }
       # handle dynamic continuation
-      if ($x === self::$THEN)
+      if ($x === Completable::$THEN)
       {
         switch ($x->getId()) {
         case 1:# lazy repetition {{{
@@ -486,6 +458,7 @@ class Promise extends Completable # {{{
 # }}}
 class Loop # {{{
 {
+  # TODO: avoid execution of already executing promises
   # TODO: cancellation/stop on shutdown
   # TODO: collect statistics
   # constructor {{{
@@ -735,10 +708,36 @@ class Loop # {{{
         }
       }
     }
-    # never, TODO: maybe throw?
-    return -1;
+    return -1;# never, TODO: maybe throw?
   }
   # }}}
+}
+# }}}
+abstract class Completable # {{{
+{
+  public ?object $result=null;
+  abstract function complete(): ?object;
+  abstract function cancel(): ?object;
+  ###
+  static object $THEN;# dynamic continuator
+  static int    $TIME=0,$HRTIME=0;# current time
+  static function from(?object $x): object
+  {
+    return $x
+      ? (($x instanceof self)
+        ? $x
+        : (($x instanceof Closure)
+          ? new PromiseOp($x)
+          : (($x instanceof Error)
+            ? new PromiseError($x)
+            : new PromiseValue($x))))
+      : new PromiseNop();
+  }
+}
+# }}}
+abstract class Reversible extends Completable # {{{
+{
+  abstract function undo(): void;
 }
 # }}}
 # actions {{{
@@ -1144,7 +1143,6 @@ class PromiseRow extends PromiseGroup # {{{
 class PromiseResult
   implements ArrayAccess,Loggable
 {
-  # TODO: is cancelled?
   # constructor {{{
   const
     IS_INFO    = 0,
