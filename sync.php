@@ -27,8 +27,7 @@ class SyncBuffer # {{{
           'incorrect size='.$size
         );
       }
-      return new self(
-        $id, $size,
+      return new self($id, $size,
         new SyncSharedMemory($id, 4 + $size)
       );
     }
@@ -44,16 +43,18 @@ class SyncBuffer # {{{
     public int    $size,
     public object $mem
   ) {
-    if ($mem->first()) {
-      $this->clear();
-    }
+    $mem->first() && $this->clear();
   }
   # }}}
   function sizeGet(): int # {{{
   {
     $a = $this->mem->read(0, 4);
-    if (strlen($a) !== 4) {
-      throw ErrorEx::fatal('SyncSharedMemory::read');
+    if (strlen($a) !== 4)
+    {
+      throw ErrorEx::fatal(
+        __CLASS__, __FUNCTION__,
+        'SyncSharedMemory::read'
+      );
     }
     return unpack('l', $a)[1];
   }
@@ -61,8 +62,12 @@ class SyncBuffer # {{{
   function sizeSet(int $size): int # {{{
   {
     $n = $this->mem->write(pack('l', $size), 0);
-    if ($n !== 4) {
-      throw ErrorEx::fatal('SyncSharedMemory::write');
+    if ($n !== 4)
+    {
+      throw ErrorEx::fatal(
+        __CLASS__, __FUNCTION__,
+        'SyncSharedMemory::write'
+      );
     }
     return $size;
   }
@@ -78,58 +83,68 @@ class SyncBuffer # {{{
       : $n;
     # read content
     $data = $this->mem->read(4, $size);
-    if (strlen($data) !== $size) {
-      throw ErrorEx::fatal('SyncSharedMemory::read');
+    if (strlen($data) !== $size)
+    {
+      throw ErrorEx::fatal(
+        __CLASS__, __FUNCTION__,
+        'SyncSharedMemory::read'
+      );
     }
     return $data;
   }
   # }}}
-  function set(string $data, int $offs=0): int # {{{
+  function set(string $data, int $offs=0, int $len=0): int # {{{
   {
-    static $ERR='SyncSharedMemory::write';
-    # determine required space
-    if (!($n = strlen($data))) {
+    # determine length of data
+    if (!$len && !($len = strlen($data))) {
       return 0;
     }
-    # determine available space
+    # determine offset and space available
     if ($offs < 0)
     {
-      # append mode
       if (($offs = $this->sizeGet()) < 0 ||
-          ($m = $this->size - $offs) <= 0)
+          ($size = $this->size - $offs) <= 0)
       {
         return 0;
       }
     }
-    elseif (($m = $this->size - $offs) <= 0)
+    elseif (($size = $this->size - $offs) <= 0)
     {
-      throw ErrorEx::fail(
-        __CLASS__, __FUNCTION__,
-        'incorrect offset='.$offs.', '.
-        'must be less than size='.$this->size
+      $i = $this->size - 1;
+      throw ErrorEx::fail(__CLASS__, __FUNCTION__,
+        "incorrect offset=".$offs." argument\n".
+        "must be in range=[0,".$i."]"
       );
     }
     # check overflow
-    if ($n > $m)
+    if ($len > $size)
     {
       # write one chunk
       $i = $this->mem->write(
-        substr($data, 0, $m), 4+$offs
+        substr($data, 0, $size), 4+$offs
       );
-      if ($i !== $m) {
-        throw ErrorEx::fatal($ERR);
+      if ($i !== $size)
+      {
+        throw ErrorEx::fatal(
+          __CLASS__, __FUNCTION__,
+          'SyncSharedMemory::write'
+        );
       }
-      # set overflow
       $this->sizeSet(-1);
-      return $m;
+      return $size;
     }
     # write all
     $i = $this->mem->write($data, 4+$offs);
-    if ($i !== $n) {
-      throw ErrorEx::fatal($ERR);
+    if ($i !== $len)
+    {
+      throw ErrorEx::fatal(
+        __CLASS__, __FUNCTION__,
+        'SyncSharedMemory::write'
+      );
     }
-    # set total size
-    return $this->sizeSet($offs + $n);
+    # TODO: negative -1 when all's filled?
+    $this->sizeSet($offs + $len);
+    return $len;
   }
   # }}}
   function clear(): void # {{{
@@ -636,9 +651,158 @@ abstract class SyncReaderWriter # {{{
   abstract static function new(array $o):object;
 }
 # }}}
+abstract class SyncReaderWriterOp extends Completable # {{{
+{
+  const IDLE_WAITS=5000;
+  const MAX_WAITS=10000;
+  function __construct(# {{{
+    public object $base,
+    public int    $timeout = 0,
+    public string $value   = '',
+    public int    $size    = 0,
+    public int    $stage   = 1,
+    public int    $waits   = 0,
+    public int    $time    = 0
+  ) {}
+  # }}}
+  function _timeSet(): self # {{{
+  {
+    $this->waits = 0;
+    $this->time  = self::$HRTIME;
+    return $this;
+  }
+  # }}}
+  function _timeWait(int $timeout=0): ?object # {{{
+  {
+    # get default (response) timeout
+    if ($timeout < 1) {
+      $timeout = $this->base->timeout;
+    }
+    # check expired
+    $x = Fx::hrtime_expired(
+      $timeout, self::$HRTIME, $this->time
+    );
+    if ($x)
+    {
+      # detect and restart upon
+      # high CPU utilization or fluctuations
+      if ($this->waits < (int)(0.6 * $timeout))
+      {
+        $this->_timeSet();
+        return self::$THEN->delay(1);
+      }
+      return $this->_errTimeout();
+    }
+    # active waiting
+    $this->waits++;
+    return self::$THEN->delay(1);
+  }
+  # }}}
+  function _timeIdleWait(): object # {{{
+  {
+    # idle/relaxed waiting?
+    if ($this->waits > self::IDLE_WAITS) {
+      return self::$THEN->delay();
+    }
+    # active waiting
+    $this->waits++;
+    return self::$THEN->delay(1);
+  }
+  # }}}
+  function _errTimeout(): void # {{{
+  {
+    $this->result->fail(
+      static::class, $this->base->id,
+      'timed out (stage='.$this->stage.')'
+    );
+  }
+  # }}}
+  function _dataGet(): ?object # {{{
+  {
+    # read the next chunk of data
+    $data = $this->base->data;
+    $text = $data->get($n);
+    # check nothing was read
+    if (!$n)
+    {
+      return (++$this->waits < self::MAX_WAITS)
+        ? self::$THEN->delay(1)
+        : $this->_errTimeout();
+    }
+    # accumulate and clear
+    $this->result->value .= $text;
+    $data->clear();
+    # upon the last read,
+    # move to the next stage
+    if ($n > 0) {
+      $this->stage++;
+    }
+    # update time
+    return $this->_timeSet();
+  }
+  # }}}
+  function _dataSetFirst(bool $append=false): ?object # {{{
+  {
+    # write the value
+    $n = &$this->size;
+    $i = $this->base->data->set(
+      $this->value, ($append ? -1 : 0), $n
+    );
+    # check the result
+    # TODO: i === 0
+    if ($i === 0)
+    {
+      # was not written!?
+    }
+    if ($i < $n)
+    {
+      # more chunks to write
+      $this->value = substr($this->value, $i);
+      $n -= $i;
+    }
+    else {
+      $n = 0;
+    }
+    $this->stage++;
+    return $this->_timeSet();
+  }
+  # }}}
+  function _dataSetLast(): ?object # {{{
+  {
+    # check buffer is dirty (not read yet)
+    if (($data = $this->base->data)->sizeGet())
+    {
+      return (++$this->waits < self::MAX_WAITS)
+        ? self::$THEN->delay(1)
+        : $this->_errTimeout();
+    }
+    # check nothing left to write
+    if (!($size = $this->size))
+    {
+      $this->stage++;
+      return $this;
+    }
+    # write the next chunk
+    $i = $data->set($this->value, 0, $size);
+    if ($i < $size)
+    {
+      $this->value = substr($this->value, $i);
+      $this->size -= $i;
+    }
+    else {
+      $this->size = 0;
+    }
+    return $this->_timeSet();
+  }
+  # }}}
+  ###
+  function _cancel(): void {$this->_done();}
+  abstract function _done(): void;
+}
+# }}}
+# Exchange: one reader + one writer
 class SyncExchange extends SyncReaderWriter # {{{
 {
-  # Exchange: one reader, one writer
   # base {{{
   static function new(array $o): object
   {
@@ -660,7 +824,7 @@ class SyncExchange extends SyncReaderWriter # {{{
         )),
         ErrorEx::peep(SyncLock::new($id.'-r')),
         ErrorEx::peep(SyncLock::new($id.'-w')),
-        ErrorEx::peep(SyncNums::new($id.'-x'), 2),
+        ErrorEx::peep(SyncNums::new($id.'-x', 2)),
       );
     }
     catch (Throwable $e)
@@ -701,11 +865,8 @@ class SyncExchange extends SyncReaderWriter # {{{
     return Promise::Context($a);
   }
   # }}}
-  function write(int $timeout=-2): object # {{{
+  function write(int $timeout=-1): object # {{{
   {
-    if ($timeout < -1) {# response timeout
-      $timeout = $this->timeout;
-    }
     if ($this->action)
     {
       throw ErrorEx::fail(
@@ -724,57 +885,12 @@ class SyncExchange extends SyncReaderWriter # {{{
   # }}}
 }
 # }}}
-abstract class SyncExchangeOp extends Completable # {{{
+abstract class SyncExchangeOp extends SyncReaderWriterOp # {{{
 {
-  const MAX_WAITS=10000;
-  function __construct(# {{{
-    public object $base,
-    public int    $timeout = 0,# entry/locking
-    public string $value   = '',# to write
-    public int    $size    = 0,# value size
-    public int    $stage   = 1,
-    public int    $dirty   = 0,
-    public int    $stops   = 0,
-    public int    $waits   = 0,
-    public int    $time    = 0
-  ) {}
-  # }}}
-  function _timeSet(): self # {{{
-  {
-    $this->waits = 0;
-    $this->time = self::$HRTIME;
-    return $this;
-  }
-  # }}}
-  function _wait(int $timeout=0): ?object # {{{
-  {
-    # check expired
-    $x = Fx::hrtime_expired(
-      #$timeout ?: 20,
-      $timeout ?: 10,
-      self::$HRTIME, $this->time
-    );
-    if ($x)
-    {
-      # detect and restart upon
-      # high CPU utilization or fluctuation
-      #$y = $timeout ? (int)(0.7 * $timeout) : 14;
-      $y = $timeout ? (int)(0.6 * $timeout) : 6;
-      if ($this->waits < $y)
-      {
-        $this->_timeSet();
-        return self::$THEN->delay(1);
-      }
-      return $this->_errTimeout();
-    }
-    # active waiting
-    $this->waits++;
-    return self::$THEN->delay(1);
-  }
-  # }}}
+  public int $stops=0,$dirty=0;
   function _waitWrite(): ?object # {{{
   {
-    return $this->_wait($this->base->timeout);
+    return $this->_timeWait();
   }
   # }}}
   function _enter(): object # {{{
@@ -809,7 +925,7 @@ abstract class SyncExchangeOp extends Completable # {{{
     switch ($n = $this->base->state->get()) {
     case $x:
       return $x
-        ? $this->_wait($this->base->timeout)
+        ? $this->_timeWait()
         : $this->_waitWrite();
       ###
     case $y:
@@ -819,73 +935,6 @@ abstract class SyncExchangeOp extends Completable # {{{
       return $this->_timeSet();
     }
     return $this->_errState($n);
-  }
-  # }}}
-  function _dataSetFirst(): ?object # {{{
-  {
-    $n = $this->base->data->set($this->value);
-    if ($n < $this->size)
-    {
-      # more chunks to write
-      $this->value = substr($this->value, $n);
-      $this->size -= $n;
-    }
-    else {
-      $this->size = 0;
-    }
-    $this->stage++;
-    return $this->_timeSet();
-  }
-  # }}}
-  function _dataSetLast(): ?object # {{{
-  {
-    # check buffer is dirty (not read yet)
-    if (($data = $this->base->data)->sizeGet())
-    {
-      return (++$this->waits < self::MAX_WAITS)
-        ? self::$THEN->delay(1)
-        : $this->_errTimeout();
-    }
-    # check nothing left to write
-    if (!($size = $this->size))
-    {
-      $this->stage++;
-      return $this;
-    }
-    # write the next chunk
-    if (($n = $data->set($this->value)) < $size)
-    {
-      $this->value = substr($this->value, $n);
-      $this->size -= $n;
-    }
-    else {
-      $this->size = 0;
-    }
-    return $this->_timeSet();
-  }
-  # }}}
-  function _dataGet(): ?object # {{{
-  {
-    # read the next chunk of data
-    $data = $this->base->data;
-    $text = $data->get($n);
-    # check nothing was read
-    if (!$n)
-    {
-      return (++$this->waits < self::MAX_WAITS)
-        ? self::$THEN->delay(1)
-        : $this->_errTimeout();
-    }
-    # accumulate and clear buffer
-    $this->result->value .= $text;
-    $data->clear();
-    # upon the last read,
-    # move to the next stage
-    if ($n > 0) {
-      $this->stage++;
-    }
-    # complete
-    return $this->_timeSet();
   }
   # }}}
   function _errLockEx(): void # {{{
@@ -918,22 +967,10 @@ abstract class SyncExchangeOp extends Completable # {{{
     );
   }
   # }}}
-  function _errTimeout(): void # {{{
-  {
-    $this->result->fail(
-      static::class, $this->base->id,
-      'timed out (stage='.$this->stage.')'
-    );
-  }
-  # }}}
   ###
-  function cancel(): ?object {
-    return $this->_done();
-  }
-  abstract function write(string $data): object;
   abstract function read(): object;
+  abstract function write(string $data): object;
   abstract function _lock(): ?object;
-  abstract function _done(): void;
 }
 # }}}
 class SyncExchangeRead extends SyncExchangeOp # {{{
@@ -950,18 +987,9 @@ class SyncExchangeRead extends SyncExchangeOp # {{{
   # }}}
   function _waitWrite(): ?object # {{{
   {
-    # next write?
-    if ($this->stops) {
-      return $this->_wait($this->base->timeout);
-    }
-    # the first write,
-    # idle waiting?
-    if ($this->waits > 3000) {
-      return self::$THEN->delay();
-    }
-    # active waiting
-    $this->waits++;
-    return self::$THEN->delay(1);
+    return $this->stops
+      ? $this->_timeWait()
+      : $this->_timeIdleWait();
   }
   # }}}
   function _done(): void # {{{
@@ -976,7 +1004,7 @@ class SyncExchangeRead extends SyncExchangeOp # {{{
     }
   }
   # }}}
-  function complete(): ?object # {{{
+  function _complete(): ?object # {{{
   {
     return match ($this->stage) {
       ### request read
@@ -999,6 +1027,20 @@ class SyncExchangeRead extends SyncExchangeOp # {{{
     };
   }
   # }}}
+  function read(): object # {{{
+  {
+    if ($this->stage !== 3)
+    {
+      throw ErrorEx::fatal(
+        static::class, $this->base->id,
+        "unable to read a request\n".
+        "incorrect stage=".$this->stage
+      );
+    }
+    $this->result->value = '';
+    return new Promise($this);
+  }
+  # }}}
   function write(string $data): object # {{{
   {
     if ($this->stage !== 9)
@@ -1014,20 +1056,6 @@ class SyncExchangeRead extends SyncExchangeOp # {{{
     return new Promise($this);
   }
   # }}}
-  function read(): object # {{{
-  {
-    if ($this->stage !== 3)
-    {
-      throw ErrorEx::fatal(
-        static::class, $this->base->id,
-        "unable to read a request\n".
-        "incorrect stage=".$this->stage
-      );
-    }
-    $this->result->value = '';
-    return new Promise($this);
-  }
-  # }}}
 }
 class SyncExchangeReadFast
   extends SyncExchangeRead
@@ -1036,8 +1064,8 @@ class SyncExchangeReadFast
   {
     # locking is not required - skip it
     $this->result->value = '';
-    $this->stage = 3;
-    return $this;
+    $this->_timeSet()->stage = 4;
+    return self::$THEN->hop();
   }
   # }}}
 }
@@ -1051,7 +1079,7 @@ class SyncExchangeReads
     $base = $this->base;
     if ($base->reader->set())
     {
-      # check and revoke own appeal
+      # revoke own made appeal
       if ($this->shareAppeal)
       {
         $base->state->set(0, 1);
@@ -1074,16 +1102,19 @@ class SyncExchangeReads
     # wait
     return ($timeout < 0)
       ? self::$THEN->delay(10)
-      : $this->_wait($timeout);
+      : $this->_timeWait($timeout);
   }
   # }}}
-  function _waitRequest(): ?object # {{{
+  function _waitWrite(): ?object # {{{
   {
+    # next write?
+    if ($this->stops) {
+      return $this->_timeWait();
+    }
+    # the first write,
     # check no appeals
-    if (!($base = $this->base)->state->get(1))
-    {
-      $this->time = self::$HRTIME;
-      return parent::_waitRequest();
+    if (!$this->base->state->get(1)) {
+      return parent::_waitWrite();
     }
     # when multiple readers appeal to share,
     # idle timeout activates for the reader
@@ -1093,7 +1124,7 @@ class SyncExchangeReads
     );
     if ($x)
     {
-      $base->reader->clear();
+      $this->base->reader->clear();
       $this->stage = 1;
     }
     return self::$THEN->delay();
@@ -1135,7 +1166,7 @@ class SyncExchangeWrite extends SyncExchangeOp # {{{
     }
   }
   # }}}
-  function complete(): ?object # {{{
+  function _complete(): ?object # {{{
   {
     return match ($this->stage) {
       ### request write
@@ -1158,6 +1189,20 @@ class SyncExchangeWrite extends SyncExchangeOp # {{{
     };
   }
   # }}}
+  function read(): object # {{{
+  {
+    if ($this->stage !== 9)
+    {
+      throw ErrorEx::fatal(
+        static::class, $this->base->id,
+        "unable to read a response\n".
+        "incorrect stage=".$this->stage
+      );
+    }
+    $this->result->value = '';
+    return new Promise($this);
+  }
+  # }}}
   function write(string $data): object # {{{
   {
     if ($this->stage !== 3)
@@ -1170,20 +1215,6 @@ class SyncExchangeWrite extends SyncExchangeOp # {{{
     }
     $this->value = $data;
     $this->size  = strlen($data);
-    return new Promise($this);
-  }
-  # }}}
-  function read(): object # {{{
-  {
-    if ($this->stage !== 9)
-    {
-      throw ErrorEx::fatal(
-        static::class, $this->base->id,
-        "unable to read a response\n".
-        "incorrect stage=".$this->stage
-      );
-    }
-    $this->result->value = '';
     return new Promise($this);
   }
   # }}}
@@ -1206,15 +1237,214 @@ class SyncExchangeWrites
   {
     if ($this->base->writer->set())
     {
-      $this->_timeSet();
       $this->stage++;
+      $this->_timeSet();
       return null;
     }
     return ($t = $this->timeout)
-      ? (($t < 0)
-        ? self::$THEN->delay()  # infinite waiting
-        : $this->_wait($t))     # active waiting
+      ? (($t > 0)
+        ? $this->_timeWait($t)  # active waiting
+        : self::$THEN->delay()) # relaxed waiting
       : $this->_errLockSh();    # no waiting
+  }
+  # }}}
+}
+# }}}
+# Aggregate: one reader + many writers
+class SyncAggregate extends SyncReaderWriter # {{{
+{
+  # base {{{
+  static function new(array $o): object
+  {
+    try
+    {
+      return new self(
+        $id = self::o_id($o),
+        ErrorEx::peep(SyncLock::new($id.'-lock')),
+        ErrorEx::peep(SyncBuffer::new(
+          $id, self::o_int(
+            $o, 'size', 100, [1, self::MAX_SIZE]
+          )
+        ))
+      );
+    }
+    catch (Throwable $e)
+    {
+      return ErrorEx::set($e, ErrorEx::fail(
+        __CLASS__, __FUNCTION__
+      ));
+    }
+  }
+  protected function __construct(
+    public string  $id,
+    public object  $lock,
+    public object  $data,
+    public ?object $action = null
+  ) {}
+  # }}}
+  function read(): object # {{{
+  {
+    if ($this->action)
+    {
+      throw ErrorEx::fail(
+        __CLASS__, __FUNCTION__,
+        'previous action is not finished'
+      );
+    }
+    return Promise::Context(
+      $this->action = new SyncAggregateRead($this)
+    );
+  }
+  # }}}
+  function write(string $data, int $timeout=-1): object # {{{
+  {
+    if ($this->action)
+    {
+      throw ErrorEx::fail(__CLASS__, __FUNCTION__,
+        'previous action is not finished'
+      );
+    }
+    return Promise::Context(
+      $this->action =
+      new SyncAggregateWrite($this, $timeout, $data)
+    );
+  }
+  # }}}
+}
+# }}}
+abstract class SyncAggregateOp extends SyncReaderWriterOp # {{{
+{
+  function _unlockStop(int $stage): void # {{{
+  {
+    $this->base->lock->clear();
+    $this->stage = $stage;
+  }
+  # }}}
+  function _done(): void # {{{
+  {
+    if ($this->stage)
+    {
+      $base = $this->base;
+      $base->lock->clear();
+      $base->action = null;
+      $this->stage  = 0;
+    }
+  }
+  # }}}
+}
+# }}}
+class SyncAggregateRead extends SyncAggregateOp # {{{
+{
+  function _entry(): object # {{{
+  {
+    $this->result->value = '';
+    return $this->_timeSet();
+  }
+  # }}}
+  function _dataWait(): ?object # {{{
+  {
+    # check data arrived
+    if ($n = $this->base->data->sizeGet())
+    {
+      # normally lock to read,
+      # skip locking when in the drain mode
+      $this->stage += ($n > 0) ? 1 : 2;
+      return $this->_timeSet();
+    }
+    # cooldown
+    return $this->_timeIdleWait();
+  }
+  # }}}
+  function _lock(): ?object # {{{
+  {
+    # try to acquire the lock
+    if ($this->base->lock->set())
+    {
+      $this->stage++;
+      $this->time = self::$HRTIME;
+      return self::$THEN->hop();
+    }
+    # get back to waiting..
+    $this->stage--;
+    $this->time = self::$HRTIME;
+    return self::$THEN->delay(1);
+  }
+  # }}}
+  function _complete(): ?object # {{{
+  {
+    return match ($this->stage) {
+      1 => $this->_entry(),
+      2 => $this->_dataWait(),
+      3 => $this->_lock(),
+      4 => $this->_dataGet(),
+      5 => $this->_unlockStop(1),
+      default => $this->_done()
+    };
+  }
+  # }}}
+  function next(): object # {{{
+  {
+    if ($this->stage !== 1)
+    {
+      throw ErrorEx::fatal(
+        static::class, $this->base->id,
+        "unable to continue reading\n".
+        "incorrect stage=".$this->stage
+      );
+    }
+    return new Promise($this);
+  }
+  # }}}
+}
+# }}}
+class SyncAggregateWrite extends SyncAggregateOp # {{{
+{
+  function _entry(): ?object # {{{
+  {
+    if ($this->size = strlen($this->value)) {
+      return $this->_timeSet();
+    }
+    return null;
+  }
+  # }}}
+  function _lock(): ?object # {{{
+  {
+    if ($this->base->lock->set())
+    {
+      $this->stage++;
+      return self::$THEN->hop();
+    }
+    return ($t = $this->timeout)
+      ? (($t > 0)
+        ? $this->_timeWait($t)
+        : self::$THEN->delay(1))
+      : $this->_errTimeout();
+  }
+  # }}}
+  function _complete(): ?object # {{{
+  {
+    return match ($this->stage) {
+      1 => $this->_entry(),
+      2 => $this->_lock(),
+      3 => $this->_dataSetFirst(true),
+      4 => $this->_dataSetLast(),
+      5 => $this->_unlockStop(1),
+      default => $this->_done()
+    };
+  }
+  # }}}
+  function next(string $data): object # {{{
+  {
+    if ($this->stage !== 1)
+    {
+      throw ErrorEx::fatal(
+        static::class, $this->base->id,
+        "unable to continue writing\n".
+        "incorrect stage=".$this->stage
+      );
+    }
+    $this->value = $data;
+    return new Promise($this);
   }
   # }}}
 }

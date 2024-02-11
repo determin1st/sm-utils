@@ -867,7 +867,20 @@ class FetchAction extends Completable # {{{
     public int     $pause = 0
   ) {}
   # }}}
-  function complete(): ?object # {{{
+  function _cancel(): void # {{{
+  {
+    switch ($this->step) {
+    case 2:
+      $this->gear->detach($this);
+      $this->curl = null;
+    case 1:
+    case 0:
+      $this->step = 3;
+      break;
+    }
+  }
+  # }}}
+  function _complete(): ?object # {{{
   {
     # operate
     switch ($this->step) {
@@ -896,20 +909,6 @@ class FetchAction extends Completable # {{{
       $this->step++;
     }
     # complete
-    return null;
-  }
-  # }}}
-  function cancel(): ?object # {{{
-  {
-    switch ($this->step) {
-    case 2:
-      $this->gear->detach($this);
-      $this->curl = null;
-    case 1:
-    case 0:
-      $this->step = 3;
-      break;
-    }
     return null;
   }
   # }}}
@@ -1002,6 +1001,6 @@ class FetchFile extends CURLFile # {{{
   }
 }
 # }}}
-# TODO: object that could be sent as content
+# TODO: object that could be sent as content (request?)
 return FetchGear::init();
 ###

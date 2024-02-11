@@ -7,7 +7,8 @@ use
 use function
   is_array,count,array_unshift,array_pop,array_push,
   array_reverse,in_array,implode,end,key,prev,
-  time,hrtime,usleep;
+  time,hrtime,usleep,function_exists,
+  register_shutdown_function;
 use const
   DIRECTORY_SEPARATOR;
 ###
@@ -323,7 +324,7 @@ class Promise # {{{
       $a->result = $this->result;
     }
     # execute
-    if ($x = $a->complete())
+    if ($x = $a->_complete())
     {
       # handle repetition
       if ($x === $a) {
@@ -435,7 +436,7 @@ class Promise # {{{
     # get current action and
     # cancel it if it was initialized
     $a = $this->_queue->offsetGet(0);
-    $a->result && $a->cancel();
+    $a->result && $a->_cancel();
     # set cancelled
     $this->pending = 0;
     $r = $this->result->_cancel();
@@ -446,7 +447,7 @@ class Promise # {{{
       while (--$i >= 0)
       {
         $q[$i]->result = $r;
-        $q[$i]->undo();
+        $q[$i]->_undo();
       }
       $q = null;
     }
@@ -484,8 +485,19 @@ class Loop # {{{
           : null;
       }
     }
-    else {
-      self::$I = new self();
+    else
+    {
+      self::$I = $I = new self();
+      register_shutdown_function($I->stop(...));
+      # to enforce graceful termination,
+      # handle termination signals
+      if (function_exists($f = 'pcntl_signal'))
+      {
+        # NixOS
+        $h = $I->signal(...);
+        $f(9,  $h);# SIGKILL=9
+        $f(15, $h);# SIGTERM=15
+      }
     }
   }
   # }}}
@@ -506,9 +518,9 @@ class Loop # {{{
     $idleCnt  = 0;
     # spin columns
     # {{{
-    $q0 = &$this->columns;
     if ($n0 = &$this->colCnt)
     {
+      $q0 = &$this->columns;
       $q1 = end($q0);
       do
       {
@@ -533,9 +545,9 @@ class Loop # {{{
         if ($p->complete())
         {
           # remove complete promise
-          $q->shift();
+          $q1->shift();
           # remove column?
-          if ($q->isEmpty())
+          if ($q1->isEmpty())
           {
             unset($q0[key($q0)]);
             $n0--;
@@ -555,9 +567,9 @@ class Loop # {{{
     # }}}
     # spin the row
     # {{{
-    $q1 = $this->row;
     if ($n1 = &$this->rowCnt)
     {
+      $q1 = $this->row;
       $q1->rewind();
       $k = $n1;
       while ($k--)
@@ -630,6 +642,39 @@ class Loop # {{{
     return $k;
   }
   # }}}
+  function stop(): void # {{{
+  {
+    # stop columns
+    if ($this->colCnt)
+    {
+      $q0 = &$this->columns;
+      $q1 = end($q0);
+      do {
+        $q1->offsetGet(0)->cancel();
+      }
+      while ($q1 = prev($q0));
+      $q0 = [];
+      $this->colCnt = 0;
+    }
+    # stop the row
+    if ($n = $this->rowCnt)
+    {
+      $q1 = $this->row;
+      $q1->rewind();
+      while ($n--)
+      {
+        $q1->current()->cancel();
+        $q1->next();
+      }
+      $this->row = new SplObjectStorage();
+      $this->rowCnt = 0;
+    }
+  }
+  # }}}
+  function signal(int $no, $info): void # {{{
+  {
+  }
+  # }}}
   function add_TODO(object $p, string $id): self # {{{
   {
     if (isset($this->columns[$id])) {
@@ -663,6 +708,7 @@ class Loop # {{{
   # }}}
   static function await_any(array $a): int # {{{
   {
+    # check enough
     if (($k = count($a)) < 2)
     {
       throw ErrorEx::fail(
@@ -709,6 +755,9 @@ class Loop # {{{
       }
     }
     return -1;# never, TODO: maybe throw?
+    throw ErrorEx::fatal(
+      __CLASS__, __FUNCTION__, 'unexpected'
+    );
   }
   # }}}
 }
@@ -716,8 +765,8 @@ class Loop # {{{
 abstract class Completable # {{{
 {
   public ?object $result=null;
-  abstract function complete(): ?object;
-  abstract function cancel(): ?object;
+  function _cancel(): void {}
+  abstract function _complete(): ?object;
   ###
   static object $THEN;# dynamic continuator
   static int    $TIME=0,$HRTIME=0;# current time
@@ -735,17 +784,19 @@ abstract class Completable # {{{
   }
 }
 # }}}
+abstract class Contextable extends Completable # {{{
+{
+  abstract function _done(): void;
+}
+# }}}
 abstract class Reversible extends Completable # {{{
 {
-  abstract function undo(): void;
+  abstract function _undo(): void;
 }
 # }}}
 # actions {{{
 abstract class PromiseAction extends Completable # {{{
 {
-  function cancel(): ?object {
-    return null;
-  }
   function repeat(int $ms=0): object {
     return $ms ? self::$THEN->delay($ms) : $this;
   }
@@ -762,7 +813,7 @@ class PromiseOp extends PromiseAction # {{{
   function __construct(
     public object $func
   ) {}
-  function complete(): ?object
+  function _complete(): ?object
   {
     try {
       return ($this->func)($this);
@@ -779,7 +830,7 @@ class PromiseFunc extends PromiseAction # {{{
     public object $func,
     public array  $arg,
   ) {}
-  function complete(): ?object
+  function _complete(): ?object
   {
     try {
       return ($this->func)($this, ...$this->arg);
@@ -792,7 +843,7 @@ class PromiseFunc extends PromiseAction # {{{
 # }}}
 class PromiseCall extends PromiseFunc # {{{
 {
-  function complete(): ?object
+  function _complete(): ?object
   {
     try {
       return ($this->func)(...$this->arg);
@@ -807,10 +858,7 @@ class PromiseCall extends PromiseFunc # {{{
 # action helpers {{{
 class PromiseNop extends Completable # {{{
 {
-  function complete(): ?object {
-    return null;
-  }
-  function cancel(): ?object {
+  function _complete(): ?object {
     return null;
   }
 }
@@ -820,7 +868,7 @@ class PromiseError extends PromiseNop # {{{
   function __construct(
     public object $error
   ) {}
-  function complete(): ?object
+  function _complete(): ?object
   {
     $this->result->error($this->error);
     return self::$THEN->hop();
@@ -832,7 +880,7 @@ class PromiseContext extends PromiseNop # {{{
   function __construct(
     public object $context
   ) {}
-  function complete(): ?object
+  function _complete(): ?object
   {
     # check current
     if (($r = $this->result)->context)
@@ -854,7 +902,7 @@ class PromiseValue extends PromiseNop # {{{
   function __construct(
     public mixed $value
   ) {}
-  function complete(): ?object
+  function _complete(): ?object
   {
     $this->result->extend()->setRef($this->value);
     return self::$THEN->hop();
@@ -867,7 +915,7 @@ class PromiseWhen extends PromiseNop # {{{
     public bool   $ok,
     public object $action
   ) {}
-  function complete(): ?object
+  function _complete(): ?object
   {
     # select action when condition met
     $a = ($this->result->ok === $this->ok)
@@ -883,7 +931,7 @@ class PromiseFuse extends PromiseNop # {{{
   function __construct(
     public object $action
   ) {}
-  function complete(): ?object
+  function _complete(): ?object
   {
     $this->result->_fuse();
     return self::$THEN->fuse($this->action);
@@ -913,7 +961,7 @@ class PromiseTimeout extends PromiseNop # {{{
     ErrorEx::peep(self::check($delay));
   }
   # }}}
-  function complete(): ?object # {{{
+  function _complete(): ?object # {{{
   {
     # delay once
     if ($ms = $this->delay)
@@ -961,13 +1009,27 @@ abstract class PromiseGroup extends Reversible # {{{
       $q = $promise->_reverse;
     }
   }
-  function undo(): void
+  function _undo(): void
   {}
 }
 # }}}
 class PromiseColumn extends PromiseGroup # {{{
 {
-  function complete(): ?object # {{{
+  function _cancel(): void # {{{
+  {
+    # check started and not finished
+    if (($i = &$this->idx) >= 0 &&
+        ($j = $this->cnt) > $i)
+    {
+      # cancel the current one
+      $this->group[$i]->cancel();
+      $this->result->_columnEnd($i);
+      # skip the rest
+      $i = $j;
+    }
+  }
+  # }}}
+  function _complete(): ?object # {{{
   {
     # prepare
     $q = &$this->group;
@@ -1007,29 +1069,11 @@ class PromiseColumn extends PromiseGroup # {{{
       if (--$this->break) {
         return $this;# more to break
       }
-      $this->cancel();
+      $this->_cancel();
       return null;
     }
     # continue
     return $this;
-  }
-  # }}}
-  function cancel(): ?object # {{{
-  {
-    # check not started
-    if (($i = &$this->idx) < 0) {
-      return null;
-    }
-    # check not finished
-    if ($i < ($j = $this->cnt))
-    {
-      # cancel one and finish
-      $q = &$this->group;
-      $q[$i]->result && $q[$i]->cancel();
-      $this->result->_columnEnd($i);
-      $i = $j;
-    }
-    return $this->result;
   }
   # }}}
 }
@@ -1050,7 +1094,17 @@ class PromiseRow extends PromiseGroup # {{{
     }
   }
   # }}}
-  function complete(): ?object # {{{
+  function _cancel(): void # {{{
+  {
+    # check started and not finished
+    if (($i = &$this->idx) >= 0 &&
+        ($j = $this->cnt) > $i)
+    {
+      $i = $this->result->_rowCancel($this->group, $j);
+    }
+  }
+  # }}}
+  function _complete(): ?object # {{{
   {
     # prepare
     $q = &$this->group;
@@ -1099,7 +1153,7 @@ class PromiseRow extends PromiseGroup # {{{
         if (--$this->break) {
           continue;# more to break
         }
-        $this->cancel();
+        $this->_cancel();
         return null;
       }
       # check race condition
@@ -1108,7 +1162,7 @@ class PromiseRow extends PromiseGroup # {{{
         if (--$this->first) {
           continue;# more to come
         }
-        $this->cancel();
+        $this->_cancel();
         return null;
       }
     }
@@ -1118,22 +1172,6 @@ class PromiseRow extends PromiseGroup # {{{
         ? self::$THEN->idle($idleTime)
         : $this)
       : null;
-  }
-  # }}}
-  function cancel(): ?object # {{{
-  {
-    # check not started
-    if (($i = &$this->idx) < 0) {
-      return null;
-    }
-    # check not finished
-    if ($i < $this->cnt)
-    {
-      $i = $this->result->_rowCancel(
-        $this->group, $this->cnt
-      );
-    }
-    return $this->result;
   }
   # }}}
 }

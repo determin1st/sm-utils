@@ -1,7 +1,12 @@
 <?php declare(strict_types=1);
 namespace SM;
-require_once __DIR__.DIRECTORY_SEPARATOR.'..'.DIRECTORY_SEPARATOR.'help.php';
+require_once
+  __DIR__.DIRECTORY_SEPARATOR.
+  '..'.DIRECTORY_SEPARATOR.
+  '..'.DIRECTORY_SEPARATOR.
+  'autoload.php';
 ###
+ErrorLog::init(['ansi' => Conio::is_ansi()]);
 $o = SyncAggregateMaster::new([
   'id'=>'test-aggregate',
   'size'=>100,

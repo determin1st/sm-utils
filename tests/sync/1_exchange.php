@@ -6,9 +6,7 @@ require_once
   '..'.DIRECTORY_SEPARATOR.
   'autoload.php';
 ###
-ErrorLog::init([
-  'ansi' => Conio::is_ansi()
-]);
+ErrorLog::init(['ansi' => Conio::is_ansi()]);
 for ($p0=$p1=$p2=null;;)
 {
   switch (await_any($p0,$p1,$p2)) {
@@ -16,7 +14,10 @@ for ($p0=$p1=$p2=null;;)
     # initialize
     # create exchange object
     $IPC = SyncExchange::new([
-      'id'   => 'sync-exchange-test',
+      'id' => 'sync-exchange-test',
+      'share-read' => true,
+      'share-write' => true,
+      'boost' => true,
       'size' => 2,
     ]);
     if (ErrorEx::is($IPC))
